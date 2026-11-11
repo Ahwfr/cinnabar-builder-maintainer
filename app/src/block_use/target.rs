@@ -9,6 +9,113 @@ use {
     gameplay::mining::{creative_reach, survival_reach},
 };
 
+/// Finds a real reachable face adjoining an aimed ghost in Survival.
+pub(super) fn observe_bridge_target(
+    player: &client_state::PlayerRuntime,
+    context: &BlockUseContext,
+    origin: &InteractionOriginSnapshot,
+    input_mode: PlayerInputMode,
+    authority: (InputAuthorityGeneration, InputSequence),
+    position_generation: PositionAuthorityGeneration,
+    state: &gameplay::movement::UnsentSampleView,
+) -> Option<FrozenBlockObservation> {
+    use bevy::prelude::Vec3;
+    let offer = context.creative.as_ref()?.offer.as_ref()?;
+    if !offer.correct_aim
+        || player.facts.player_game_mode() != Some(protocol::PlayerGameMode::Survival)
+        || player.facts.mount_unique_id().is_some()
+    {
+        return None;
+    }
+    let stream = context.client_world.stream.as_ref()?;
+    let selection = verified_use_selection(player, &context.ui)?;
+    let mut direction = None;
+    let mut observation = crate::interaction_authority::observe_block_ray_using(
+        origin,
+        &context.ui,
+        &context.client_world,
+        &context.collisions,
+        selection,
+        player.facts.player_game_mode(),
+        false,
+        (
+            input_mode,
+            survival_reach(input_mode),
+            authority,
+            position_generation,
+        ),
+        |world, eye, forward, reach| {
+            if !world.is_air(offer.position)? {
+                return Ok(None);
+            }
+            let eye_f32 = Vec3::new(eye.x as f32, eye.y as f32, eye.z as f32);
+            let forward = Vec3::new(forward.x as f32, forward.y as f32, forward.z as f32);
+            let mut best = None;
+            let mut score = -1.0;
+            for face in 0..6 {
+                let support = placement_cell(offer.position, face ^ 1);
+                if world.is_air(support).unwrap_or(true) {
+                    continue;
+                }
+                for point in super::orientation::face_samples(support, face, eye_f32) {
+                    let Some(aim) = (point - eye_f32).try_normalize() else {
+                        continue;
+                    };
+                    let dot = aim.dot(forward);
+                    if dot <= score {
+                        continue;
+                    }
+                    let ray = sim::Vec3::new(f64::from(aim.x), f64::from(aim.y), f64::from(aim.z));
+                    let Ok(Some(hit)) = world.block_interaction_ray_current(eye, ray, reach) else {
+                        continue;
+                    };
+                    if hit.block_pos != support || hit.face != face || hit.overlay.is_some() {
+                        continue;
+                    }
+                    let point = [
+                        hit.hit_world.x as f32,
+                        hit.hit_world.y as f32,
+                        hit.hit_world.z as f32,
+                    ];
+                    if !gameplay::interaction_authority::pick_point_in_range(
+                        point,
+                        state.position,
+                        reach,
+                    ) {
+                        continue;
+                    }
+                    let actor = gameplay::melee::pick_actor(
+                        stream.authority().remote_actors(),
+                        stream.authority().local_mount_unique_id(),
+                        eye_f32.to_array(),
+                        aim.to_array(),
+                        reach,
+                    );
+                    if !matches!(
+                        gameplay::melee::classify_block_hit(
+                            actor,
+                            eye_f32.to_array(),
+                            Some(&hit),
+                            reach
+                        ),
+                        gameplay::melee::Crosshair::Block
+                    ) {
+                        continue;
+                    }
+                    score = dot;
+                    best = Some(hit);
+                    direction = Some(aim.to_array());
+                }
+            }
+            Ok(best)
+        },
+    )
+    .ok()?
+    .value?;
+    observation.ray.direction = direction?;
+    Some(observation)
+}
+
 /// Recasts the pre-tick frame pick against the current world and resolves the held support.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn observe_use_target(

@@ -36,6 +36,7 @@ struct Pending {
     catalog: Option<Catalog>,
     selecting: bool,
     aim: Option<TemporaryAim>,
+    bridge: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -160,6 +161,7 @@ pub(super) fn try_start(
     context: &mut BlockUseContext,
     observed: &FrozenBlockObservation,
     movement: &mut MovementTicker,
+    bridge: bool,
 ) -> bool {
     let Some(policy) = context.creative.as_deref_mut() else {
         return false;
@@ -301,6 +303,7 @@ pub(super) fn try_start(
         catalog,
         selecting: false,
         aim: None,
+        bridge,
     });
     true
 }
@@ -451,19 +454,32 @@ pub(super) fn resume(
         policy.pending = Some(pending);
         return true;
     };
-    let Some(observed) = observe_use_target(
-        player,
-        context,
-        &context.origin,
-        mode,
-        pending.game_mode == PlayerGameMode::Survival,
-        authority,
-        movement.position_authority_identity().1,
-        runtime,
-        pick,
-        ItemUseTrigger::PlayerInput,
-        &state,
-    ) else {
+    let observed = if pending.bridge {
+        super::target::observe_bridge_target(
+            player,
+            context,
+            &context.origin,
+            mode,
+            authority,
+            movement.position_authority_identity().1,
+            &state,
+        )
+    } else {
+        observe_use_target(
+            player,
+            context,
+            &context.origin,
+            mode,
+            pending.game_mode == PlayerGameMode::Survival,
+            authority,
+            movement.position_authority_identity().1,
+            runtime,
+            pick,
+            ItemUseTrigger::PlayerInput,
+            &state,
+        )
+    };
+    let Some(observed) = observed else {
         movement.end_placement_facing();
         bevy::log::debug!(
             slot = pending.slot,
@@ -478,8 +494,29 @@ pub(super) fn resume(
     }
     if pending.offer.correct_aim
         && pending.aim.is_none()
-        && let Some((rotation, support)) =
-            super::orientation::correction(player, context, &observed, &state, &pending.offer)
+        && let Some((rotation, support)) = super::orientation::correction(
+            player,
+            context,
+            &observed,
+            &state,
+            &pending.offer,
+            pending.bridge,
+        )
+        .or_else(|| {
+            if !pending.bridge
+                || context.input.movement() != [0.0; 2]
+                || state.displacement[0].abs() > 0.01
+                || state.displacement[2].abs() > 0.01
+            {
+                return None;
+            }
+            let eye = Vec3::from_array(observed.ray.origin);
+            let direction = Vec3::from_array(observed.ray.direction);
+            Some((
+                client_presentation::camera::look_at_target(eye, eye + direction),
+                support(&observed),
+            ))
+        })
         && movement.begin_placement_facing(
             super::orientation::wire_facing(rotation),
             (rotation * Vec3::NEG_Z).to_array(),
@@ -501,6 +538,10 @@ pub(super) fn resume(
         return true;
     }
     let mut view = *context.view;
+    if pending.bridge && pending.aim.is_none() {
+        movement.end_placement_facing();
+        return true;
+    }
     let observed = if let Some(aim) = pending.aim {
         let Some(adjusted) = super::orientation::recapture(
             player,
