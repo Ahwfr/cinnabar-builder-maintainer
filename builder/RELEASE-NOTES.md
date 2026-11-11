@@ -1,4 +1,9 @@
-# Cinnabar Builder 0.3.1
+# Cinnabar Builder 0.3.2
+
+- Auto Orientation can report an opposite facing while retaining the support click. It checks the planned state before choosing this fallback and leaves the camera in place.
+- Bridge Assist continues to use normal inventory placement with a real support. Live acceptance of the separate facing still needs verification.
+
+## 0.3.1
 
 - Added the downward support pick to Bridge Assist and Auto Orientation in Survival and Creative.
 - Replaced single-block command placement with inventory-backed Bridge Assist.

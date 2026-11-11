@@ -1,4 +1,4 @@
-//! Finds a real aim that produces the planned single-block state.
+//! Finds a support click and reported facing that produce the planned block state.
 
 use super::*;
 use bevy::{
@@ -10,6 +10,13 @@ use mod_host::CreativePlacementOffer;
 
 pub(super) type Support = ([i32; 3], u8, u32);
 
+#[derive(Clone, Copy)]
+pub(super) struct PlacementAim {
+    pub rotation: Quat,
+    pub support_ray: Vec3,
+    pub support: Support,
+}
+
 /// The same look representation as the normal movement and placement systems.
 pub(super) fn wire_facing(rotation: Quat) -> [f32; 2] {
     let (yaw, pitch, _) = rotation.to_euler(EulerRot::YXZ);
@@ -19,7 +26,7 @@ pub(super) fn wire_facing(rotation: Quat) -> [f32; 2] {
     ]
 }
 
-/// A sampled direction still has to pass the native pick and placement checks after turning.
+/// Prefers a single look for picking and facing, then tries a separate reported yaw.
 pub(super) fn correction(
     player: &client_state::PlayerRuntime,
     context: &BlockUseContext,
@@ -27,7 +34,7 @@ pub(super) fn correction(
     state: &UnsentSampleView,
     expected: &CreativePlacementOffer,
     bridge: bool,
-) -> Option<(Quat, Support)> {
+) -> Option<PlacementAim> {
     if expected.states == "{}"
         || context.input.movement() != [0.0; 2]
         || state.displacement[0].abs() > 0.01
@@ -103,6 +110,8 @@ pub(super) fn correction(
     let forward = Vec3::from_array(observed.ray.direction).try_normalize()?;
     let mut best = None;
     let mut best_dot = f32::NEG_INFINITY;
+    let mut separate = None;
+    let mut separate_dot = f32::NEG_INFINITY;
     for face in 0..6 {
         let clicked = placement_cell(expected.position, face ^ 1);
         if world.is_air(clicked).unwrap_or(true) {
@@ -150,13 +159,38 @@ pub(super) fn correction(
             let rotation = client_presentation::camera::look_at_target(eye, eye + direction);
             let mut view = *context.view;
             view.set_rotation(rotation);
+            let aim = PlacementAim {
+                rotation: view.rotation(),
+                support_ray: direction,
+                support: (clicked, face, hit.runtime_id),
+            };
             if matches(&candidate, view) {
                 best_dot = dot;
-                best = Some((view.rotation(), (clicked, face, hit.runtime_id)));
+                best = Some(aim);
+            } else if best.is_none()
+                && dot > separate_dot
+                && let Some(rotation) = separate_facing(aim.rotation, |rotation| {
+                    view.set_rotation(rotation);
+                    matches(&candidate, view)
+                })
+            {
+                separate_dot = dot;
+                separate = Some(PlacementAim { rotation, ..aim });
             }
         }
     }
-    best
+    best.or(separate)
+}
+
+/// Changes only horizontal facing while keeping the sampled click and pitch.
+fn separate_facing(rotation: Quat, mut matches: impl FnMut(Quat) -> bool) -> Option<Quat> {
+    let (yaw, pitch, _) = rotation.to_euler(EulerRot::YXZ);
+    let quadrant = std::f32::consts::FRAC_PI_2;
+    let cardinal = (yaw / quadrant).round() * quadrant;
+    [0.0, quadrant, -quadrant, std::f32::consts::PI]
+        .into_iter()
+        .map(|offset| Quat::from_euler(EulerRot::YXZ, cardinal + offset, pitch, 0.0))
+        .find(|&candidate| matches(candidate))
 }
 
 /// Imported schematics can omit properties which Bedrock derives from neighbors.
@@ -173,14 +207,13 @@ fn matches_planned_state(
         .all(|(name, value)| name == "minecraft:corner" || actual.get(name) == Some(value))
 }
 
-/// Recasts the published server-facing direction from the current eye before using it.
+/// Recasts the saved support ray from the current eye before submitting the click.
 pub(super) fn recapture(
     player: &client_state::PlayerRuntime,
     context: &BlockUseContext,
     mut observed: FrozenBlockObservation,
     state: &UnsentSampleView,
-    rotation: Quat,
-    support: Support,
+    aim: PlacementAim,
 ) -> Option<FrozenBlockObservation> {
     let stream = context.client_world.stream.as_ref()?;
     let authority = stream.authority();
@@ -198,7 +231,7 @@ pub(super) fn recapture(
         pick,
     )
     .with_cell_overlays(&overlays);
-    let direction = (rotation * Vec3::NEG_Z).to_array();
+    let direction = aim.support_ray.to_array();
     let actor = gameplay::melee::pick_actor(
         authority.remote_actors(),
         authority.local_mount_unique_id(),
@@ -213,7 +246,7 @@ pub(super) fn recapture(
         observed.reach,
         actor,
     )?;
-    if (hit.block_pos, hit.face, hit.runtime_id) != support || hit.overlay.is_some() {
+    if (hit.block_pos, hit.face, hit.runtime_id) != aim.support || hit.overlay.is_some() {
         return None;
     }
     let hit_world = [
@@ -357,4 +390,17 @@ mod tests {
             0
         );
     }
+}
+#[test]
+fn reported_facing_can_be_opposite_the_support_click() {
+    let rotation = Quat::from_euler(EulerRot::YXZ, 0.0, -0.4, 0.0);
+    let [pitch, yaw] = wire_facing(rotation);
+    let facing = separate_facing(rotation, |candidate| {
+        let candidate_yaw = wire_facing(candidate)[1];
+        ((candidate_yaw - yaw).abs() - 180.0).abs() < 0.01
+    })
+    .expect("opposite facing should be available for the same support click");
+    assert!((wire_facing(facing)[0] - pitch).abs() < 0.01);
+    assert!((rotation * Vec3::NEG_Z).z < 0.0);
+    assert!((facing * Vec3::NEG_Z).z > 0.0);
 }
