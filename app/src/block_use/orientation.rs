@@ -26,6 +26,7 @@ pub(super) fn correction(
     observed: &FrozenBlockObservation,
     state: &UnsentSampleView,
     expected: &CreativePlacementOffer,
+    bridge: bool,
 ) -> Option<(Quat, Support)> {
     if expected.states == "{}"
         || context.input.movement() != [0.0; 2]
@@ -95,7 +96,7 @@ pub(super) fn correction(
                     .is_some_and(|actual| matches_planned_state(&planned, actual))
         })
     };
-    if matches(observed, *context.view) {
+    if !bridge && matches(observed, *context.view) {
         return None;
     }
     let eye = Vec3::from_array(observed.ray.origin);
@@ -265,7 +266,7 @@ pub(super) fn recapture(
 }
 
 /// Samples both halves and the center of the face, omitting faces the eye is behind.
-fn face_samples(clicked: [i32; 3], face: u8, eye: Vec3) -> impl Iterator<Item = Vec3> {
+pub(super) fn face_samples(clicked: [i32; 3], face: u8, eye: Vec3) -> impl Iterator<Item = Vec3> {
     const SAMPLES: [f32; 5] = [0.5, 0.25, 0.75, 0.0625, 0.9375];
     let axis = [1, 2, 0][usize::from(face / 2)];
     let u = (axis + 1) % 3;

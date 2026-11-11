@@ -66,7 +66,7 @@ pub(crate) fn press(
         ) {
             return actor_use::advance(&context, &mut runtime, &mut actor);
         }
-        let Some(observed) = observe_use_target(
+        let observed = observe_use_target(
             &player,
             &context,
             &input.context.origin,
@@ -78,7 +78,31 @@ pub(crate) fn press(
             Some(pick),
             ItemUseTrigger::PlayerInput,
             &state,
-        ) else {
+        );
+        let on_planned_face = observed.as_ref().is_some_and(|hit| {
+            context
+                .creative
+                .as_ref()
+                .and_then(|policy| policy.offer.as_ref())
+                .is_some_and(|offer| {
+                    placement_cell(hit.target.position, hit.target.face) == offer.position
+                })
+        });
+        if !on_planned_face
+            && let Some(bridge) = super::target::observe_bridge_target(
+                &player,
+                &context,
+                &input.context.origin,
+                mode,
+                input.context.identity,
+                movement.position_authority_identity().1,
+                &state,
+            )
+            && creative::try_start(&mut player, &mut context, &bridge, &mut movement, true)
+        {
+            return false;
+        }
+        let Some(observed) = observed else {
             bevy::log::debug!("Fast Place trace: use press has no native support hit");
             creative::clear(context.creative.as_deref_mut(), &mut player, &mut movement);
             runtime.record(
@@ -91,7 +115,7 @@ pub(crate) fn press(
             );
             return true;
         };
-        if creative::try_start(&mut player, &mut context, &observed, &mut movement) {
+        if creative::try_start(&mut player, &mut context, &observed, &mut movement, false) {
             return false;
         }
         let mut build = build::BuildInput::new(

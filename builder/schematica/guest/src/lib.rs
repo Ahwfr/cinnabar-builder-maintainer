@@ -546,6 +546,20 @@ impl Viewer {
             None
         };
         air_place::click(self, &keys, placement_cell);
+        // In normal placement mode, an aimed missing ghost can nominate a
+        // destination. The native client still needs a reachable real support.
+        let placement_cell = placement_cell
+            .filter(|pos| self.planned_block(*pos).is_some())
+            .or_else(|| {
+                if !self.options.fast_place || !self.options.correct_aim || self.options.air_place {
+                    return None;
+                }
+                let (_, pos) = self.aimed_block()?;
+                self.tiles
+                    .iter()
+                    .any(|tile| tile.is_missing(pos))
+                    .then_some(pos)
+            });
         if let Some(placement) = self.placement
             && let Some(pos @ [x, y, z]) = placement_cell
             && let Some(block) = self.planned_block(pos)

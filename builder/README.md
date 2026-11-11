@@ -20,6 +20,13 @@ Builder Windows saves Cargo's compiled dependencies and incremental compiler dat
 
 ## Import a schematic
 
+Experimental Survival bridging uses **Fast Place** and **Auto Orientation**
+with **Air Place** off. Stand still, aim at a missing ghost adjoining a real
+block, and right-click once. Builder searches for a reachable support face and
+uses a matching block from your inventory. An isolated ghost needs a support
+first. If no reachable face produces the planned orientation from your current
+position, move to another side of the build. Server acceptance is unverified.
+
 Open **Schematica → Import schematics**. On the native Mods page, press **Import schematics…** and choose up to eight .schematic, .schem, .litematic or .mcstructure files. Conversion runs off the render thread. Successful imports replace the selection, back up the old component and reload enabled mods. Original input files remain in place. The checkout's **Import Schematics.cmd** also remains available.
 
 The mod name **Schematica Builder [commit]**, metadata version and menu header identify the guest code. The launcher updates the code while retaining the library payload. Grant requested permissions in Mods. Press **M** for the menu or **Alt+J** for the library, choose a schematic and select **Load selected**. Normal **Settings → Keyboard & Mouse** contains the Schematica bindings. The current import limits are 64 blocks on an axis, 5,120 cells including air, and 128 palette entries.

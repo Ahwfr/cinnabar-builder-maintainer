@@ -191,7 +191,13 @@ pub(super) fn maintain_block_use(
         };
         if use_phase.pressed
             && trigger == ItemUseTrigger::PlayerInput
-            && creative::try_start(&mut player_runtime, &mut context, &observed, &mut movement)
+            && creative::try_start(
+                &mut player_runtime,
+                &mut context,
+                &observed,
+                &mut movement,
+                false,
+            )
         {
             runtime.clear_press();
             break;
