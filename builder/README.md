@@ -20,12 +20,12 @@ Builder Windows saves Cargo's compiled dependencies and incremental compiler dat
 
 ## Import a schematic
 
-Experimental Survival bridging uses **Fast Place** and **Auto Orientation**
-with **Air Place** off. Stand still, aim at a missing ghost adjoining a real
-block, and right-click once. Builder searches for a reachable support face and
-uses a matching block from your inventory. An isolated ghost needs a support
-first. If no reachable face produces the planned orientation from your current
-position, move to another side of the build. Server acceptance is unverified.
+Experimental bridging uses **Fast Place**, **Auto Orientation** and **Bridge
+assist** in Survival or Creative. Stand still, aim at a missing ghost adjoining
+a real block, and right-click once. Builder searches for a reachable support face
+and can use the block underfoot when the normal downward support pick allows it.
+An isolated ghost needs a support first. If no reachable face produces the
+planned orientation, move to another side. Server acceptance is unverified.
 
 Open **Schematica → Import schematics**. On the native Mods page, press **Import schematics…** and choose up to eight .schematic, .schem, .litematic or .mcstructure files. Conversion runs off the render thread. Successful imports replace the selection, back up the old component and reload enabled mods. Original input files remain in place. The checkout's **Import Schematics.cmd** also remains available.
 

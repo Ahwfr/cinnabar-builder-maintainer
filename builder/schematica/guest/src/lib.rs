@@ -5,7 +5,6 @@ wit_bindgen::generate!({
 });
 
 mod actions;
-mod air_place;
 mod dashboard;
 mod hotkeys;
 mod library;
@@ -50,7 +49,7 @@ use std::{cell::RefCell, collections::BTreeMap, f32::consts::TAU};
 
 thread_local! {
     static RUNTIME: RefCell<(Runtime, Vec<&'static [u8]>, Options, Option<usize>)> =
-        const { RefCell::new((Runtime::Start, Vec::new(), Options { textured: true, assist: false, fast_place: false, correct_aim: false, fullscreen_ui: true, air_place: false, opacity: 65, hotkeys: BTreeMap::new(), library_revision: 0, deleted_entries: Vec::new() }, None)) };
+        const { RefCell::new((Runtime::Start, Vec::new(), Options { textured: true, assist: false, fast_place: false, correct_aim: false, fullscreen_ui: true, bridge_place: true, opacity: 65, hotkeys: BTreeMap::new(), library_revision: 0, deleted_entries: Vec::new() }, None)) };
 }
 
 #[derive(Clone)]
@@ -60,7 +59,7 @@ struct Options {
     fast_place: bool,
     correct_aim: bool,
     fullscreen_ui: bool,
-    air_place: bool,
+    bridge_place: bool,
     opacity: u8,
     hotkeys: BTreeMap<usize, String>,
     library_revision: u64,
@@ -74,7 +73,7 @@ impl Options {
             &serde_json::json!({
                 "textured":self.textured, "assist":self.assist, "fast_place": self.fast_place,
                 "correct_aim": self.correct_aim,
-                "fullscreen_ui": self.fullscreen_ui, "air_place": self.air_place,
+                "fullscreen_ui": self.fullscreen_ui, "bridge_place": self.bridge_place,
                 "opacity": self.opacity, "hotkeys": self.hotkeys,
                 "library_revision": self.library_revision, "deleted_entries": self.deleted_entries,
             })
@@ -115,7 +114,7 @@ impl Guest for Schematica {
                     .as_bool()
                     .unwrap_or(options.correct_aim);
                 options.fullscreen_ui = value["fullscreen_ui"].as_bool().unwrap_or(true);
-                options.air_place = value["air_place"].as_bool().unwrap_or(false);
+                options.bridge_place = value["bridge_place"].as_bool().unwrap_or(true);
                 options.library_revision = value["library_revision"].as_u64().unwrap_or(0);
                 options.deleted_entries = value["deleted_entries"]
                     .as_array()
@@ -315,7 +314,6 @@ struct Viewer {
     locked: bool,
     menu_armed: bool,
     pending_menu_open: u8,
-    pending_air_command: Option<String>,
     options: Options,
     material_page: usize,
     verifier_page: usize,
@@ -361,7 +359,6 @@ impl Viewer {
             locked: false,
             menu_armed: false,
             pending_menu_open: 0,
-            pending_air_command: None,
             options,
             material_page: 0,
             verifier_page: 0,
@@ -392,7 +389,6 @@ impl Viewer {
         if let Some(world) = world {
             let scope = (world.session, world.dimension);
             if self.world != Some(scope) {
-                self.pending_air_command = None;
                 // Cinnabar invalidates drawing handles on dimension changes.
                 self.tiles.clear();
                 self.retired.clear();
@@ -414,17 +410,6 @@ impl Viewer {
         if !keys.focused {
             self.menu_armed = false;
             self.pending_menu_open = 0;
-            self.pending_air_command = None;
-            return;
-        }
-        if let Some(command) = self.pending_air_command.take()
-            && active_world
-            && keys.gameplay
-            && !keys.panel_open
-        {
-            if let Err(error) = gameplay::request_command(&command) {
-                label(&format!("Air Place rejected: {error}"));
-            }
             return;
         }
         if keys.panel_open || keys.keys_pressed.iter().any(|key| key == "Escape") {
@@ -545,13 +530,15 @@ impl Viewer {
         } else {
             None
         };
-        air_place::click(self, &keys, placement_cell);
         // In normal placement mode, an aimed missing ghost can nominate a
         // destination. The native client still needs a reachable real support.
         let placement_cell = placement_cell
             .filter(|pos| self.planned_block(*pos).is_some())
             .or_else(|| {
-                if !self.options.fast_place || !self.options.correct_aim || self.options.air_place {
+                if !self.options.fast_place
+                    || !self.options.correct_aim
+                    || !self.options.bridge_place
+                {
                     return None;
                 }
                 let (_, pos) = self.aimed_block()?;

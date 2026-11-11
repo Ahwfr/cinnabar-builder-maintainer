@@ -9,7 +9,7 @@ use {
     gameplay::mining::{creative_reach, survival_reach},
 };
 
-/// Finds a real reachable face adjoining an aimed ghost in Survival.
+/// Finds a real reachable face adjoining an aimed ghost.
 pub(super) fn observe_bridge_target(
     player: &client_state::PlayerRuntime,
     context: &BlockUseContext,
@@ -21,10 +21,13 @@ pub(super) fn observe_bridge_target(
 ) -> Option<FrozenBlockObservation> {
     use bevy::prelude::Vec3;
     let offer = context.creative.as_ref()?.offer.as_ref()?;
-    if !offer.correct_aim
-        || player.facts.player_game_mode() != Some(protocol::PlayerGameMode::Survival)
-        || player.facts.mount_unique_id().is_some()
-    {
+    let mode = player.facts.player_game_mode()?;
+    let reach = match mode {
+        protocol::PlayerGameMode::Survival => survival_reach(input_mode),
+        protocol::PlayerGameMode::Creative => creative_reach(input_mode),
+        _ => return None,
+    };
+    if !offer.correct_aim || player.facts.mount_unique_id().is_some() {
         return None;
     }
     let stream = context.client_world.stream.as_ref()?;
@@ -38,12 +41,7 @@ pub(super) fn observe_bridge_target(
         selection,
         player.facts.player_game_mode(),
         false,
-        (
-            input_mode,
-            survival_reach(input_mode),
-            authority,
-            position_generation,
-        ),
+        (input_mode, reach, authority, position_generation),
         |world, eye, forward, reach| {
             if !world.is_air(offer.position)? {
                 return Ok(None);
@@ -51,22 +49,27 @@ pub(super) fn observe_bridge_target(
             let eye_f32 = Vec3::new(eye.x as f32, eye.y as f32, eye.z as f32);
             let forward = Vec3::new(forward.x as f32, forward.y as f32, forward.z as f32);
             let mut best = None;
-            let mut score = -1.0;
+            let mut score = f32::NEG_INFINITY;
             for face in 0..6 {
                 let support = placement_cell(offer.position, face ^ 1);
                 if world.is_air(support).unwrap_or(true) {
                     continue;
                 }
-                for point in super::orientation::face_samples(support, face, eye_f32) {
-                    let Some(aim) = (point - eye_f32).try_normalize() else {
-                        continue;
-                    };
+                for aim in super::orientation::support_directions(support, face, eye_f32) {
                     let dot = aim.dot(forward);
                     if dot <= score {
                         continue;
                     }
-                    let ray = sim::Vec3::new(f64::from(aim.x), f64::from(aim.y), f64::from(aim.z));
-                    let Ok(Some(hit)) = world.block_interaction_ray_current(eye, ray, reach) else {
+                    let actor = gameplay::melee::pick_actor(
+                        stream.authority().remote_actors(),
+                        stream.authority().local_mount_unique_id(),
+                        eye_f32.to_array(),
+                        aim.to_array(),
+                        reach,
+                    );
+                    let Some(hit) =
+                        super::orientation::support_hit(world, eye_f32, aim, reach, actor)
+                    else {
                         continue;
                     };
                     if hit.block_pos != support || hit.face != face || hit.overlay.is_some() {
@@ -81,24 +84,6 @@ pub(super) fn observe_bridge_target(
                         point,
                         state.position,
                         reach,
-                    ) {
-                        continue;
-                    }
-                    let actor = gameplay::melee::pick_actor(
-                        stream.authority().remote_actors(),
-                        stream.authority().local_mount_unique_id(),
-                        eye_f32.to_array(),
-                        aim.to_array(),
-                        reach,
-                    );
-                    if !matches!(
-                        gameplay::melee::classify_block_hit(
-                            actor,
-                            eye_f32.to_array(),
-                            Some(&hit),
-                            reach
-                        ),
-                        gameplay::melee::Crosshair::Block
                     ) {
                         continue;
                     }

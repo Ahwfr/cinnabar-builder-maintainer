@@ -296,12 +296,12 @@ foreach($screen in $Screens){
             Add-Button 'fast-place' '#fast-place' 246 134 121 24
             Add-Label 'Auto orientation (server aim)' 24 169 215
             Add-Button 'correct-aim' '#correct-aim' 246 162 121 24
-            Add-Label 'Air placement (setblock cheats)' 24 197 215
-            Add-Button 'air-place' '#air-place' 246 190 121 24
+            Add-Label 'Bridge assist (aim at ghost)' 24 197 215
+            Add-Button 'bridge-place' '#bridge-place' 246 190 121 24
             Add-Label 'Menu layout' 24 225 200
             Add-Button 'ui-layout' '#ui-layout' 246 218 121 24
             Add-Button 'hotkeys' 'Keybinds' 16 252 84 22
-            Add-Label 'Air commands use no items.' 108 258 180 $muted
+            Add-Label 'Bridge needs Auto Orientation.' 108 258 180 $muted
             Add-Button 'close' 'Done' 296 252 84 22 $activeFill
         }
         'verifier' {

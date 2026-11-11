@@ -163,16 +163,9 @@ impl Viewer {
                 menu::prepare(self);
                 return;
             }
-            "air-place" => {
-                self.options.air_place = !self.options.air_place;
+            "bridge-place" => {
+                self.options.bridge_place = !self.options.bridge_place;
                 self.options.save();
-                if self.options.air_place
-                    && !cinnabar::extension::permissions::read()
-                        .iter()
-                        .any(|permission| permission.name == "commands" && permission.granted)
-                {
-                    let _ = panel::open_settings("cinnabar_mods_index");
-                }
                 return;
             }
             "unload" => {
