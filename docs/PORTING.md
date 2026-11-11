@@ -34,7 +34,12 @@ permission and does not consume inventory. Treat these as separate modes.
 
 A Survival bridge assist can extend from a real block by searching the ghost's
 adjacent faces for a reachable support and using the normal inventory and
-placement transaction. The current orientation solver already recasts and checks
+placement transaction. After the server confirms a placed block, prefer that
+block's face for the next connected schematic cell. The player should be able
+to keep looking along the guide and right-click once per block. Clear the last
+block when the world, placement or selection changes. If several continuations
+are possible, resolve the next cell from the direction the player is looking.
+The current orientation solver already recasts and checks
 candidate support faces in `app/src/block_use/orientation.rs`. A follow-up should
 reuse that validation when the crosshair points at a ghost. If no support exists,
 guide the player to add scaffolding first. Test one block per physical press,
