@@ -315,6 +315,7 @@ struct Viewer {
     locked: bool,
     menu_armed: bool,
     pending_menu_open: u8,
+    pending_air_command: Option<String>,
     options: Options,
     material_page: usize,
     verifier_page: usize,
@@ -360,6 +361,7 @@ impl Viewer {
             locked: false,
             menu_armed: false,
             pending_menu_open: 0,
+            pending_air_command: None,
             options,
             material_page: 0,
             verifier_page: 0,
@@ -390,6 +392,7 @@ impl Viewer {
         if let Some(world) = world {
             let scope = (world.session, world.dimension);
             if self.world != Some(scope) {
+                self.pending_air_command = None;
                 // Cinnabar invalidates drawing handles on dimension changes.
                 self.tiles.clear();
                 self.retired.clear();
@@ -411,6 +414,17 @@ impl Viewer {
         if !keys.focused {
             self.menu_armed = false;
             self.pending_menu_open = 0;
+            self.pending_air_command = None;
+            return;
+        }
+        if let Some(command) = self.pending_air_command.take()
+            && active_world
+            && keys.gameplay
+            && !keys.panel_open
+        {
+            if let Err(error) = gameplay::request_command(&command) {
+                label(&format!("Air Place rejected: {error}"));
+            }
             return;
         }
         if keys.panel_open || keys.keys_pressed.iter().any(|key| key == "Escape") {

@@ -23,13 +23,7 @@ pub fn click(viewer: &mut Viewer, keys: &input::Controls, native_cell: Option<[i
         return;
     };
     let block = placement.transform_state(block);
-    let command = command(&block, pos);
-    let message = match gameplay::request_command(&command) {
-        Ok(()) => format!("Air placement requested at {pos:?} | Server confirmation pending"),
-        Err(error) => format!("Air placement needs setblock permission | {error}"),
-    };
-    viewer.show_label(&message);
-    let _ = crate::hud::local_message(&message);
+    viewer.pending_air_command = Some(command(&block, pos));
 }
 
 fn command(block: &BlockState, [x, y, z]: [i32; 3]) -> String {
@@ -46,7 +40,11 @@ fn command(block: &BlockState, [x, y, z]: [i32; 3]) -> String {
         })
         .collect::<Vec<_>>()
         .join(",");
-    format!("setblock {x} {y} {z} {} [{properties}] keep", block.name)
+    if properties.is_empty() {
+        format!("/setblock {x} {y} {z} {} keep", block.name)
+    } else {
+        format!("/setblock {x} {y} {z} {} [{properties}] keep", block.name)
+    }
 }
 
 #[cfg(test)]
@@ -60,7 +58,7 @@ mod tests {
             .with("weirdo_direction", StateValue::Int(2));
         assert_eq!(
             command(&block, [1, 2, 3]),
-            "setblock 1 2 3 minecraft:oak_stairs [\"upside_down_bit\"=false,\"weirdo_direction\"=2] keep"
+            "/setblock 1 2 3 minecraft:oak_stairs [\"upside_down_bit\"=false,\"weirdo_direction\"=2] keep"
         );
     }
 }
