@@ -6,6 +6,9 @@
 /.superpowers/
 /.worktrees/
 /reports/
+/profile/
+/outputs/
+/builder-artifact/
 *.log
 
 

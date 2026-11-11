@@ -4,11 +4,9 @@ Builder keeps the Cinnabar launcher and uses an isolated profile. Schematica's t
 
 ## Build and launch on Windows
 
-Check out `builder-features` from the fork. Follow the main [Cinnabar README](../README.md) for the native build requirements. Install Rust via rustup, Go, and GNU Make. Make needs a shell and Unix utilities such as `awk` on PATH on Windows, as provided by Git for Windows or MSYS2. The checkout pins the Rust toolchain and the build uses the upstream `make play-build` target.
+Use a clean checkout of the Builder source. Follow the main [Cinnabar README](../README.md) for the native build requirements. Install Rust via rustup, Go, and GNU Make. Make needs a shell and Unix utilities such as `awk` on PATH on Windows, as provided by Git for Windows or MSYS2. The checkout pins the Rust toolchain and the build uses the upstream `make play-build` target.
 
 ```powershell
-git clone --branch builder-features https://github.com/Ahwfr/cinnabar.git cinnabar-builder
-Set-Location cinnabar-builder
 .\builder\Build-Builder.ps1
 .\builder\Start-Builder.ps1 -Check
 ```
@@ -17,7 +15,7 @@ You can also open **Build Builder.cmd** in the `builder` folder. When the build 
 
 ### Use a GitHub build
 
-On the fork's [Actions page](https://github.com/Ahwfr/cinnabar/actions), download the successful **Builder Windows** artifact. Extract the whole ZIP and open **Cinnabar Builder.exe** at its root. The first launch prepares Minecraft assets. Keep **profile/** when extracting updates into the same folder. The launcher upgrades an existing schematic library and backs up its previous component. See [the portable guide](PORTABLE-README.md).
+For a verified portable build, extract the whole ZIP and open **Cinnabar Builder.exe** at its root. The first launch prepares Minecraft assets. Keep **profile/** when extracting updates into the same folder. The launcher upgrades an existing schematic library and backs up its previous component. See [the portable guide](PORTABLE-README.md). The new maintainer repository has no hosted build configured yet.
 Builder Windows saves Cargo's compiled dependencies and incremental compiler data between runs. A feature or fix can reuse work from the previous successful build. Cargo checks which inputs changed and recompiles what the new executable needs. The first run with a new cache or Rust toolchain has more work to do. The workflow builds the runtime and schematic importer and publishes a complete ZIP.
 
 ## Import a schematic
