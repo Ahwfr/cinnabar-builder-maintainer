@@ -60,6 +60,9 @@ pub(super) fn correction(
     if !world.is_air(expected.position).ok()? {
         return None;
     }
+    let planned =
+        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&expected.states)
+            .ok()?;
     let matches = |candidate: &FrozenBlockObservation, view| {
         let surroundings =
             use_surroundings(context, &world, candidate, state.position, state.sneaking);
@@ -84,13 +87,12 @@ pub(super) fn correction(
         )
         .is_some_and(|placement| {
             placement.position == expected.position
-                && placement.additional.is_empty()
                 && context.collisions.block_identifier(mode, placement.block)
                     == Some(expected.name.as_str())
                 && context
                     .collisions
                     .block_canonical_state(mode, placement.block)
-                    == Some(expected.states.as_str())
+                    .is_some_and(|actual| matches_planned_state(&planned, actual))
         })
     };
     if matches(observed, *context.view) {
@@ -171,6 +173,20 @@ pub(super) fn correction(
         }
     }
     best
+}
+
+/// Imported schematics can omit properties which Bedrock derives from neighbors.
+fn matches_planned_state(
+    planned: &serde_json::Map<String, serde_json::Value>,
+    actual: &str,
+) -> bool {
+    let Ok(actual) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(actual)
+    else {
+        return false;
+    };
+    planned
+        .iter()
+        .all(|(name, value)| name == "minecraft:corner" || actual.get(name) == Some(value))
 }
 
 /// Recasts the published server-facing direction from the current eye before using it.
@@ -278,6 +294,29 @@ fn face_samples(clicked: [i32; 3], face: u8, eye: Vec3) -> impl Iterator<Item = 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stair_orientation_matches_even_when_bedrock_adds_a_corner_property() {
+        let planned = serde_json::json!({
+            "weirdo_direction": {"type":"int","value":2},
+            "upside_down_bit": {"type":"byte","value":0},
+        });
+        let planned = planned.as_object().unwrap();
+        let mut predicted = planned.clone();
+        predicted.insert(
+            "minecraft:corner".into(),
+            serde_json::json!({"type":"string","value":"none"}),
+        );
+        assert!(matches_planned_state(
+            planned,
+            &serde_json::to_string(&predicted).unwrap()
+        ));
+        predicted["weirdo_direction"]["value"] = serde_json::json!(1);
+        assert!(!matches_planned_state(
+            planned,
+            &serde_json::to_string(&predicted).unwrap()
+        ));
+    }
 
     #[test]
     fn sample_points_cover_both_halves_of_a_visible_side() {
