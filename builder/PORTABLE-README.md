@@ -27,10 +27,12 @@ or obtain a Creative catalog block. Right-click a real support beside the ghost.
 **Auto orientation** optionally adjusts the reported aim without moving your camera.
 If a valid aim cannot produce the exact state, ordinary placement of the matching block can still proceed.
 
-**Air placement** is a separate operator command mode, off by default.
-It sends one /setblock with the planned states and keep handling when you right-click a missing floating ghost
-with no real block under the crosshair. It needs the setblock mod grant and server cheats/command permission.
-Commands do not consume inventory items. Inventory-based Survival placement requires a real support.
+With **Bridge assist** and **Auto Orientation** on, aim at the next missing ghost
+beside a real block and right-click while standing still. The client checks
+reachable block faces and Bedrock's downward support pick. Survival consumes
+inventory. An isolated ghost needs scaffolding. Exact orientation depends on a
+reachable support and a supported placement rule. Bulk command paste is not yet
+available.
 
 Choose **Menu layout** in Schematica Settings for full screen or compact mode.
 Builder-Source.zip contains the editable fork source for this exact build.

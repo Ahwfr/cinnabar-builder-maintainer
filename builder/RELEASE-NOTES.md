@@ -1,4 +1,13 @@
-# Cinnabar Builder 0.3.0
+# Cinnabar Builder 0.3.1
+
+- Added the downward support pick to Bridge Assist and Auto Orientation in Survival and Creative.
+- Replaced single-block command placement with inventory-backed Bridge Assist.
+- Included opposite-facing aim candidates when the support and orientation can be validated.
+
+Bridge Assist still requires a real support block. In-world acceptance is pending.
+Bulk operator paste remains separate future work.
+
+## 0.3.0
 
 - Added a portable Cinnabar Builder.exe entry point with a persistent profile and first-run asset preparation.
 - Grouped support files under App so the play folder has one obvious executable.

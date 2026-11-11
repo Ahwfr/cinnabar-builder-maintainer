@@ -29,8 +29,9 @@ Builder builds have no verified end-to-end result in this checkout.
 ## Survival placement follow-up
 
 Normal Fast Place selects a real inventory block and sends a placement against a
-clicked block face. Air Place calls `/setblock`, which needs cheats and command
-permission and does not consume inventory. Treat these as separate modes.
+clicked block face. Bridge Assist also tries the ordinary downward support pick
+in both Survival and Creative. Single-block placement uses the inventory path.
+Bulk Creative paste with operator permission is separate future work.
 
 A Survival bridge assist can extend from a real block by searching the ghost's
 adjacent faces for a reachable support and using the normal inventory and

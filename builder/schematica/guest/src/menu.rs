@@ -122,8 +122,8 @@ fn update(viewer: &Viewer) -> Result<(), String> {
                 }),
             );
             out.insert(
-                "#air-place".into(),
-                json!(if viewer.options.air_place {
+                "#bridge-place".into(),
+                json!(if viewer.options.bridge_place {
                     "On"
                 } else {
                     "Off"

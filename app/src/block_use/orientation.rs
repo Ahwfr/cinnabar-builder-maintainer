@@ -101,28 +101,16 @@ pub(super) fn correction(
     }
     let eye = Vec3::from_array(observed.ray.origin);
     let forward = Vec3::from_array(observed.ray.direction).try_normalize()?;
-    let widen = |v: Vec3| sim::Vec3::new(f64::from(v.x), f64::from(v.y), f64::from(v.z));
     let mut best = None;
-    let mut best_dot = -1.0_f32;
+    let mut best_dot = f32::NEG_INFINITY;
     for face in 0..6 {
         let clicked = placement_cell(expected.position, face ^ 1);
         if world.is_air(clicked).unwrap_or(true) {
             continue;
         }
-        for point in face_samples(clicked, face, eye) {
-            let Some(direction) = (point - eye).try_normalize() else {
-                continue;
-            };
+        for direction in support_directions(clicked, face, eye) {
             let dot = direction.dot(forward);
             if dot <= best_dot {
-                continue;
-            }
-            let Ok(Some(hit)) =
-                world.block_interaction_ray_current(widen(eye), widen(direction), observed.reach)
-            else {
-                continue;
-            };
-            if hit.block_pos != clicked || hit.face != face || hit.overlay.is_some() {
                 continue;
             }
             let actor = gameplay::melee::pick_actor(
@@ -132,15 +120,10 @@ pub(super) fn correction(
                 direction.to_array(),
                 observed.reach,
             );
-            if !matches!(
-                gameplay::melee::classify_block_hit(
-                    actor,
-                    observed.ray.origin,
-                    Some(&hit),
-                    observed.reach
-                ),
-                gameplay::melee::Crosshair::Block
-            ) {
+            let Some(hit) = support_hit(&world, eye, direction, observed.reach, actor) else {
+                continue;
+            };
+            if hit.block_pos != clicked || hit.face != face || hit.overlay.is_some() {
                 continue;
             }
             let mut candidate = observed.clone();
@@ -164,7 +147,7 @@ pub(super) fn correction(
             ) {
                 continue;
             }
-            let rotation = client_presentation::camera::look_at_target(eye, point);
+            let rotation = client_presentation::camera::look_at_target(eye, eye + direction);
             let mut view = *context.view;
             view.set_rotation(rotation);
             if matches(&candidate, view) {
@@ -216,13 +199,6 @@ pub(super) fn recapture(
     )
     .with_cell_overlays(&overlays);
     let direction = (rotation * Vec3::NEG_Z).to_array();
-    let widen = |v: [f32; 3]| sim::Vec3::new(f64::from(v[0]), f64::from(v[1]), f64::from(v[2]));
-    let hit = world
-        .block_interaction_ray_current(widen(observed.ray.origin), widen(direction), observed.reach)
-        .ok()??;
-    if (hit.block_pos, hit.face, hit.runtime_id) != support || hit.overlay.is_some() {
-        return None;
-    }
     let actor = gameplay::melee::pick_actor(
         authority.remote_actors(),
         authority.local_mount_unique_id(),
@@ -230,10 +206,14 @@ pub(super) fn recapture(
         direction,
         observed.reach,
     );
-    if !matches!(
-        gameplay::melee::classify_block_hit(actor, observed.ray.origin, Some(&hit), observed.reach,),
-        gameplay::melee::Crosshair::Block
-    ) {
+    let hit = support_hit(
+        &world,
+        Vec3::from_array(observed.ray.origin),
+        Vec3::from_array(direction),
+        observed.reach,
+        actor,
+    )?;
+    if (hit.block_pos, hit.face, hit.runtime_id) != support || hit.overlay.is_some() {
         return None;
     }
     let hit_world = [
@@ -265,8 +245,45 @@ pub(super) fn recapture(
     Some(observed)
 }
 
+/// Uses the native downward support pick only after both direct picks miss.
+pub(super) fn support_hit(
+    world: &PaletteWorld<'_>,
+    eye: Vec3,
+    direction: Vec3,
+    reach: f64,
+    actor: Option<gameplay::melee::ActorHit>,
+) -> Option<sim::BlockHit> {
+    let widen = |v: Vec3| sim::Vec3::new(f64::from(v.x), f64::from(v.y), f64::from(v.z));
+    let (origin, ray) = (widen(eye), widen(direction));
+    let direct = world
+        .block_interaction_ray_current(origin, ray, reach)
+        .ok()?;
+    use gameplay::melee::Crosshair;
+    match gameplay::melee::classify_block_hit(actor, eye.to_array(), direct.as_ref(), reach) {
+        Crosshair::Block => direct,
+        Crosshair::Miss if direct.is_none() && actor.is_none() => {
+            world.block_use_miss_support_current(origin, ray).ok()?
+        }
+        _ => None,
+    }
+}
+
+/// Samples visible faces and the ordinary Bedrock forward-bridge pick.
+pub(super) fn support_directions(
+    support: [i32; 3],
+    face: u8,
+    eye: Vec3,
+) -> impl Iterator<Item = Vec3> {
+    let offset = placement_cell([0; 3], face);
+    let indirect =
+        (face >= 2).then(|| Vec3::new(offset[0] as f32, -2.0, offset[2] as f32).normalize());
+    face_samples(support, face, eye)
+        .filter_map(move |point| (point - eye).try_normalize())
+        .chain(indirect)
+}
+
 /// Samples both halves and the center of the face, omitting faces the eye is behind.
-pub(super) fn face_samples(clicked: [i32; 3], face: u8, eye: Vec3) -> impl Iterator<Item = Vec3> {
+fn face_samples(clicked: [i32; 3], face: u8, eye: Vec3) -> impl Iterator<Item = Vec3> {
     const SAMPLES: [f32; 5] = [0.5, 0.25, 0.75, 0.0625, 0.9375];
     let axis = [1, 2, 0][usize::from(face / 2)];
     let u = (axis + 1) % 3;
@@ -295,6 +312,16 @@ pub(super) fn face_samples(clicked: [i32; 3], face: u8, eye: Vec3) -> impl Itera
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bridge_can_sample_a_side_hidden_by_the_support_underfoot() {
+        let support = [4, 7, 9];
+        let eye = Vec3::new(4.5, 9.0, 9.5);
+        assert_eq!(face_samples(support, 5, eye).count(), 0);
+        let candidates: Vec<_> = support_directions(support, 5, eye).collect();
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0].x > 0.0 && candidates[0].y < -0.7);
+    }
 
     #[test]
     fn stair_orientation_matches_even_when_bedrock_adds_a_corner_property() {
