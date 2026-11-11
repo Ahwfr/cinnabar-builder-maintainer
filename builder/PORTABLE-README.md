@@ -27,12 +27,12 @@ or obtain a Creative catalog block. Right-click a real support beside the ghost.
 **Auto orientation** optionally adjusts the reported aim without moving your camera.
 If a valid aim cannot produce the exact state, ordinary placement of the matching block can still proceed.
 
-With **Bridge assist** and **Auto Orientation** on, aim at the next missing ghost
-beside a real block and right-click while standing still. The client checks
-reachable block faces and Bedrock's downward support pick. Survival consumes
-inventory. An isolated ghost needs scaffolding. Exact orientation depends on a
-reachable support and a supported placement rule. Bulk command paste is not yet
-available.
+With **Bridge Assist** and **Auto Orientation** on, aim near the next missing ghost
+beside a real block and right-click while standing still. Builder searches up to
+1.6 blocks off the crosshair and can try a hidden support face within normal
+reach. Servers can reject hidden clicks. Survival consumes inventory, and an
+isolated ghost needs scaffolding. Exact orientation depends on the block's
+placement rule. Bulk command paste is pending.
 
 Choose **Menu layout** in Schematica Settings for full screen or compact mode.
 Builder-Source.zip contains the editable fork source for this exact build.

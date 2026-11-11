@@ -1,4 +1,10 @@
-# Cinnabar Builder 0.3.2
+# Cinnabar Builder 0.3.3
+
+- Bridge Assist looks for missing ghost blocks up to 1.6 blocks off the crosshair, within normal placement reach.
+- If a visible or downward support pick fails, Bridge Assist can submit a click on a nearby hidden face of a real support block. The server decides whether to accept it.
+- Auto Orientation can predict all four anvil facings and correct yaw using a nearby support face without moving the camera.
+
+## 0.3.2
 
 - Auto Orientation can report an opposite facing while retaining the support click. It checks the planned state before choosing this fallback and leaves the camera in place.
 - Bridge Assist continues to use normal inventory placement with a real support. Live acceptance of the separate facing still needs verification.

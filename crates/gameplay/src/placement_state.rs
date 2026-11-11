@@ -134,6 +134,18 @@ pub fn resolve_placement_state(
     Some(states)
 }
 
+/// Anvils face a quarter turn left of the player's reported horizontal direction.
+pub(crate) fn anvil_states(canonical: &str, yaw: f32) -> Option<Map<String, Value>> {
+    let mut states = serde_json::from_str(canonical).ok()?;
+    let property = P::MinecraftCardinalDirection.name();
+    if !only_keys(&states, &[property]) {
+        return None;
+    }
+    let direction = ["east", "south", "west", "north"][yaw_quadrant(yaw)?];
+    set_value(&mut states, property, Value::from(direction))?;
+    Some(states)
+}
+
 /// Merge a matching slab; a clicked slab exposes only its empty vertical half.
 /// `clicked_face` is absent when the existing slab is in the neighboring destination.
 pub fn merge_slab_state(
@@ -294,6 +306,23 @@ pub(crate) fn yaw_quadrant(yaw: f32) -> Option<usize> {
 mod tests {
     use super::*;
     use crate::test_support::block_fact;
+
+    #[test]
+    fn anvil_facing_uses_all_four_reported_yaws() {
+        let canonical = r#"{"minecraft:cardinal_direction":{"type":"string","value":"north"}}"#;
+        for (yaw, direction) in [
+            (0.0, "east"),
+            (90.0, "south"),
+            (180.0, "west"),
+            (270.0, "north"),
+        ] {
+            let states = anvil_states(canonical, yaw).unwrap();
+            assert_eq!(
+                value(&states, P::MinecraftCardinalDirection.name()).and_then(Value::as_str),
+                Some(direction)
+            );
+        }
+    }
 
     /// Supplies numeric facts and the collected counterpart for each tested identity.
     fn resolve_placement_state(

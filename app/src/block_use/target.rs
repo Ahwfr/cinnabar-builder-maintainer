@@ -9,7 +9,7 @@ use {
     gameplay::mining::{creative_reach, survival_reach},
 };
 
-/// Finds a real reachable face adjoining an aimed ghost.
+/// Finds a real support face within reach, including a hidden face adjoining the ghost.
 pub(super) fn observe_bridge_target(
     player: &client_state::PlayerRuntime,
     context: &BlockUseContext,
@@ -87,6 +87,36 @@ pub(super) fn observe_bridge_target(
                     ) {
                         continue;
                     }
+                    score = dot;
+                    best = Some(hit);
+                    direction = Some(aim.to_array());
+                }
+            }
+            if best.is_some() {
+                return Ok(best);
+            }
+            for face in 0..6 {
+                let Some(hit) = super::orientation::hidden_support_hit(world, offer.position, face)
+                else {
+                    continue;
+                };
+                let point = Vec3::new(
+                    hit.hit_world.x as f32,
+                    hit.hit_world.y as f32,
+                    hit.hit_world.z as f32,
+                );
+                if !gameplay::interaction_authority::pick_point_in_range(
+                    point.to_array(),
+                    state.position,
+                    reach,
+                ) {
+                    continue;
+                }
+                let Some(aim) = (point - eye_f32).try_normalize() else {
+                    continue;
+                };
+                let dot = aim.dot(forward);
+                if dot > score {
                     score = dot;
                     best = Some(hit);
                     direction = Some(aim.to_array());

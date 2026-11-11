@@ -4,7 +4,7 @@ default-members = ["core", "builder"]
 resolver = "3"
 
 [workspace.package]
-version = "0.3.2"
+version = "0.3.3"
 
 [profile.release]
 opt-level = 3

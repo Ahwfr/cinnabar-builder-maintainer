@@ -170,6 +170,12 @@ pub fn predicted_placement(
                     )
                 })
                 .or_else(|| door_pair.as_ref().map(|pair| pair.0.clone()))
+                .or_else(|| match collisions.block_identifier(mode, held)? {
+                    "minecraft:anvil" | "minecraft:chipped_anvil" | "minecraft:damaged_anvil" => {
+                        crate::placement_state::anvil_states(canonical, context.input.yaw)
+                    }
+                    _ => None,
+                })
                 .or_else(|| resolve_placement_state(fact, canonical, context.input))?;
             (identity, states, false)
         };
