@@ -1,5 +1,12 @@
 # Builder releases
 
+Before editing, inspect the working tree and preserve existing work. Run the
+relevant focused tests and build checks, then update documentation and release
+notes for changed behavior. Distinguish verified results from proposed support.
+Review the final diff and package for private data and required notices.
+Use only an authorized repository for pushes. Prepare a patch if access is
+unavailable. Public releases and visibility changes require owner approval.
+
 Each shipped update increments workspace.package.version in schematica/Cargo.toml.
 Keep RELEASE-NOTES.md and UPDATE.md accurate for that version. The guest and importer
 inherit the shared version. Preserve the stable schematica-builder.wasm filename.

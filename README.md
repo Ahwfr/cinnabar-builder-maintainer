@@ -1,4 +1,15 @@
-# Cinnabar
+# Cinnabar Builder
+
+Cinnabar Builder is an independent Cinnabar derivative with schematic guides and
+placement assistance for Minecraft Bedrock. Start with the [Builder guide](builder/README.md)
+and [maintainer setup](CONTRIBUTING.md). The [platform guide](docs/PORTING.md) describes
+what has been verified and the Linux work. The [distribution review](docs/DISTRIBUTION.md)
+records licensing and release requirements.
+
+The upstream Cinnabar description below provides context. Its downloads are upstream
+builds. The Builder work is maintained separately.
+
+## Upstream Cinnabar
 
 > An independent, unofficial client compatible with Minecraft: Bedrock Edition. Not approved by
 > or associated with Mojang or Microsoft. Minecraft is a trademark of Microsoft Corporation.

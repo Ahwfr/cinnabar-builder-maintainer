@@ -1,12 +1,15 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$PackageDirectory,
-    [string]$Repository = 'Ahwfr/cinnabar',
+    [string]$Repository = $env:GITHUB_REPOSITORY,
     [string]$GitHubCli = 'gh',
     [switch]$Publish
 )
 
 $ErrorActionPreference = 'Stop'
+if ($Publish -and [string]::IsNullOrWhiteSpace($Repository)) {
+    throw 'Specify -Repository owner/name when publishing outside GitHub Actions.'
+}
 $directory = (Resolve-Path -LiteralPath $PackageDirectory).Path
 $app = Join-Path $directory 'App'
 New-Item -ItemType Directory -Path $app -Force | Out-Null
