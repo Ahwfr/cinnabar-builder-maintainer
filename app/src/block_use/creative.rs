@@ -42,9 +42,8 @@ struct Pending {
 #[derive(Clone, Copy)]
 struct TemporaryAim {
     player_view: Quat,
-    rotation: Quat,
+    placement: super::orientation::PlacementAim,
     tick: u64,
-    support: super::orientation::Support,
 }
 
 impl TemporaryAim {
@@ -53,7 +52,7 @@ impl TemporaryAim {
     }
 
     fn written(self, movement: &MovementTicker) -> bool {
-        let [pitch, yaw] = super::orientation::wire_facing(self.rotation);
+        let [pitch, yaw] = super::orientation::wire_facing(self.placement.rotation);
         movement
             .latest_written_facing()
             .is_some_and(|(tick, [sent_pitch, sent_yaw])| {
@@ -494,7 +493,7 @@ pub(super) fn resume(
     }
     if pending.offer.correct_aim
         && pending.aim.is_none()
-        && let Some((rotation, support)) = super::orientation::correction(
+        && let Some(placement) = super::orientation::correction(
             player,
             context,
             &observed,
@@ -512,26 +511,27 @@ pub(super) fn resume(
             }
             let eye = Vec3::from_array(observed.ray.origin);
             let direction = Vec3::from_array(observed.ray.direction);
-            Some((
-                client_presentation::camera::look_at_target(eye, eye + direction),
-                support(&observed),
-            ))
+            Some(super::orientation::PlacementAim {
+                rotation: client_presentation::camera::look_at_target(eye, eye + direction),
+                support_ray: direction,
+                support: support(&observed),
+            })
         })
         && movement.begin_placement_facing(
-            super::orientation::wire_facing(rotation),
-            (rotation * Vec3::NEG_Z).to_array(),
+            super::orientation::wire_facing(placement.rotation),
+            (placement.rotation * Vec3::NEG_Z).to_array(),
         )
     {
         let aim = TemporaryAim {
             player_view: context.view.rotation(),
-            rotation,
+            placement,
             tick: movement.next_tick(),
-            support,
         };
         pending.aim = Some(aim);
-        bevy::log::debug!(ghost = ?pending.offer.position, ?support, tick = aim.tick,
-            facing = ?super::orientation::wire_facing(rotation),
-            "Fast Place: sending a valid placement aim");
+        bevy::log::debug!(ghost = ?pending.offer.position, support = ?placement.support,
+            tick = aim.tick, support_ray = ?placement.support_ray,
+            facing = ?super::orientation::wire_facing(placement.rotation),
+            "Fast Place: sending placement facing");
         if let Some(policy) = context.creative.as_deref_mut() {
             policy.pending = Some(pending);
         }
@@ -543,18 +543,13 @@ pub(super) fn resume(
         return true;
     }
     let observed = if let Some(aim) = pending.aim {
-        let Some(adjusted) = super::orientation::recapture(
-            player,
-            context,
-            observed,
-            &state,
-            aim.rotation,
-            aim.support,
-        ) else {
+        let Some(adjusted) =
+            super::orientation::recapture(player, context, observed, &state, aim.placement)
+        else {
             movement.end_placement_facing();
             return true;
         };
-        view.set_rotation(aim.rotation);
+        view.set_rotation(aim.placement.rotation);
         adjusted
     } else {
         observed

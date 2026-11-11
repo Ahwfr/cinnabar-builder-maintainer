@@ -6,9 +6,9 @@ The fork keeps the upstream runtime and adds generic native capabilities used by
 | --- | --- | --- |
 | Creative supplies | Confirmed background inventory window, catalog take to cursor, hotbar transfer, close, select and native placement | User confirmed Creative pickup and hotbar selection on cf3cd54 |
 | Carried inventory | Main-inventory moves now open the server inventory and wait for confirmation before using the regular hotbar swap | Needs a new live Creative and Survival check |
-| Orientation | Optional server-facing aim, bounded to four input ticks, with real support ray and predicted state checks. Camera pose stays local | Needs representative stairs/slabs/logs against the server |
+| Orientation | Optional server-facing aim, bounded to four input ticks. If the support ray cannot also give the planned yaw, try a separate reported yaw and recheck the original support click. Camera pose stays local | Needs live server acceptance, especially opposite-facing stairs and stricter interaction validation |
 | State mismatch | Matching block identifiers may place in their native orientation even if the planned state differs | Regression fixture updated. Native server acceptance still applies |
-| Bridge assist | Native support-face search including the downward bridge pick, backed by inventory in Survival and Creative | Incomplete until live server acceptance. Isolated ghosts need support. An exact orientation needs a reachable aim that produces it. Bulk operator paste is separate and pending. |
+| Bridge assist | Native support-face search including the downward bridge pick, backed by inventory in Survival and Creative | Incomplete until live server acceptance. Isolated ghosts and faces occluded from both native picks remain unavailable. Bulk operator paste is pending. |
 | Import | In-game Mods page runs the matching bundled converter on its worker and reloads enabled components | Needs native picker check from the packaged runtime |
 | Guest upgrades | Portable launcher copies the old library payload into the new template, backs up the old component, and stamps the name and metadata version | Nested payload preservation regression and actual library smoke check |
 | UI | Minecraft-style gray/green panels, button feedback, full viewport or compact mode | Requires rendered checks at small and large window sizes |
