@@ -1,4 +1,10 @@
-# Cinnabar Builder 0.3.3
+# Cinnabar Builder 0.3.4
+
+- Bridge Assist searches up to five blocks off the crosshair and checks actual support reach before sending.
+- Auto Orientation samples the upper and lower parts of hidden support faces for slabs and stairs and tolerates small camera movements during a pending correction.
+- Added Remember local world placement in Schematica Settings. It restores the active library entry and its coordinates, rotation and mirror per local world and dimension.
+
+## 0.3.3
 
 - Bridge Assist looks for missing ghost blocks up to 1.6 blocks off the crosshair, within normal placement reach.
 - If a visible or downward support pick fails, Bridge Assist can submit a click on a nearby hidden face of a real support block. The server decides whether to accept it.

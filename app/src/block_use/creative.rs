@@ -48,7 +48,7 @@ struct TemporaryAim {
 
 impl TemporaryAim {
     fn still_current(self, view: &LocalViewPose) -> bool {
-        view.rotation().dot(self.player_view).abs() >= 0.999_999
+        view.rotation().dot(self.player_view).abs() >= 0.999
     }
 
     fn written(self, movement: &MovementTicker) -> bool {
@@ -511,11 +511,10 @@ pub(super) fn resume(
             }
             let eye = Vec3::from_array(observed.ray.origin);
             let direction = Vec3::from_array(observed.ray.direction);
-            Some(super::orientation::PlacementAim {
-                rotation: client_presentation::camera::look_at_target(eye, eye + direction),
-                support_ray: None,
-                support: support(&observed),
-            })
+            Some(super::orientation::PlacementAim::observed(
+                client_presentation::camera::look_at_target(eye, eye + direction),
+                support(&observed),
+            ))
         })
         && movement.begin_placement_facing(
             super::orientation::wire_facing(placement.rotation),

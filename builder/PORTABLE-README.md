@@ -29,10 +29,11 @@ If a valid aim cannot produce the exact state, ordinary placement of the matchin
 
 With **Bridge Assist** and **Auto Orientation** on, aim near the next missing ghost
 beside a real block and right-click while standing still. Builder searches up to
-1.6 blocks off the crosshair and can try a hidden support face within normal
+five blocks off the crosshair and can try a hidden support face within normal
 reach. Servers can reject hidden clicks. Survival consumes inventory, and an
 isolated ghost needs scaffolding. Exact orientation depends on the block's
 placement rule. Bulk command paste is pending.
 
 Choose **Menu layout** in Schematica Settings for full screen or compact mode.
+Turn on **Remember local world placement** to reopen the active schematic at its saved position, rotation and mirror when returning to a local world and dimension. Unloading clears that saved placement. Reimporting a different library starts fresh.
 Builder-Source.zip contains the editable fork source for this exact build.

@@ -6,6 +6,7 @@ impl Options {
     pub(super) fn select_library(&mut self, revision: u64) {
         if self.library_revision != revision {
             self.deleted_entries.clear();
+            self.saved_placements.clear();
             self.library_revision = revision;
         }
     }

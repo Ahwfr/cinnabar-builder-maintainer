@@ -114,6 +114,14 @@ fn update(viewer: &Viewer) -> Result<(), String> {
         Screen::Load => crate::dashboard::bindings(viewer, &mut out),
         Screen::Settings => {
             out.insert(
+                "#remember-placement".into(),
+                json!(if viewer.options.remember_placement {
+                    "On"
+                } else {
+                    "Off"
+                }),
+            );
+            out.insert(
                 "#ui-layout".into(),
                 json!(if viewer.options.fullscreen_ui {
                     "Full screen"

@@ -396,7 +396,14 @@ impl GameplayContext<'_> {
             })
         });
         let block_hit = input_owned.then(|| self.block_hit()).flatten();
+        let local_world_key = self.session.as_deref().and_then(|session| {
+            use sha2::{Digest, Sha256};
+            let local = session.destination_identity()?.strip_prefix("local:")?;
+            let digest = Sha256::digest(local.as_bytes());
+            Some(u64::from_le_bytes(digest[..8].try_into().unwrap()))
+        });
         mod_host::GameplayFacts {
+            local_world_key,
             movement_input: self
                 .input
                 .as_ref()

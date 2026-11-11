@@ -624,6 +624,8 @@ interface gameplay {
     }
     /// Requires players or terrain; player rows require players. None means gameplay does not own input.
     read-frame: func() -> result<option<snapshot>, string>;
+    /// Opaque stable identity of the selected local world. Requires terrain authority.
+    read-local-world-key: func() -> result<option<u64>, string>;
     /// Input-owned local physics state; velocity is blocks per simulation tick.
     record movement-snapshot {
         session: u64,

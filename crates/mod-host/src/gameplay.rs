@@ -562,6 +562,20 @@ impl cinnabar::extension::gameplay::Host for State {
         Ok(read_frame(self)?.map(|value| value.map(Into::into)))
     }
 
+    fn read_local_world_key(&mut self) -> Result<Result<Option<u64>, String>> {
+        self.gameplay_reads += 1;
+        if self.gameplay_reads > MAX_IMPORT_WRITES {
+            bail!("gameplay read budget exhausted");
+        }
+        if !self.grants.terrain {
+            return Ok(Err("terrain capability denied".into()));
+        }
+        Ok(Ok(self
+            .gameplay_facts
+            .local_world_key
+            .filter(|_| self.snapshot.is_some())))
+    }
+
     fn read_mobs(&mut self) -> Result<Result<Vec<GameplayMob>, String>> {
         self.gameplay_reads += 1;
         if self.gameplay_reads > MAX_IMPORT_WRITES {

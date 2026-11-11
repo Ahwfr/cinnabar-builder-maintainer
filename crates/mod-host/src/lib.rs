@@ -111,6 +111,8 @@ pub struct GameplayFacts {
     pub block_target: Option<GameplayVector3>,
     /// Cell adjoining the current crosshair block on its hit face.
     pub placement_cell: Option<[i32; 3]>,
+    /// Opaque identity of a launcher-selected local world, stable across reconnects.
+    pub local_world_key: Option<u64>,
 }
 
 /// A component's offered destination and expected block state for a Creative use press.
