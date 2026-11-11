@@ -144,15 +144,29 @@ fn bridge_finds_a_ghost_one_block_off_the_crosshair() {
     let near = [1, 64, 3];
     let far = [5, 64, 1];
     assert_eq!(
-        super::nearby_ghost(eye, forward, |pos| pos == near || pos == far),
+        super::nearby_ghost(eye, forward, None, |pos| pos == near || pos == far),
         Some(near)
     );
     assert_eq!(
-        super::nearby_ghost(eye, forward, |pos| pos == far),
+        super::nearby_ghost(eye, forward, None, |pos| pos == far),
         Some(far)
     );
     assert_eq!(
-        super::nearby_ghost(eye, forward, |pos| pos == [6, 64, 1] || pos == [0, 64, -1]),
+        super::nearby_ghost(eye, forward, None, |pos| pos == [6, 64, 1]
+            || pos == [0, 64, -1]),
         None
     );
+}
+
+#[test]
+fn bridge_uses_the_far_side_of_the_aimed_support_in_both_depth_directions() {
+    for (eye, forward, ghost) in [
+        ([0.5, 64.5, 0.5], [0.0, 0.0, 1.0], [0, 64, 4]),
+        ([0.5, 64.5, 6.5], [0.0, 0.0, -1.0], [0, 64, 2]),
+    ] {
+        let selected = super::nearby_ghost(eye, forward, Some([0.5, 64.5, 3.5]), |pos| {
+            pos == [0, 64, 2] || pos == [0, 64, 4]
+        });
+        assert_eq!(selected, Some(ghost));
+    }
 }

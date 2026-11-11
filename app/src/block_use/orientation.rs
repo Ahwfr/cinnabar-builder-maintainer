@@ -14,16 +14,18 @@ pub(super) type Support = ([i32; 3], u8, u32);
 pub(super) struct PlacementAim {
     pub rotation: Quat,
     pub support_ray: Option<Vec3>,
+    pub interaction_ray: Vec3,
     hidden_height: Option<f64>,
     pub support: Support,
 }
 
 impl PlacementAim {
-    pub(super) fn observed(rotation: Quat, support: Support) -> Self {
+    pub(super) fn observed(rotation: Quat, support: Support, interaction_ray: Vec3) -> Self {
         Self {
             rotation,
             support,
             support_ray: None,
+            interaction_ray,
             hidden_height: None,
         }
     }
@@ -83,7 +85,15 @@ pub(super) fn correction(
     let planned =
         serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&expected.states)
             .ok()?;
-    let matches = |candidate: &FrozenBlockObservation, view| {
+    let stair = planned.contains_key("weirdo_direction");
+    let matches = |candidate: &FrozenBlockObservation, view: LocalViewPose| {
+        if stair {
+            let on_half_boundary =
+                candidate.target.face >= 2 && (candidate.target.relative_hit[1] - 0.5).abs() < 0.01;
+            if on_half_boundary || !stable_stair_yaw(view.rotation()) {
+                return false;
+            }
+        }
         let surroundings =
             use_surroundings(context, &world, candidate, state.position, state.sneaking);
         if LocalUse::resolve(
@@ -174,6 +184,7 @@ pub(super) fn correction(
             let aim = PlacementAim {
                 rotation: view.rotation(),
                 support_ray: Some(direction),
+                interaction_ray: direction,
                 hidden_height: None,
                 support: (clicked, face, hit.runtime_id),
             };
@@ -222,6 +233,7 @@ pub(super) fn correction(
                         return Some(PlacementAim {
                             rotation,
                             support_ray: None,
+                            interaction_ray: Vec3::from_array(candidate.target.hit_world) - eye,
                             hidden_height: Some(height),
                             support: (candidate.target.position, face, candidate.target.runtime_id),
                         });
@@ -245,8 +257,15 @@ pub(super) fn correction(
                 observed.target.face,
                 observed.target.runtime_id,
             ),
+            forward,
         ))
     })
+}
+
+/// Keeps stair corrections away from the boundary between two wire-facing quadrants.
+fn stable_stair_yaw(rotation: Quat) -> bool {
+    let offset = (wire_facing(rotation)[1] + 45.0).rem_euclid(90.0);
+    (2.0..=88.0).contains(&offset)
 }
 
 /// Changes only horizontal facing while keeping the sampled click and pitch.

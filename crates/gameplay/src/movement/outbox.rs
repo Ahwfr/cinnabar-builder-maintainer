@@ -357,17 +357,26 @@ impl MovementTicker {
     }
 
     /// Reports a validated placement aim through normal movement until the press finishes.
-    pub fn begin_placement_facing(&mut self, facing: [f32; 2], direction: [f32; 3]) -> bool {
+    pub fn begin_placement_facing(
+        &mut self,
+        facing: [f32; 2],
+        direction: [f32; 3],
+        support_ray: [f32; 3],
+    ) -> bool {
         if !self.accepts_block_interactions()
             || !facing.into_iter().chain(direction).all(f32::is_finite)
         {
             return false;
         }
+        let Some(interaction) = super::interaction_rotation::from_direction(support_ray) else {
+            return false;
+        };
         let [pitch, yaw] = facing;
         self.placement_facing = Some(PlacementFacing {
             pitch,
             yaw,
             direction,
+            interaction,
             expires_at: self.next_tick.saturating_add(PLACEMENT_FACING_TICKS),
         });
         true

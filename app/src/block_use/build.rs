@@ -170,6 +170,12 @@ fn prepare(
                     "Fast Place predicted a different block or state");
                 return None;
             }
+            if expected.states.contains("weirdo_direction") {
+                bevy::log::debug!(ghost = ?expected.position, planned = %expected.states,
+                    predicted = ?actual_states, face = observed.target.face,
+                    click_y = observed.target.relative_hit[1],
+                    "Fast Place stair placement prediction");
+            }
         }
         if placement.is_some() && observed.selection.item.count() > 0 {
             local_use = LocalUse::Place;
