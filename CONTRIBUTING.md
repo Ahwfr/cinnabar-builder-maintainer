@@ -30,7 +30,7 @@ The upstream workflows are retained for reference. The original Builder Windows
 workflow is scoped to the original repository. Configure review-only CI for a new
 remote before enabling hosted releases.
 
-The checkout has shallow ancestry. The recorded common upstream commit is
-`2eb39e9426fc4c994548aac990c7b466cf75228a`. Fetch or deepen upstream history as
-needed before comparing changes. Test upstream updates on a disposable branch.
+The recorded common upstream commit is
+`2eb39e9426fc4c994548aac990c7b466cf75228a`. Fetch `upstream/dev` before comparing
+changes. Test upstream updates on a disposable branch.
 Update documentation, protocol pins and fixtures together when changing the target.

@@ -13,7 +13,7 @@ The runtime prepares official Minecraft content locally. Exclude downloaded
 resource packs, server binaries, user profiles, credentials, saved worlds,
 schematic libraries and compiler caches from any distribution.
 
-The new maintainer checkout is local. Public distribution still requires the
+The new maintainer repository is private. Public distribution still requires the
 owner's approval and completion of the asset and dependency review. The audit
 has identified the applicable notices and build pins but has not cleared the
 complete history and release payload for redistribution.
