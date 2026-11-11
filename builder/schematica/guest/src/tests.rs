@@ -41,6 +41,8 @@ pub(super) fn reference_viewer() -> Viewer {
             assist: false,
             fast_place: true,
             correct_aim: false,
+            remember_placement: false,
+            saved_placements: BTreeMap::new(),
             fullscreen_ui: true,
             bridge_place: true,
             opacity: 65,
@@ -102,6 +104,8 @@ fn menu_edits_turn_the_guide_and_select_layer_ranges() {
             assist: false,
             fast_place: false,
             correct_aim: false,
+            remember_placement: false,
+            saved_placements: BTreeMap::new(),
             fullscreen_ui: true,
             bridge_place: true,
             opacity: 65,
@@ -138,13 +142,17 @@ fn bridge_finds_a_ghost_one_block_off_the_crosshair() {
     let eye = [0.5, 64.5, 0.0];
     let forward = [0.0, 0.0, 1.0];
     let near = [1, 64, 3];
-    let far = [3, 64, 3];
+    let far = [5, 64, 1];
     assert_eq!(
         super::nearby_ghost(eye, forward, |pos| pos == near || pos == far),
         Some(near)
     );
     assert_eq!(
-        super::nearby_ghost(eye, forward, |pos| pos == far || pos == [0, 64, -1]),
+        super::nearby_ghost(eye, forward, |pos| pos == far),
+        Some(far)
+    );
+    assert_eq!(
+        super::nearby_ghost(eye, forward, |pos| pos == [6, 64, 1] || pos == [0, 64, -1]),
         None
     );
 }

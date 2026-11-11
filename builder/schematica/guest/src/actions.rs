@@ -168,6 +168,14 @@ impl Viewer {
                 self.options.save();
                 return;
             }
+            "remember-placement" => {
+                self.options.remember_placement = !self.options.remember_placement;
+                if self.placement.is_some() {
+                    self.remember_placement();
+                }
+                self.options.save();
+                return;
+            }
             "unload" => {
                 if self.locked {
                     return;

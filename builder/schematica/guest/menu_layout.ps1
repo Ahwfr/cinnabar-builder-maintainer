@@ -290,18 +290,19 @@ foreach($screen in $Screens){
             Add-Label 'Block preview' 24 85 175
             Add-Button 'look' '#look' 208 78 76 24
             Add-Button 'opacity' '#opacity' 290 78 77 24
-            Add-Label 'Target info' 24 113 200
-            Add-Button 'assist' '#assist' 246 106 121 24
-            Add-Label 'Fast Place' 24 141 200
-            Add-Button 'fast-place' '#fast-place' 246 134 121 24
-            Add-Label 'Auto orientation (server aim)' 24 169 215
-            Add-Button 'correct-aim' '#correct-aim' 246 162 121 24
-            Add-Label 'Bridge assist (aim at ghost)' 24 197 215
-            Add-Button 'bridge-place' '#bridge-place' 246 190 121 24
-            Add-Label 'Menu layout' 24 225 200
-            Add-Button 'ui-layout' '#ui-layout' 246 218 121 24
+            Add-Label 'Target info' 24 109 200
+            Add-Button 'assist' '#assist' 246 102 121 22
+            Add-Label 'Fast Place' 24 133 200
+            Add-Button 'fast-place' '#fast-place' 246 126 121 22
+            Add-Label 'Auto orientation (server aim)' 24 157 215
+            Add-Button 'correct-aim' '#correct-aim' 246 150 121 22
+            Add-Label 'Bridge Assist' 24 181 215
+            Add-Button 'bridge-place' '#bridge-place' 246 174 121 22
+            Add-Label 'Remember local world placement' 24 205 215
+            Add-Button 'remember-placement' '#remember-placement' 246 198 121 22
+            Add-Label 'Menu layout' 24 229 200
+            Add-Button 'ui-layout' '#ui-layout' 246 222 121 22
             Add-Button 'hotkeys' 'Keybinds' 16 252 84 22
-            Add-Label 'Bridge needs Auto Orientation.' 108 258 180 $muted
             Add-Button 'close' 'Done' 296 252 84 22 $activeFill
         }
         'verifier' {

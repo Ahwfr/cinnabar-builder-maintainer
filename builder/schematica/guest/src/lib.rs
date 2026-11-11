@@ -47,9 +47,11 @@ use overlay::{Preview, Tile};
 use schematica_core::{LayerMode, MaterialLine, Mirror, Placement, Schematic, blueprint};
 use std::{cell::RefCell, collections::BTreeMap, f32::consts::TAU};
 
+mod saved_placements;
+
 thread_local! {
     static RUNTIME: RefCell<(Runtime, Vec<&'static [u8]>, Options, Option<usize>)> =
-        const { RefCell::new((Runtime::Start, Vec::new(), Options { textured: true, assist: false, fast_place: false, correct_aim: false, fullscreen_ui: true, bridge_place: true, opacity: 65, hotkeys: BTreeMap::new(), library_revision: 0, deleted_entries: Vec::new() }, None)) };
+        const { RefCell::new((Runtime::Start, Vec::new(), Options { textured: true, assist: false, fast_place: false, correct_aim: false, fullscreen_ui: true, bridge_place: true, opacity: 65, hotkeys: BTreeMap::new(), library_revision: 0, deleted_entries: Vec::new(), remember_placement: false, saved_placements: BTreeMap::new() }, None)) };
 }
 
 #[derive(Clone)]
@@ -64,6 +66,8 @@ struct Options {
     hotkeys: BTreeMap<usize, String>,
     library_revision: u64,
     deleted_entries: Vec<usize>,
+    remember_placement: bool,
+    saved_placements: BTreeMap<String, serde_json::Value>,
 }
 
 impl Options {
@@ -74,6 +78,7 @@ impl Options {
                 "textured":self.textured, "assist":self.assist, "fast_place": self.fast_place,
                 "correct_aim": self.correct_aim,
                 "fullscreen_ui": self.fullscreen_ui, "bridge_place": self.bridge_place,
+                "remember_placement": self.remember_placement, "saved_placements": self.saved_placements,
                 "opacity": self.opacity, "hotkeys": self.hotkeys,
                 "library_revision": self.library_revision, "deleted_entries": self.deleted_entries,
             })
@@ -102,7 +107,7 @@ struct Schematica;
 impl Guest for Schematica {
     fn init() {
         if let Ok(raw) = settings::load()
-            && raw.len() <= 1024
+            && raw.len() <= 16 * 1024
             && let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw)
         {
             RUNTIME.with(|state| {
@@ -115,6 +120,8 @@ impl Guest for Schematica {
                     .unwrap_or(options.correct_aim);
                 options.fullscreen_ui = value["fullscreen_ui"].as_bool().unwrap_or(true);
                 options.bridge_place = value["bridge_place"].as_bool().unwrap_or(true);
+                options.remember_placement = value["remember_placement"].as_bool().unwrap_or(false);
+                options.saved_placements = saved_placements::load(&value["saved_placements"]);
                 options.library_revision = value["library_revision"].as_u64().unwrap_or(0);
                 options.deleted_entries = value["deleted_entries"]
                     .as_array()
@@ -302,6 +309,7 @@ struct Viewer {
     materials: Vec<schematica_core::MaterialLine>,
     placement: Option<Placement>,
     world: Option<(u64, i32)>,
+    placement_key: Option<String>,
     pose: Option<gameplay::Snapshot>,
     preview: Preview,
     tiles: Vec<Tile>,
@@ -347,6 +355,7 @@ impl Viewer {
             materials,
             placement: None,
             world: None,
+            placement_key: None,
             pose: None,
             preview: Preview::default(),
             tiles: Vec::new(),
@@ -389,6 +398,7 @@ impl Viewer {
         if let Some(world) = world {
             let scope = (world.session, world.dimension);
             if self.world != Some(scope) {
+                let entering_from_world = self.world.is_some();
                 // Cinnabar invalidates drawing handles on dimension changes.
                 self.tiles.clear();
                 self.retired.clear();
@@ -398,6 +408,11 @@ impl Viewer {
                 self.verifier_target = None;
                 self.verifier_marker_changed = false;
                 self.world = Some(scope);
+                self.placement_key = gameplay::read_local_world_key()
+                    .ok()
+                    .flatten()
+                    .map(|key| format!("{key:016x}/{}", scope.1));
+                self.restore_placement(entering_from_world);
                 self.last_label.clear();
             }
             self.pose = Some(world);
@@ -460,6 +475,9 @@ impl Viewer {
                 self.menu_action(&event.id);
                 changed = true;
             }
+            if changed && self.dirty {
+                self.remember_placement();
+            }
             if self.request.is_some() {
                 let _ = panel::close();
                 return;
@@ -512,6 +530,7 @@ impl Viewer {
             self.dirty |= self.control("KeyP");
         }
         if self.dirty {
+            self.remember_placement();
             self.rebuild();
             self.dirty = false;
             return;
@@ -861,33 +880,24 @@ fn nearby_ghost(
     forward: [f32; 3],
     mut is_missing: impl FnMut([i32; 3]) -> bool,
 ) -> Option<[i32; 3]> {
-    const DEPTH: f32 = 5.0;
+    const CENTER_REACH: f32 = 6.2;
     let mut best = None;
-    let mut score = (1.6 * 1.6, f32::INFINITY);
-    let mut previous = None;
-    for step in 0..=10 {
-        let center: [i32; 3] =
-            std::array::from_fn(|i| (eye[i] + forward[i] * (step as f32 * 0.5)).floor() as i32);
-        if previous.replace(center) == Some(center) {
-            continue;
-        }
-        for x in -2..=2 {
-            for y in -2..=2 {
-                for z in -2..=2 {
-                    let pos = [center[0] + x, center[1] + y, center[2] + z];
-                    let delta = [0, 1, 2].map(|i| (pos[i] as f64 + 0.5 - f64::from(eye[i])) as f32);
-                    let depth = (0..3).map(|i| delta[i] * forward[i]).sum::<f32>();
-                    if !(0.0..=DEPTH).contains(&depth) {
-                        continue;
-                    }
-                    let offset = (0..3)
-                        .map(|i| (delta[i] - depth * forward[i]).powi(2))
-                        .sum();
-                    let candidate = (offset, depth);
-                    if candidate < score && is_missing(pos) {
-                        score = candidate;
-                        best = Some(pos);
-                    }
+    let mut score = (25.0, f32::INFINITY);
+    let center = eye.map(|coord| coord.floor() as i32);
+    for x in -6..=6 {
+        for y in -6..=6 {
+            for z in -6..=6 {
+                let pos = [center[0] + x, center[1] + y, center[2] + z];
+                let delta = [0, 1, 2].map(|i| (f64::from(pos[i]) + 0.5 - f64::from(eye[i])) as f32);
+                let distance = delta.iter().map(|d| d * d).sum::<f32>();
+                let depth = (0..3).map(|i| delta[i] * forward[i]).sum::<f32>();
+                if depth < 0.0 || distance > CENTER_REACH * CENTER_REACH {
+                    continue;
+                }
+                let candidate = ((distance - depth * depth).max(0.0), depth);
+                if candidate < score && is_missing(pos) {
+                    score = candidate;
+                    best = Some(pos);
                 }
             }
         }

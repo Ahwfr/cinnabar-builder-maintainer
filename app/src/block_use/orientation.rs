@@ -14,7 +14,19 @@ pub(super) type Support = ([i32; 3], u8, u32);
 pub(super) struct PlacementAim {
     pub rotation: Quat,
     pub support_ray: Option<Vec3>,
+    hidden_height: Option<f64>,
     pub support: Support,
+}
+
+impl PlacementAim {
+    pub(super) fn observed(rotation: Quat, support: Support) -> Self {
+        Self {
+            rotation,
+            support,
+            support_ray: None,
+            hidden_height: None,
+        }
+    }
 }
 
 /// The same look representation as the normal movement and placement systems.
@@ -162,6 +174,7 @@ pub(super) fn correction(
             let aim = PlacementAim {
                 rotation: view.rotation(),
                 support_ray: Some(direction),
+                hidden_height: None,
                 support: (clicked, face, hit.runtime_id),
             };
             if matches(&candidate, view) {
@@ -180,6 +193,42 @@ pub(super) fn correction(
         }
     }
     best.or(separate).or_else(|| {
+        if bridge {
+            for face in 0..6 {
+                for height in [0.25, 0.75, 0.5] {
+                    let Some(hit) = hidden_support_hit_at(&world, expected.position, face, height)
+                    else {
+                        continue;
+                    };
+                    let mut candidate = observed.clone();
+                    apply_support_hit(&mut candidate, hit);
+                    if !gameplay::interaction_authority::pick_point_in_range(
+                        candidate.target.hit_world,
+                        state.position,
+                        observed.reach,
+                    ) {
+                        continue;
+                    }
+                    let mut view = *context.view;
+                    let rotation = if matches(&candidate, view) {
+                        Some(view.rotation())
+                    } else {
+                        separate_facing(view.rotation(), |rotation| {
+                            view.set_rotation(rotation);
+                            matches(&candidate, view)
+                        })
+                    };
+                    if let Some(rotation) = rotation {
+                        return Some(PlacementAim {
+                            rotation,
+                            support_ray: None,
+                            hidden_height: Some(height),
+                            support: (candidate.target.position, face, candidate.target.runtime_id),
+                        });
+                    }
+                }
+            }
+        }
         let mut view = *context.view;
         let rotation = if matches(observed, view) {
             view.rotation()
@@ -189,15 +238,14 @@ pub(super) fn correction(
                 matches(observed, view)
             })?
         };
-        Some(PlacementAim {
+        Some(PlacementAim::observed(
             rotation,
-            support_ray: None,
-            support: (
+            (
                 observed.target.position,
                 observed.target.face,
                 observed.target.runtime_id,
             ),
-        })
+        ))
     })
 }
 
@@ -250,6 +298,24 @@ pub(super) fn recapture(
         pick,
     )
     .with_cell_overlays(&overlays);
+    if let Some(height) = aim.hidden_height {
+        let (support, face, runtime_id) = aim.support;
+        let ghost = placement_cell(support, face);
+        if !world.is_air(ghost).ok()? {
+            return None;
+        }
+        let hit = hidden_support_hit_at(&world, ghost, face, height)?;
+        if hit.runtime_id != runtime_id {
+            return None;
+        }
+        apply_support_hit(&mut observed, hit);
+        return gameplay::interaction_authority::pick_point_in_range(
+            observed.target.hit_world,
+            state.position,
+            observed.reach,
+        )
+        .then_some(observed);
+    }
     let Some(direction) = aim.support_ray else {
         let target = &observed.target;
         return ((target.position, target.face, target.runtime_id) == aim.support)
@@ -286,6 +352,12 @@ pub(super) fn recapture(
         return None;
     }
     observed.ray.direction = direction;
+    apply_support_hit(&mut observed, hit);
+    Some(observed)
+}
+
+/// Freezes the support geometry and its world identity for packet admission.
+fn apply_support_hit(observed: &mut FrozenBlockObservation, hit: sim::BlockHit) {
     observed.ray.world_identity = hit.identity.clone();
     observed.target = gameplay::mining::FrozenMiningTarget {
         position: hit.block_pos,
@@ -295,11 +367,14 @@ pub(super) fn recapture(
             hit.hit_local.y as f32,
             hit.hit_local.z as f32,
         ],
-        hit_world,
+        hit_world: [
+            hit.hit_world.x as f32,
+            hit.hit_world.y as f32,
+            hit.hit_world.z as f32,
+        ],
         runtime_id: hit.runtime_id,
         identity: hit.identity,
     };
-    Some(observed)
 }
 
 /// Uses the native downward support pick only after both direct picks miss.
@@ -331,10 +406,21 @@ pub(super) fn hidden_support_hit(
     ghost: [i32; 3],
     face: u8,
 ) -> Option<sim::BlockHit> {
+    [0.5, 0.25, 0.75]
+        .into_iter()
+        .find_map(|height| hidden_support_hit_at(world, ghost, face, height))
+}
+
+fn hidden_support_hit_at(
+    world: &PaletteWorld<'_>,
+    ghost: [i32; 3],
+    face: u8,
+    height: f64,
+) -> Option<sim::BlockHit> {
     let support = placement_cell(ghost, face ^ 1);
     let origin = sim::Vec3::new(
         ghost[0] as f64 + 0.5,
-        ghost[1] as f64 + 0.5,
+        ghost[1] as f64 + height,
         ghost[2] as f64 + 0.5,
     );
     let direction = sim::Vec3::new(
