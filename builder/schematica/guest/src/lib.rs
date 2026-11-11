@@ -530,8 +530,7 @@ impl Viewer {
         } else {
             None
         };
-        // In normal placement mode, an aimed missing ghost can nominate a
-        // destination. The native client still needs a reachable real support.
+        // Prefer the native destination, then look for a nearby missing ghost.
         let placement_cell = placement_cell
             .filter(|pos| self.planned_block(*pos).is_some())
             .or_else(|| {
@@ -541,11 +540,7 @@ impl Viewer {
                 {
                     return None;
                 }
-                let (_, pos) = self.aimed_block()?;
-                self.tiles
-                    .iter()
-                    .any(|tile| tile.is_missing(pos))
-                    .then_some(pos)
+                self.bridge_ghost()
             });
         if let Some(placement) = self.placement
             && let Some(pos @ [x, y, z]) = placement_cell
@@ -767,7 +762,7 @@ impl Viewer {
         (self.layers().includes(local[1]) && !block.is_air()).then_some(block)
     }
 
-    fn aimed_block(&self) -> Option<(&schematica_core::BlockState, [i32; 3])> {
+    fn aim_ray(&self) -> Option<([f32; 3], [f32; 3])> {
         let pose = self.pose.as_ref()?;
         if !self.shown || self.placement.is_none() {
             return None;
@@ -777,7 +772,11 @@ impl Viewer {
             pose.pitch.sin(),
             -pose.yaw.cos() * pose.pitch.cos(),
         ];
-        let eye = [pose.eye.x, pose.eye.y, pose.eye.z];
+        Some(([pose.eye.x, pose.eye.y, pose.eye.z], forward))
+    }
+
+    fn aimed_block(&self) -> Option<(&schematica_core::BlockState, [i32; 3])> {
+        let (eye, forward) = self.aim_ray()?;
         for step in 0..=80 {
             let world =
                 [0, 1, 2].map(|i| (eye[i] + forward[i] * (step as f32 / 16.)).floor() as i32);
@@ -786,6 +785,23 @@ impl Viewer {
             }
         }
         None
+    }
+
+    fn is_missing(&self, pos: [i32; 3]) -> bool {
+        self.tiles.iter().any(|tile| tile.is_missing(pos))
+    }
+
+    /// Finds the nearest missing guide cell within the crosshair's placement area.
+    fn bridge_ghost(&self) -> Option<[i32; 3]> {
+        if let Some((_, pos)) = self.aimed_block()
+            && self.is_missing(pos)
+        {
+            return Some(pos);
+        }
+        let (eye, forward) = self.aim_ray()?;
+        nearby_ghost(eye, forward, |pos| {
+            self.planned_block(pos).is_some() && self.is_missing(pos)
+        })
     }
 
     fn layers(&self) -> LayerMode {
@@ -837,6 +853,46 @@ impl Viewer {
         self.clear_retired();
         self.retired.is_empty()
     }
+}
+
+/// Searches a bounded corridor around the crosshair, ranked by distance to the ray.
+fn nearby_ghost(
+    eye: [f32; 3],
+    forward: [f32; 3],
+    mut is_missing: impl FnMut([i32; 3]) -> bool,
+) -> Option<[i32; 3]> {
+    const DEPTH: f32 = 5.0;
+    let mut best = None;
+    let mut score = (1.6 * 1.6, f32::INFINITY);
+    let mut previous = None;
+    for step in 0..=10 {
+        let center: [i32; 3] =
+            std::array::from_fn(|i| (eye[i] + forward[i] * (step as f32 * 0.5)).floor() as i32);
+        if previous.replace(center) == Some(center) {
+            continue;
+        }
+        for x in -2..=2 {
+            for y in -2..=2 {
+                for z in -2..=2 {
+                    let pos = [center[0] + x, center[1] + y, center[2] + z];
+                    let delta = [0, 1, 2].map(|i| (pos[i] as f64 + 0.5 - f64::from(eye[i])) as f32);
+                    let depth = (0..3).map(|i| delta[i] * forward[i]).sum::<f32>();
+                    if !(0.0..=DEPTH).contains(&depth) {
+                        continue;
+                    }
+                    let offset = (0..3)
+                        .map(|i| (delta[i] - depth * forward[i]).powi(2))
+                        .sum();
+                    let candidate = (offset, depth);
+                    if candidate < score && is_missing(pos) {
+                        score = candidate;
+                        best = Some(pos);
+                    }
+                }
+            }
+        }
+    }
+    best
 }
 
 #[cfg(test)]

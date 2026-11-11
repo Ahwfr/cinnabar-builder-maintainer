@@ -513,7 +513,7 @@ pub(super) fn resume(
             let direction = Vec3::from_array(observed.ray.direction);
             Some(super::orientation::PlacementAim {
                 rotation: client_presentation::camera::look_at_target(eye, eye + direction),
-                support_ray: direction,
+                support_ray: None,
                 support: support(&observed),
             })
         })

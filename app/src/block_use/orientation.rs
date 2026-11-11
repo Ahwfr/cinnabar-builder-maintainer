@@ -13,7 +13,7 @@ pub(super) type Support = ([i32; 3], u8, u32);
 #[derive(Clone, Copy)]
 pub(super) struct PlacementAim {
     pub rotation: Quat,
-    pub support_ray: Vec3,
+    pub support_ray: Option<Vec3>,
     pub support: Support,
 }
 
@@ -161,7 +161,7 @@ pub(super) fn correction(
             view.set_rotation(rotation);
             let aim = PlacementAim {
                 rotation: view.rotation(),
-                support_ray: direction,
+                support_ray: Some(direction),
                 support: (clicked, face, hit.runtime_id),
             };
             if matches(&candidate, view) {
@@ -179,7 +179,26 @@ pub(super) fn correction(
             }
         }
     }
-    best.or(separate)
+    best.or(separate).or_else(|| {
+        let mut view = *context.view;
+        let rotation = if matches(observed, view) {
+            view.rotation()
+        } else {
+            separate_facing(view.rotation(), |rotation| {
+                view.set_rotation(rotation);
+                matches(observed, view)
+            })?
+        };
+        Some(PlacementAim {
+            rotation,
+            support_ray: None,
+            support: (
+                observed.target.position,
+                observed.target.face,
+                observed.target.runtime_id,
+            ),
+        })
+    })
 }
 
 /// Changes only horizontal facing while keeping the sampled click and pitch.
@@ -231,7 +250,12 @@ pub(super) fn recapture(
         pick,
     )
     .with_cell_overlays(&overlays);
-    let direction = aim.support_ray.to_array();
+    let Some(direction) = aim.support_ray else {
+        let target = &observed.target;
+        return ((target.position, target.face, target.runtime_id) == aim.support)
+            .then_some(observed);
+    };
+    let direction = direction.to_array();
     let actor = gameplay::melee::pick_actor(
         authority.remote_actors(),
         authority.local_mount_unique_id(),
@@ -299,6 +323,29 @@ pub(super) fn support_hit(
         }
         _ => None,
     }
+}
+
+/// Samples the real support's selection shape from the adjacent empty destination.
+pub(super) fn hidden_support_hit(
+    world: &PaletteWorld<'_>,
+    ghost: [i32; 3],
+    face: u8,
+) -> Option<sim::BlockHit> {
+    let support = placement_cell(ghost, face ^ 1);
+    let origin = sim::Vec3::new(
+        ghost[0] as f64 + 0.5,
+        ghost[1] as f64 + 0.5,
+        ghost[2] as f64 + 0.5,
+    );
+    let direction = sim::Vec3::new(
+        f64::from(support[0] - ghost[0]),
+        f64::from(support[1] - ghost[1]),
+        f64::from(support[2] - ghost[2]),
+    );
+    world
+        .block_interaction_ray_current(origin, direction, 1.5)
+        .ok()?
+        .filter(|hit| hit.block_pos == support && hit.face == face && hit.overlay.is_none())
 }
 
 /// Samples visible faces and the ordinary Bedrock forward-bridge pick.
