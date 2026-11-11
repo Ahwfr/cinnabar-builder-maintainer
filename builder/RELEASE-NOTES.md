@@ -1,4 +1,9 @@
-# Cinnabar Builder 0.3.4
+# Cinnabar Builder 0.3.5
+
+- Auto Orientation sends separate player-facing and support-click rotations. Stair corrections prefer angles and hit heights clear of the facing and half-block boundaries.
+- Bridge Assist accounts for depth on both sides of the block under the crosshair and can skip a filled native destination to find a missing ghost beyond it.
+
+## 0.3.4
 
 - Bridge Assist searches up to five blocks off the crosshair and checks actual support reach before sending.
 - Auto Orientation samples the upper and lower parts of hidden support faces for slabs and stairs and tolerates small camera movements during a pending correction.

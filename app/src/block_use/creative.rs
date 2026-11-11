@@ -486,7 +486,7 @@ pub(super) fn resume(
         );
         return true;
     };
-    if support(&observed) != pending.support {
+    if pending.aim.is_none() && support(&observed) != pending.support {
         movement.end_placement_facing();
         bevy::log::info!(block = %pending.offer.name, "Fast Place support changed before placement");
         return true;
@@ -514,11 +514,13 @@ pub(super) fn resume(
             Some(super::orientation::PlacementAim::observed(
                 client_presentation::camera::look_at_target(eye, eye + direction),
                 support(&observed),
+                direction,
             ))
         })
         && movement.begin_placement_facing(
             super::orientation::wire_facing(placement.rotation),
             (placement.rotation * Vec3::NEG_Z).to_array(),
+            placement.interaction_ray.to_array(),
         )
     {
         let aim = TemporaryAim {

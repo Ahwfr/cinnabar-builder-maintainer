@@ -148,6 +148,22 @@ fn interaction_direction_changes_only_its_unsent_tick_and_survives_action_facing
     assert_eq!(idle.interact_rotation, [idle.pitch, idle.yaw]);
 }
 
+#[test]
+fn placement_facing_keeps_the_opposite_support_ray_on_the_wire() {
+    use crate::test_support::survival_mining::completed;
+    let mut ticker = MovementTicker::default();
+    ticker.reset(7, 100, completed(101).position);
+    ticker.set_source(MovementSource::Physics);
+    assert!(ticker.begin_placement_facing([0.0, 90.0], [-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
+    ticker.enqueue_completed_physics(completed(101)).unwrap();
+    let wire = protocol::player_auth_input_trace_sample(
+        &protocol::player_auth_input(ticker.outbox[0].snapshot).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(wire.yaw, 90.0);
+    assert_eq!(wire.interact_rotation[1], -90.0);
+}
+
 /// Ticker with ticks 101 and 102 queued and a release held behind 101.
 fn held_release_ticker() -> MovementTicker {
     use crate::test_support::survival_mining::completed;

@@ -549,18 +549,16 @@ impl Viewer {
         } else {
             None
         };
-        // Prefer the native destination, then look for a nearby missing ghost.
-        let placement_cell = placement_cell
-            .filter(|pos| self.planned_block(*pos).is_some())
-            .or_else(|| {
-                if !self.options.fast_place
-                    || !self.options.correct_aim
-                    || !self.options.bridge_place
-                {
-                    return None;
-                }
-                self.bridge_ghost()
-            });
+        let native_cell = placement_cell.filter(|pos| self.planned_block(*pos).is_some());
+        let placement_cell =
+            if self.options.fast_place && self.options.correct_aim && self.options.bridge_place {
+                native_cell
+                    .filter(|pos| self.is_missing(*pos))
+                    .or_else(|| self.bridge_ghost())
+                    .or(native_cell)
+            } else {
+                native_cell
+            };
         if let Some(placement) = self.placement
             && let Some(pos @ [x, y, z]) = placement_cell
             && let Some(block) = self.planned_block(pos)
@@ -812,13 +810,16 @@ impl Viewer {
 
     /// Finds the nearest missing guide cell within the crosshair's placement area.
     fn bridge_ghost(&self) -> Option<[i32; 3]> {
-        if let Some((_, pos)) = self.aimed_block()
+        let target = gameplay::read_block_target().ok().flatten();
+        if target.is_none()
+            && let Some((_, pos)) = self.aimed_block()
             && self.is_missing(pos)
         {
             return Some(pos);
         }
         let (eye, forward) = self.aim_ray()?;
-        nearby_ghost(eye, forward, |pos| {
+        let support = target.map(|p| [p.x, p.y, p.z]);
+        nearby_ghost(eye, forward, support, |pos| {
             self.planned_block(pos).is_some() && self.is_missing(pos)
         })
     }
@@ -878,10 +879,14 @@ impl Viewer {
 fn nearby_ghost(
     eye: [f32; 3],
     forward: [f32; 3],
+    support: Option<[f32; 3]>,
     mut is_missing: impl FnMut([i32; 3]) -> bool,
 ) -> Option<[i32; 3]> {
     const CENTER_REACH: f32 = 6.2;
     let mut best = None;
+    let desired_depth = support.map_or(0.0, |p| {
+        (0..3).map(|i| (p[i] - eye[i]) * forward[i]).sum::<f32>() + 1.0
+    });
     let mut score = (25.0, f32::INFINITY);
     let center = eye.map(|coord| coord.floor() as i32);
     for x in -6..=6 {
@@ -894,7 +899,10 @@ fn nearby_ghost(
                 if depth < 0.0 || distance > CENTER_REACH * CENTER_REACH {
                     continue;
                 }
-                let candidate = ((distance - depth * depth).max(0.0), depth);
+                let offset = (0..3)
+                    .map(|i| (delta[i] - depth * forward[i]).powi(2))
+                    .sum();
+                let candidate = (offset, (depth - desired_depth).abs());
                 if candidate < score && is_missing(pos) {
                     score = candidate;
                     best = Some(pos);

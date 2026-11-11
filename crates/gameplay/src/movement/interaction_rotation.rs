@@ -6,7 +6,7 @@ use super::MovementTicker;
 const DEGREES_PER_RADIAN: f32 = 57.295_776;
 
 /// Converts a finite, nonzero ray into interaction pitch and yaw.
-fn from_direction([x, y, z]: [f32; 3]) -> Option<[f32; 2]> {
+pub(super) fn from_direction([x, y, z]: [f32; 3]) -> Option<[f32; 2]> {
     let horizontal = (x * x + z * z).sqrt();
     if ![x, y, z, horizontal].into_iter().all(f32::is_finite) || (horizontal == 0.0 && y == 0.0) {
         return None;

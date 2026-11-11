@@ -128,6 +128,7 @@ struct PlacementFacing {
     pitch: f32,
     yaw: f32,
     direction: [f32; 3],
+    interaction: [f32; 2],
     expires_at: u64,
 }
 
@@ -507,7 +508,7 @@ impl MovementTicker {
                 .map_or(sample.camera_orientation, |placement| placement.direction),
             interact_rotation: placement.map_or_else(
                 || interaction_rotation::from_facing(sample.pitch, sample.yaw),
-                |_| interaction_rotation::from_facing(pitch, yaw),
+                |placement| placement.interaction,
             ),
             flags: input_flags(sample, self.previous_input)
                 | self.take_next_tick_flags()
