@@ -4,7 +4,7 @@ Download the Windows ZIP from a versioned GitHub Release. Extract every file int
 
 For the next release, close Builder and extract the new package into the same folder. Keep **profile/**. It contains your worlds, account data, settings, mods and library. The launcher checks that the template matches the package revision, upgrades the library code and backs up the previous component. Confirm the release version and guest hash in the Schematica header or Mods page.
 
-Import schematics from Schematica's Import button, then **Import schematics…** on the native Mods page. A new import replaces the current library selection and preserves its previous component. Original input files remain in place.
+Choose **Import schematics** in the Schematica menu to open the Windows file picker. Select the schematic files to add to your library. The importer reads local files with bounded size and decoding limits. Original input files remain in place.
 
 Only the Windows package, exact source ZIP and documentation belong in a release. Profiles and compiler caches stay on your computer. The archive ZIP can be removed from your computer after extraction if you keep another backup.
 

@@ -1,6 +1,7 @@
 # Cinnabar Builder 0.3.7
 
 - Update the WebAssembly runtime to Wasmtime 36.0.20. This includes fixes for [a Cranelift sandbox escape](https://github.com/bytecodealliance/wasmtime/security/advisories/GHSA-897f-g5gm-fmxm) and [unbounded host allocation](https://github.com/bytecodealliance/wasmtime/security/advisories/GHSA-6fr9-xmw9-5352).
+- Update Rustls, WebPKI and its certificate roots, Tokio, event-listener and rustix to patched versions.
 - Retire old command, WASI, and packet grants for the bundled Schematica component. Schematic imports are local and use the file selected in the picker.
 - Preserve the schematic picker request through the normal mod frame so Import opens the native picker. Show conversion errors from the picker.
 - Show a stronger blue tint on textured holograms. Preserve authored pane arms in previews and ignore neighbor-derived pane links in verification.
