@@ -3,6 +3,20 @@
 use crate::Viewer;
 use serde_json::{Map, Value, json};
 
+pub(super) const MATERIAL_ROWS: usize = 5;
+
+impl Viewer {
+    pub(super) fn scroll_materials(&mut self, rows: isize) -> bool {
+        let next = self
+            .material_offset
+            .saturating_add_signed(rows)
+            .min(self.materials.len().saturating_sub(MATERIAL_ROWS));
+        let changed = next != self.material_offset;
+        self.material_offset = next;
+        changed
+    }
+}
+
 pub fn bindings(viewer: &Viewer, out: &mut Map<String, Value>) {
     for index in 0..schematica_core::blueprint::MAX_LIBRARY {
         let original = viewer.visible_entry(index);
@@ -99,6 +113,22 @@ pub fn bindings(viewer: &Viewer, out: &mut Map<String, Value>) {
         )),
     );
     out.insert("#detailLayers".into(), json!(field(viewer.layers_text())));
+    out.insert(
+        "#layerMode".into(),
+        json!(["All layers", "Single layer", "All below"][viewer.layer_mode as usize]),
+    );
+    out.insert(
+        "#mirror".into(),
+        json!(match viewer.placement.map(|p| p.mirror) {
+            Some(crate::Mirror::X) => "Mirror X",
+            Some(crate::Mirror::Z) => "Mirror Z",
+            _ => "Mirror Off",
+        }),
+    );
+    out.insert(
+        "#canTransform".into(),
+        json!(viewer.placement.is_some() && !viewer.locked),
+    );
     let placement = viewer.placement.map_or_else(
         || "Choose Place here to anchor the guide.".into(),
         |placement| {
@@ -116,8 +146,16 @@ pub fn bindings(viewer: &Viewer, out: &mut Map<String, Value>) {
         "#materialHeading".into(),
         json!(format!("MATERIALS / {total} BLOCKS")),
     );
-    for row in 0..7 {
-        let line = viewer.loaded.then(|| viewer.materials.get(row)).flatten();
+    out.insert("#materialsUp".into(), json!(viewer.material_offset > 0));
+    out.insert(
+        "#materialsDown".into(),
+        json!(viewer.material_offset + MATERIAL_ROWS < viewer.materials.len()),
+    );
+    for row in 0..MATERIAL_ROWS {
+        let line = viewer
+            .loaded
+            .then(|| viewer.materials.get(viewer.material_offset + row))
+            .flatten();
         out.insert(
             format!("#materialIcon{row}"),
             crate::menu::material_icon(line),

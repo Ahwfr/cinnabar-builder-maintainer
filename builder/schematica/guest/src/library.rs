@@ -37,6 +37,7 @@ impl Viewer {
             self.loaded = false;
             self.auto_place = false;
             self.materials.clear();
+            self.material_offset = 0;
             self.dirty = true;
         }
     }

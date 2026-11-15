@@ -8,7 +8,7 @@ import render::chunk_bindings::{
     TRANSPARENT_WATER_RECORD_FLAG,
 };
 import render::material::{MaterialGpu, materials, positional_material_id, texture_layer, texture_page, texture_uv_scale, texture_gradient_scale};
-import render::world_projection::{section_camera_offset, camera_offset_clip};
+import render::world_projection::{section_camera_offset, camera_offset_clip, apply_block_tint};
 import render::biome_tint::blended_biome_tint;
 import render::lighting::{light_ao_factor, light_colour, face_shade, tint_to_gamma, tint_to_linear, terrain_light_levels, terrain_light_colour};
 @if(ENHANCED)
@@ -479,7 +479,7 @@ fn fragment_depth(in: VertexOutput, @builtin(front_facing) front_facing: bool) -
         in.surface_class,
     );
     @if(ENHANCED)
-    return vec4(apply_distance_fog(lit, in.world_position), 1.0);
+    return apply_block_tint(vec4(apply_distance_fog(lit, in.world_position), 1.0));
     @if(!ENHANCED)
-    return tint_to_linear(vec4(native_liquid_colour(sampled.rgb, vec3(1.0), in), 1.0));
+    return apply_block_tint(tint_to_linear(vec4(native_liquid_colour(sampled.rgb, vec3(1.0), in), 1.0)));
 }

@@ -5,7 +5,7 @@ import render::material::{MaterialGpu, materials, positional_material_id, textur
 import render::enhanced::caster::caster_clip;
 import bevy_render::view::View;
 import render::biome_tint::{blended_biome_tint, blended_biome_tint_gamma, uniform_biome_tint_gamma};
-import render::world_projection::{section_camera_offset, camera_offset_clip};
+import render::world_projection::{section_camera_offset, camera_offset_clip, apply_block_tint};
 import render::lighting::{light_ao_factor, light_colour, lit_colour, material_ambient_occlusion, material_face_shade, tint_to_gamma, tint_to_linear, terrain_light_levels, terrain_light_colour};
 @if(ALPHA_TO_COVERAGE)
 import render::lighting::{CutoutSample, cutout_alpha_array, cutout_mix};
@@ -671,9 +671,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
     @if(!OPAQUE_OVERDRAW)
     let shaded = shade_cube(in, sampled);
     @if(!OPAQUE_OVERDRAW && ALPHA_TO_COVERAGE)
-    return vec4(shaded.rgb, coverage);
+    return apply_block_tint(vec4(shaded.rgb, coverage));
     @if(!OPAQUE_OVERDRAW && !ALPHA_TO_COVERAGE)
-    return shaded;
+    return apply_block_tint(shaded);
 }
 
 // Coverage shares color addressing and gradients for the source image on the selected page.
@@ -751,7 +751,7 @@ fn fragment_solid(in: VertexOutput) -> @location(0) vec4<f32> {
     @if(OPAQUE_OVERDRAW)
     return vec4(1.0);
     @if(!OPAQUE_OVERDRAW)
-    return shade_cube(in, sample_cube_texture(in, dpdx(in.uv), dpdy(in.uv)));
+    return apply_block_tint(shade_cube(in, sample_cube_texture(in, dpdx(in.uv), dpdy(in.uv))));
 }
 
 // Sealed quad edges extend past the face, so their pixels clamp to its edge texels.

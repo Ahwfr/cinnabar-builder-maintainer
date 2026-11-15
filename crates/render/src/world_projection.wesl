@@ -17,3 +17,19 @@ fn section_camera_offset(section_origin: vec3<i32>, local: vec3<f32>, camera: ve
 fn camera_offset_clip(clip_from_world: mat4x4<f32>, camera: vec3<f32>, offset: vec3<f32>) -> vec4<f32> {
     return clip_from_world * vec4(offset, 0.0) + clip_from_world * vec4(camera, 1.0);
 }
+@if(MOD_BLOCK_TINT || MOD_BLOCK_OPACITY)
+@group(2) @binding(0) var<uniform> block_tint: vec4<f32>;
+
+fn apply_block_tint(colour: vec4<f32>) -> vec4<f32> {
+    @if(MOD_BLOCK_TINT)
+    return vec4(colour.rgb * block_tint.rgb, colour.a);
+    @if(!MOD_BLOCK_TINT)
+    return colour;
+}
+
+fn apply_block_opacity(colour: vec4<f32>) -> vec4<f32> {
+    @if(MOD_BLOCK_OPACITY)
+    return vec4(colour.rgb, colour.a * block_tint.a);
+    @if(!MOD_BLOCK_OPACITY)
+    return colour;
+}

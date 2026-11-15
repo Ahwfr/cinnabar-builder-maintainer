@@ -204,7 +204,9 @@ pub(super) fn instance(
             return Err(error(ErrorCode::Denied, "block geometry"));
         }
         if instance.material.is_some()
-            || instance.tint[..3] != [1.; 3]
+            || !instance.tint[..3]
+                .iter()
+                .all(|value| (0. ..=1.).contains(value))
             || !(0. ..=1.).contains(&instance.tint[3])
             || (instance.tint[3] < 1. && instance.blend != Blend::Premultiplied)
         {

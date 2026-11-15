@@ -29,6 +29,7 @@ struct Key {
     additive: bool,
     mirrored: bool,
     translucent: bool,
+    tinted: bool,
 }
 struct Specialization;
 impl Specializer<RenderPipeline> for Specialization {
@@ -61,13 +62,24 @@ impl Specializer<RenderPipeline> for Specialization {
         if key.always {
             depth.depth_compare = Some(CompareFunction::Always);
         }
+        if key.tinted {
+            descriptor
+                .fragment
+                .as_mut()
+                .unwrap()
+                .shader_defs
+                .push("MOD_BLOCK_TINT".into());
+            descriptor.layout.push(opacity_layout());
+        }
         if key.translucent {
             depth.depth_write_enabled = Some(false);
             let fragment = descriptor.fragment.as_mut().unwrap();
             let target = fragment.targets[0].as_mut().unwrap();
             if target.blend.is_some() {
                 fragment.shader_defs.push("MOD_BLOCK_OPACITY".into());
-                descriptor.layout.push(opacity_layout());
+                if !key.tinted {
+                    descriptor.layout.push(opacity_layout());
+                }
             } else {
                 target.blend = Some(BlendState {
                     color: wgpu::BlendComponent {
@@ -173,7 +185,7 @@ struct Placement {
     pipelines: [CachedRenderPipelineId; 5],
     clip: Option<DrawingHandle>,
     always: bool,
-    opacity: f32,
+    tint: [f32; 4],
     opacity_binding: Option<(UniformBuffer<bevy::math::Vec4>, BindGroup)>,
     active: bool,
     _charge: mod_render::GpuAllocation<()>,
@@ -182,7 +194,7 @@ struct Placement {
 impl Placement {
     /// Translucent grids draw after opaque terrain while keeping the requested depth test.
     fn overlay(&self) -> bool {
-        self.always || self.opacity < 1.
+        self.always || self.tint[3] < 1.
     }
 }
 
@@ -342,6 +354,7 @@ impl crate::pipeline_warmup::PrewarmPipelines for Pipelines {
                             additive,
                             mirrored,
                             translucent: false,
+                            tinted: false,
                         };
                         for variants in &mut self.variants {
                             ids.push(variants.specialize(cache, key)?);

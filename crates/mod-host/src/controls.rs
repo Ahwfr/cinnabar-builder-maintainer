@@ -546,6 +546,18 @@ impl cinnabar::extension::panel::Host for State {
         {
             return Ok(Err("invalid client settings category".into()));
         }
+        if section == "schematic_import"
+            && !self
+                .controls
+                .frame
+                .events
+                .iter()
+                .any(|event| event.id == "import")
+        {
+            return Ok(Err(
+                "schematic import requires an import button click".into()
+            ));
+        }
         self.controls.pending_interaction.client_settings = Some(section);
         self.controls.pending_open = Some(false);
         Ok(Ok(()))

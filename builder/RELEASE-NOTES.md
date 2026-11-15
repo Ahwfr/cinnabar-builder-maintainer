@@ -1,4 +1,11 @@
-# Cinnabar Builder 0.3.5
+# Cinnabar Builder 0.3.6
+
+- Open the schematic file picker directly from Schematica.
+- Fixed dashboard nudges and mirror. Mirror cycles through X, Z, and Off.
+- Scroll materials on the dashboard with the wheel or arrow buttons. Layer controls now have plus and minus buttons. New keyboard defaults are `[` and `]`.
+- Textured ghosts use a subtle blue tint and retain the selected opacity.
+
+## 0.3.5
 
 - Auto Orientation sends separate player-facing and support-click rotations. Stair corrections prefer angles and hit heights clear of the facing and half-block boundaries.
 - Bridge Assist accounts for depth on both sides of the block under the crosshair and can skip a filled native destination to find a missing ghost beyond it.

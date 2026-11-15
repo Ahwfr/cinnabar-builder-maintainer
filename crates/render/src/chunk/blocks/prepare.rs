@@ -294,6 +294,7 @@ pub(super) fn prepare(
                     additive: instance.blend == Blend::Additive,
                     mirrored: determinant < 0.,
                     translucent: instance.tint[3] < 1.,
+                    tinted: instance.tint[..3] != [1.; 3],
                 };
                 let ids: Option<Vec<_>> = pipelines
                     .variants
@@ -336,7 +337,7 @@ pub(super) fn prepare(
                         pipelines: ids.clone().try_into().unwrap(),
                         clip: instance.clip,
                         always: instance.depth == Depth::Always,
-                        opacity: 1.,
+                        tint: [1.; 4],
                         opacity_binding: None,
                         active: true,
                         _charge: charge,
@@ -347,10 +348,9 @@ pub(super) fn prepare(
                 placement.clip = instance.clip;
                 placement.always = instance.depth == Depth::Always;
                 placement.active = true;
-                let opacity = instance.tint[3];
-                if placement.opacity != opacity {
-                    if opacity < 1. {
-                        let value = bevy::math::Vec4::splat(opacity);
+                if placement.tint != instance.tint {
+                    if instance.tint != [1.; 4] {
+                        let value = bevy::math::Vec4::from_array(instance.tint);
                         if let Some((uniform, _)) = &mut placement.opacity_binding {
                             uniform.set(value);
                             uniform.write_buffer(&device, &queue);
@@ -368,7 +368,7 @@ pub(super) fn prepare(
                             placement.opacity_binding = Some((uniform, binding));
                         }
                     }
-                    placement.opacity = opacity;
+                    placement.tint = instance.tint;
                 }
                 if placement.matrix != matrix
                     || placement.projection != view.clip_from_view

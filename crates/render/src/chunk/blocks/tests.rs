@@ -85,6 +85,7 @@ fn portal_resources_preserve_outward_faces_under_a_mirrored_transform() {
         additive: false,
         mirrored: true,
         translucent: false,
+        tinted: false,
     };
     for mut descriptor in pipeline::layouts::descriptors::build(false) {
         let original = descriptor.primitive.front_face;
@@ -96,7 +97,7 @@ fn portal_resources_preserve_outward_faces_under_a_mirrored_transform() {
 #[test]
 fn block_opacity_blends_without_writing_world_depth() {
     let (mut store, _, _, mut instance) = grid_scene();
-    instance.tint[3] = 0.65;
+    instance.tint = [0.68, 0.84, 1., 0.65];
     assert!(
         store
             .create(instance.clone(), DrawingPermissions::ALL)
@@ -112,6 +113,7 @@ fn block_opacity_blends_without_writing_world_depth() {
         additive: false,
         mirrored: false,
         translucent: true,
+        tinted: true,
     };
     for mut descriptor in pipeline::layouts::descriptors::build(false) {
         Specialization.specialize(key, &mut descriptor).unwrap();
@@ -217,7 +219,7 @@ pub(super) fn placement_fixture() -> (
         pipelines: [pipeline; 5],
         clip: None,
         always: false,
-        opacity: 1.,
+        tint: [1.; 4],
         opacity_binding: None,
         active: false,
         _charge: ledger.allocate(0, || Some(())).unwrap(),
@@ -249,6 +251,7 @@ fn retained_additive_terrain_weights_straight_alpha_only_for_blended_variants() 
                 additive: true,
                 mirrored: false,
                 translucent: false,
+                tinted: false,
             };
             for mut descriptor in pipeline::layouts::descriptors::build(false) {
                 let transparent = descriptor.fragment.as_ref().unwrap().targets[0]

@@ -138,6 +138,42 @@ fn menu_edits_turn_the_guide_and_select_layer_ranges() {
     assert_eq!(viewer.layers(), LayerMode::All);
 }
 #[test]
+fn dashboard_transform_controls_move_and_mirror_the_active_placement() {
+    let mut viewer = reference_viewer();
+    let start = viewer.placement.unwrap().origin;
+    for id in ["x-plus", "y-plus", "z-plus"] {
+        viewer.menu_action(id);
+    }
+    assert_eq!(viewer.placement.unwrap().origin, start.map(|n| n + 1));
+    for id in ["x-minus", "y-minus", "z-minus"] {
+        viewer.menu_action(id);
+    }
+    assert_eq!(viewer.placement.unwrap().origin, start);
+    for expected in [Mirror::X, Mirror::Z, Mirror::None] {
+        viewer.menu_action("mirror-cycle");
+        assert_eq!(viewer.placement.unwrap().mirror, expected);
+    }
+    viewer.locked = true;
+    viewer.menu_action("x-plus");
+    viewer.menu_action("mirror-cycle");
+    assert_eq!(viewer.placement.unwrap().origin, start);
+    assert_eq!(viewer.placement.unwrap().mirror, Mirror::None);
+}
+
+#[test]
+fn dashboard_can_scroll_to_the_last_material() {
+    let mut viewer = reference_viewer();
+    let mut bindings = serde_json::Map::new();
+    viewer.menu_action("materials-down");
+    crate::dashboard::bindings(&viewer, &mut bindings);
+    assert_eq!(viewer.material_offset, 1);
+    assert_eq!(bindings["#materialName4"], "torch");
+    assert_eq!(bindings["#materialsDown"], false);
+    viewer.menu_action("materials-up");
+    assert_eq!(viewer.material_offset, 0);
+}
+
+#[test]
 fn bridge_finds_a_ghost_one_block_off_the_crosshair() {
     let eye = [0.5, 64.5, 0.0];
     let forward = [0.0, 0.0, 1.0];

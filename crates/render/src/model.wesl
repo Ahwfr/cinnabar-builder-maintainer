@@ -8,7 +8,7 @@ import render::chunk_bindings::{
 import render::material::{MaterialGpu, materials, positional_material_id, texture_layer, texture_page, material_uv_flags, texture_model_uv, texture_gradient_scale};
 @if(ENHANCED_SHADOW)
 import render::enhanced::caster::caster_clip;
-import render::world_projection::{section_camera_offset, camera_offset_clip};
+import render::world_projection::{section_camera_offset, camera_offset_clip, apply_block_tint};
 import render::biome_tint::{blended_biome_tint, blended_biome_tint_gamma};
 import render::lighting::{light_ao_factor, light_colour, material_ambient_occlusion, material_face_shade, tint_to_gamma, tint_to_linear, terrain_light_levels, terrain_light_colour};
 @if(ALPHA_TO_COVERAGE)
@@ -861,11 +861,11 @@ fn fragment(
         in.surface_class,
     );
     @if(!OPAQUE_OVERDRAW && ENHANCED)
-    return vec4(apply_distance_fog(shaded, in.world_position), output_alpha);
+    return apply_block_tint(vec4(apply_distance_fog(shaded, in.world_position), output_alpha));
     @if(!OPAQUE_OVERDRAW && !ENHANCED)
     let colour = ordinary_world_model_colour(in, sampled);
     @if(!OPAQUE_OVERDRAW && !ENHANCED)
-    return vec4(colour.rgb, output_alpha);
+    return apply_block_tint(vec4(colour.rgb, output_alpha));
 }
 
 @fragment

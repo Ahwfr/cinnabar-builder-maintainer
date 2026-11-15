@@ -77,7 +77,9 @@ impl Viewer {
                 return;
             }
             "import" => {
-                let _ = panel::open_settings("cinnabar_mods_index");
+                if let Err(error) = panel::open_settings("schematic_import") {
+                    label(&error);
+                }
                 return;
             }
             "reset-hotkeys" => {
@@ -217,6 +219,17 @@ impl Viewer {
             "rotate" => "KeyR",
             "cw" => "KeyR",
             "ccw" => "RotateLeft",
+            "x-minus" => "ArrowLeft",
+            "x-plus" => "ArrowRight",
+            "y-minus" => "PageDown",
+            "y-plus" => "PageUp",
+            "z-minus" => "ArrowUp",
+            "z-plus" => "ArrowDown",
+            "mirror-cycle" => "KeyM",
+            "materials-up" | "materials-down" => {
+                self.scroll_materials(if id == "materials-up" { -1 } else { 1 });
+                return;
+            }
             "mirror" => {
                 if !self.locked
                     && let Some(p) = &mut self.placement

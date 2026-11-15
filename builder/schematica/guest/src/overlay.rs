@@ -428,6 +428,7 @@ fn create(
     anchor: draw::BlockAnchor,
     opacity: f32,
 ) -> Result<DrawPair, draw::DrawError> {
+    let textured = matches!(&spec, draw::GeometrySpec::Blocks(_));
     let geometry = draw::create_geometry(&spec)?;
     let mut params = vec![0.; 16];
     params[7] = 1.;
@@ -443,7 +444,11 @@ fn create(
             rotation: (0., 0., 0., 1.),
             scale: (1., 1., 1.),
         },
-        tint: (1., 1., 1., opacity),
+        tint: if textured {
+            (0.68, 0.84, 1., opacity)
+        } else {
+            (1., 1., 1., opacity)
+        },
         depth: draw::Depth::Test,
         blend: draw::Blend::Premultiplied,
         width: 1.,
@@ -452,8 +457,12 @@ fn create(
         cap: draw::Cap::Butt,
     };
     let instance = match draw::create(&placement) {
-        Err(error) if opacity < 1. && error.code == draw::ErrorCode::Invalid => {
+        Err(error) if textured && error.code == draw::ErrorCode::Invalid => {
             // Stock Cinnabar accepts native block grids only at full opacity.
+            placement.tint = (1., 1., 1., opacity);
+            if let Ok(instance) = draw::create(&placement) {
+                return Ok(DrawPair { geometry, instance });
+            }
             placement.tint.3 = 1.;
             draw::create(&placement)
         }

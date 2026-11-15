@@ -405,14 +405,20 @@ pub(super) fn drive_mod(
     }
     for index in 0..extension.hosts.host_count() {
         if let Some(section) = extension.hosts.host_mut(index).take_client_settings()
-            && let Some(section) =
-                launcher::menu::settings_sections::SettingSection::from_name(&section)
             && let Some(menu) = menu.as_deref_mut()
         {
-            menu.activate(launcher::menu::MenuAction::PauseSettings);
-            menu.activate(launcher::menu::MenuAction::SettingsSection(
-                section.definition().index,
-            ));
+            if section == "schematic_import" {
+                menu.activate(launcher::menu::MenuAction::Mods(
+                    launcher::mods::Action::ImportSchematics,
+                ));
+            } else if let Some(section) =
+                launcher::menu::settings_sections::SettingSection::from_name(&section)
+            {
+                menu.activate(launcher::menu::MenuAction::PauseSettings);
+                menu.activate(launcher::menu::MenuAction::SettingsSection(
+                    section.definition().index,
+                ));
+            }
         }
         for message in extension.hosts.host_mut(index).take_local_messages() {
             ui.push_local_chat_line(

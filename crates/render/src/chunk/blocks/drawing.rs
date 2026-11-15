@@ -52,7 +52,7 @@ pub(crate) fn encode<'w>(
             }
             pass.set_render_pipeline(pipeline);
             pass.set_bind_group(0, binding, &[0]);
-            if placement.opacity < 1. {
+            if placement.tint != [1.; 4] {
                 let Some((_, opacity)) = &placement.opacity_binding else {
                     continue;
                 };
@@ -62,8 +62,8 @@ pub(crate) fn encode<'w>(
             pass.draw_indexed(0..STATIC_QUAD_INDICES.len() as u32, 0, 0..order.count);
             continue;
         }
-        if placement.opacity < 1. {
-            let opacity = placement.opacity;
+        if placement.tint[3] < 1. {
+            let opacity = placement.tint[3];
             pass.set_blend_constant(bevy::color::LinearRgba::new(opacity, opacity, opacity, 1.));
         }
         pass.set_bind_group(0, opaque, &[0]);
@@ -83,6 +83,7 @@ pub(crate) fn encode<'w>(
                 solid_indirect_commands(allocation, Some(camera)),
             ) {
                 pass.set_render_pipeline(pipeline);
+                bind_tint(pass, placement);
                 for args in commands {
                     issue(pass, args);
                 }
@@ -97,10 +98,19 @@ pub(crate) fn encode<'w>(
                     args,
                 ) {
                     pass.set_render_pipeline(pipeline);
+                    bind_tint(pass, placement);
                     issue(pass, args);
                 }
             }
         }
+    }
+}
+
+pub(super) fn bind_tint<'w>(pass: &mut TrackedRenderPass<'w>, placement: &'w Placement) {
+    if placement.tint[..3] != [1.; 3]
+        && let Some((_, binding)) = &placement.opacity_binding
+    {
+        pass.set_bind_group(2, binding, &[]);
     }
 }
 

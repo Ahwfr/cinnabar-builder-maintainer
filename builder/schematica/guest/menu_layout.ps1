@@ -120,7 +120,7 @@ function Add-Header($active) {
     Add-Label '#build' 275 8 112 @(0.20,0.20,0.20,1) 'right'
     $i=0
     $tabs = if ($active -ne 'main') {
-        @(@('load','library','Library'),@('control','back','Controls'),@('materials','materials','Materials'),@('settings','settings','Settings'))
+        @(@('load','library','Library'),@('control','back','Controls'),@('verifier','verifier','Verifier'),@('settings','settings','Settings'))
     }
     foreach($tab in $tabs){
         $isActive=$active -eq $tab[0]
@@ -166,27 +166,32 @@ function Add-Dashboard {
     Add-Label 'PLACEMENT' 254 133 370 $ink
     Add-Label '#detailPlacement' 254 148 370 $muted
     Add-Button 'place' 'Place here' 254 163 120 21 $activeFill $false '' '' '' '#hasBlueprint'
-    Add-Button 'cw' 'Rotate 90°' 378 163 120 21 $lightFill $false '' '' '' '#hasBlueprint'
-    Add-Button 'flip' 'Mirror' 502 163 122 21 $lightFill $false '' '' '' '#hasBlueprint'
+    Add-Button 'cw' 'Rotate 90°' 378 163 120 21 $lightFill $false '' '' '' '#canTransform'
+    Add-Button 'mirror-cycle' '#mirror' 502 163 122 21 $lightFill $false '' '' '' '#canTransform'
     $i=0
     foreach($axis in @('x','y','z')){
         foreach($sign in @('minus','plus')){
             $text=$axis.ToUpperInvariant()+$(if($sign -eq 'minus'){'-'}else{'+'})
-            Add-Button "$axis-$sign" $text (254+62*$i) 187 58 19 $buttonFill $false '' '' '' '#hasBlueprint'
+            Add-Button "$axis-$sign" $text (254+62*$i) 187 58 19 $buttonFill $false '' '' '' '#canTransform'
             $i++
         }
     }
-    Add-Label '#materialHeading' 254 215 370 $ink
-    for($i=0;$i -lt 7;$i++){
-        $y=234+14*$i
+    Add-Button 'previous-layer' '-' 254 211 24 18 $buttonFill $false '' '' '' '#hasBlueprint'
+    Add-Label '#detailLayers' 288 215 145
+    Add-Button 'next-layer' '+' 437 211 24 18 $buttonFill $false '' '' '' '#hasBlueprint'
+    Add-Button 'mode' '#layerMode' 467 211 157 18 $buttonFill $false '' '' '' '#hasBlueprint'
+    Add-Label '#materialHeading' 254 237 300 $ink
+    Add-Button 'materials-up' '^' 562 230 28 18 $buttonFill $false '' '' '' '#materialsUp'
+    Add-Button 'materials-down' 'v' 596 230 28 18 $buttonFill $false '' '' '' '#materialsDown'
+    for($i=0;$i -lt 5;$i++){
+        $y=251+15*$i
         Add-Item "#materialIcon$i" 254 ($y-1) 14
         Add-Label "#materialName$i" 273 $y 280
         Add-Label "#materialCount$i" 562 $y 62 $accent 'right'
         Add-Node (New-Rect 254 ($y+12) 370 0.5 @(0.27,0.27,0.27,1))
     }
-    Add-Button 'settings' 'Settings' 254 332 120 19 $lightFill
-    Add-Button 'materials' 'Materials' 378 332 120 19 $lightFill
-    Add-Button 'verifier' 'Verifier' 502 332 122 19 $lightFill
+    Add-Button 'settings' 'Settings' 254 332 182 19 $lightFill
+    Add-Button 'verifier' 'Verifier' 442 332 182 19 $lightFill
 }
 
 function Stretch-Node($node,$parentSize) {
@@ -258,7 +263,9 @@ foreach($screen in $Screens){
             Add-Label 'Layer mode' 212 175 102 $muted
             Add-Label 'Layer' 320 175 50 $muted 'center'
             Add-Button 'mode' '#mode' 212 193 102 22
-            Add-Button 'layer' '#layer' 320 193 50 22 $buttonFill $true
+            Add-Button 'previous-layer' '-' 316 193 16 22
+            Add-Button 'layer' '#layer' 334 193 25 22 $buttonFill $true
+            Add-Button 'next-layer' '+' 361 193 16 22
             Add-Button 'unload' 'Unload' 16 252 84 22
             Add-Button 'close' 'Done' 296 252 84 22 $activeFill
         }

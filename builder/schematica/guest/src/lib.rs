@@ -324,6 +324,7 @@ struct Viewer {
     pending_menu_open: u8,
     options: Options,
     material_page: usize,
+    material_offset: usize,
     verifier_page: usize,
     verifier_marker: Option<overlay::DrawPair>,
     verifier_target: Option<[i32; 3]>,
@@ -370,6 +371,7 @@ impl Viewer {
             pending_menu_open: 0,
             options,
             material_page: 0,
+            material_offset: 0,
             verifier_page: 0,
             verifier_marker: None,
             verifier_target: None,
@@ -455,6 +457,16 @@ impl Viewer {
             self.menu_armed = false;
             let old = self.screen;
             let mut changed = false;
+            if matches!(self.screen, Screen::Main | Screen::Load)
+                && keys.wheel != 0.
+                && let (Some((x, y)), Some(layout)) = (keys.pointer, panel::read_layout())
+            {
+                let x = (x - layout.offset.0) / layout.scale * 640. / layout.width;
+                let y = (y - layout.offset.1) / layout.scale * 360. / layout.height;
+                if (254. ..=624.).contains(&x) && (245. ..332.).contains(&y) {
+                    changed |= self.scroll_materials(-keys.wheel.signum() as isize);
+                }
+            }
             if self.screen == Screen::Control {
                 for edit in input::read_text_events().unwrap_or_default() {
                     changed |= self.edit_number(&edit.id, &edit.value);
@@ -694,9 +706,8 @@ impl Viewer {
             "BracketRight" => {
                 if self.layer_mode == 0 {
                     self.layer_mode = 1;
-                } else {
-                    self.layer = (self.layer + 1).min(self.schematic.size()[1] - 1);
                 }
+                self.layer = (self.layer + 1).min(self.schematic.size()[1] - 1);
             }
             _ => {
                 if self.locked {
