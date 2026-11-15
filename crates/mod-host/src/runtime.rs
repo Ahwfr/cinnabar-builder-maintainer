@@ -894,7 +894,11 @@ impl Instance {
         &self.store.data().controls.keys
     }
     pub(super) fn take_interaction(&mut self) -> crate::InteractionOutput {
-        std::mem::take(&mut self.store.data_mut().controls.interaction)
+        let interaction = &mut self.store.data_mut().controls.interaction;
+        let settings = interaction.client_settings.take();
+        let output = std::mem::take(interaction);
+        interaction.client_settings = settings;
+        output
     }
     pub(super) fn take_client_settings(&mut self) -> Option<String> {
         self.store

@@ -39,6 +39,25 @@ pub struct BlockGrid {
     pub cells: Vec<BlockCell>,
 }
 
+/// Reads all four authored links when the imported state supplies them.
+fn authored_pane_links(canonical: &str) -> Option<u8> {
+    let state: serde_json::Value = serde_json::from_str(canonical).ok()?;
+    ["north", "east", "south", "west"]
+        .into_iter()
+        .enumerate()
+        .try_fold(0, |mask, (shift, face)| {
+            let value = state
+                .get(format!("minecraft:connection_{face}"))?
+                .get("value")?;
+            let connected = value.as_bool().or_else(|| match value.as_u64()? {
+                0 => Some(false),
+                1 => Some(true),
+                _ => None,
+            })?;
+            Some(mask | (u8::from(connected) << shift))
+        })
+}
+
 /// An atomic change to a cell in an existing grid palette.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BlockEdit {
@@ -313,6 +332,20 @@ impl BlockGrid {
                     .ok_or(error(ErrorCode::Invalid, "block state"))
             })
             .collect::<Result<_, _>>()?;
+        let pane_links: Vec<_> = self
+            .palette
+            .iter()
+            .zip(&palette)
+            .filter_map(|(state, &id)| {
+                let BlockState::Named { name, states } = state else {
+                    return None;
+                };
+                (name.ends_with("glass_pane") || name == "minecraft:iron_bars")
+                    .then(|| authored_pane_links(states))
+                    .flatten()
+                    .map(|mask| (id, mask))
+            })
+            .collect();
         let mut sections = BTreeMap::new();
         let counts = self
             .size
@@ -392,6 +425,7 @@ impl BlockGrid {
                 &light,
                 meshing::MeshOptions {
                     rendering: settings,
+                    pane_links: &pane_links,
                     ..Default::default()
                 },
             );

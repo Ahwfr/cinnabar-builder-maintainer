@@ -115,7 +115,14 @@ impl Placement {
         }
         let mut out: BTreeMap<String, StateValue> = BTreeMap::new();
         for (k, v) in &s.states {
-            out.insert(k.clone(), self.transform_value(&s.name, k, v));
+            let key = k
+                .strip_prefix("minecraft:connection_")
+                .and_then(Dir::from_name)
+                .map_or_else(
+                    || k.clone(),
+                    |dir| format!("minecraft:connection_{}", self.apply_dir(dir).name()),
+                );
+            out.insert(key, self.transform_value(&s.name, k, v));
         }
         BlockState {
             name: s.name.clone(),
@@ -170,6 +177,26 @@ impl Placement {
             _ => v.clone(),
         }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn clockwise_rotation_moves_north_pane_link_to_east() {
+    let mut pane = BlockState::new("minecraft:glass_pane");
+    pane.states
+        .insert("minecraft:connection_north".into(), StateValue::Bool(true));
+    let mut placement = Placement::new([0; 3]);
+    placement.rotate_cw();
+    let transformed = placement.transform_state(&pane);
+    assert_eq!(
+        transformed.states.get("minecraft:connection_east"),
+        Some(&StateValue::Bool(true))
+    );
+    assert!(
+        !transformed
+            .states
+            .contains_key("minecraft:connection_north")
+    );
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

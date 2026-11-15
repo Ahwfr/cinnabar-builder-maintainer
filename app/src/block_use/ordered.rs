@@ -98,8 +98,27 @@ pub(crate) fn press(
                 movement.position_authority_identity().1,
                 &state,
             )
-            && creative::try_start(&mut player, &mut context, &bridge, &mut movement, true)
+            && creative::try_start(
+                &mut player,
+                &mut context,
+                &bridge,
+                &mut movement,
+                true,
+                ItemUseTrigger::PlayerInput,
+            )
         {
+            creative::resume(
+                &mut player,
+                &mut context,
+                &mut runtime,
+                &mut item_use,
+                &mut swings,
+                &mut movement,
+                Some(pick),
+                input.edge.buttons.held(Action::Use),
+                mode,
+                input.context.identity,
+            );
             return false;
         }
         let Some(observed) = observed else {
@@ -115,7 +134,26 @@ pub(crate) fn press(
             );
             return true;
         };
-        if creative::try_start(&mut player, &mut context, &observed, &mut movement, false) {
+        if creative::try_start(
+            &mut player,
+            &mut context,
+            &observed,
+            &mut movement,
+            false,
+            ItemUseTrigger::PlayerInput,
+        ) {
+            creative::resume(
+                &mut player,
+                &mut context,
+                &mut runtime,
+                &mut item_use,
+                &mut swings,
+                &mut movement,
+                Some(pick),
+                input.edge.buttons.held(Action::Use),
+                mode,
+                input.context.identity,
+            );
             return false;
         }
         let mut build = build::BuildInput::new(

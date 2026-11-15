@@ -1,4 +1,10 @@
-# Cinnabar Builder 0.3.6
+# Cinnabar Builder 0.3.7
+
+- Preserve the schematic picker request through the normal mod frame so Import opens the native picker. Show conversion errors from the picker.
+- Show a stronger blue tint on textured holograms. Preserve authored pane arms in previews and ignore neighbor-derived pane links in verification.
+- Skip redundant equipment selection and let held use repeat assisted placement using the normal timing. Recognize Bedrock's downward bridging pick as an eligible schematic destination.
+
+## 0.3.6
 
 - Open the schematic file picker directly from Schematica.
 - Fixed dashboard nudges and mirror. Mirror cycles through X, Z, and Off.

@@ -395,7 +395,10 @@ impl GameplayContext<'_> {
                 }
             })
         });
-        let block_hit = input_owned.then(|| self.block_hit()).flatten();
+        let (block_hit, placement_cell) = input_owned
+            .then(|| self.block_hit())
+            .flatten()
+            .unwrap_or_default();
         let local_world_key = self.session.as_deref().and_then(|session| {
             use sha2::{Digest, Sha256};
             let local = session.destination_identity()?.strip_prefix("local:")?;
@@ -425,9 +428,7 @@ impl GameplayContext<'_> {
                 y: hit.block_pos[1] as f32 + 0.5,
                 z: hit.block_pos[2] as f32 + 0.5,
             }),
-            placement_cell: block_hit
-                .filter(|hit| hit.face <= 5)
-                .map(|hit| gameplay::block_use::placement_cell(hit.block_pos, hit.face)),
+            placement_cell,
             attack_held: input_owned
                 && self
                     .input
@@ -453,7 +454,7 @@ impl GameplayContext<'_> {
     }
 
     /// Observes the current crosshair without applying any component mining request.
-    fn block_hit(&self) -> Option<sim::BlockHit> {
+    fn block_hit(&self) -> Option<(Option<sim::BlockHit>, Option<[i32; 3]>)> {
         let stream = self.world.as_ref()?.stream.as_ref()?;
         let player = self.player.as_ref()?;
         let origin = self.origin.as_ref()?.outbound_ray()?;
@@ -490,7 +491,7 @@ impl GameplayContext<'_> {
         let widen = |p: Vec3| sim::Vec3::new(f64::from(p.x), f64::from(p.y), f64::from(p.z));
         let hit = world
             .block_interaction_ray_current(widen(origin.origin()), widen(origin.direction()), reach)
-            .ok()??;
+            .ok()?;
         let authority = stream.authority();
         let actor = gameplay::melee::pick_actor_by(
             authority.remote_actors(),
@@ -500,18 +501,30 @@ impl GameplayContext<'_> {
             origin.direction().to_array(),
             reach,
         );
-        if !matches!(
-            gameplay::melee::classify_block_hit(
-                actor,
-                origin.origin().to_array(),
-                Some(&hit),
-                reach
-            ),
-            gameplay::melee::Crosshair::Block
+        let target = match gameplay::melee::classify_block_hit(
+            actor,
+            origin.origin().to_array(),
+            hit.as_ref(),
+            reach,
         ) {
-            return None;
-        }
-        Some(hit)
+            gameplay::melee::Crosshair::Block => {
+                let placement = hit
+                    .as_ref()
+                    .map(|hit| gameplay::block_use::placement_cell(hit.block_pos, hit.face));
+                return Some((hit, placement));
+            }
+            gameplay::melee::Crosshair::Miss if hit.is_none() && actor.is_none() => world
+                .block_use_miss_support_current(widen(origin.origin()), widen(origin.direction()))
+                .ok()??,
+            _ => return None,
+        };
+        Some((
+            None,
+            Some(gameplay::block_use::placement_cell(
+                target.block_pos,
+                target.face,
+            )),
+        ))
     }
 
     /// Called only for a successfully committed, once-consumed current-frame delta.

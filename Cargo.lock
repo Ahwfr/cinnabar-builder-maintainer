@@ -6028,6 +6028,7 @@ dependencies = [
  "mod-api",
  "naga",
  "serde",
+ "serde_json",
  "test-alloc",
  "world",
 ]

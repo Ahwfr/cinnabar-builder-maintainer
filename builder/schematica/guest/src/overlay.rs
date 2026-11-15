@@ -398,11 +398,50 @@ fn compare(
         (false, true) => CellStatus::Missing,
         (false, false) if name != expected.name => CellStatus::Wrong,
         (false, false) => match block.canonical_state.as_deref() {
-            Some(state) if state == expected.states => CellStatus::Correct,
+            Some(state) if preview_states_match(name, &expected.states, state) => {
+                CellStatus::Correct
+            }
             Some(_) => CellStatus::WrongState,
             None => CellStatus::Unloaded,
         },
     }
+}
+
+/// Pane arms are resolved by adjacent blocks when placed.
+fn preview_states_match(name: &str, expected: &str, actual: &str) -> bool {
+    if expected == actual {
+        return true;
+    }
+    if !name.ends_with("glass_pane") && name != "minecraft:iron_bars" {
+        return false;
+    }
+    let without_connections = |state| {
+        let mut values: Map<String, serde_json::Value> = serde_json::from_str(state).ok()?;
+        for key in ["north", "east", "south", "west"] {
+            values.remove(&format!("minecraft:connection_{key}"));
+        }
+        Some(values)
+    };
+    without_connections(expected)
+        .zip(without_connections(actual))
+        .is_some_and(|(a, b)| a == b)
+}
+
+#[cfg(test)]
+#[test]
+fn pane_arms_do_not_mark_the_correct_pane_yellow() {
+    let connected = r#"{"minecraft:connection_north":{"type":"byte","value":1}}"#;
+    assert!(preview_states_match(
+        "minecraft:light_gray_stained_glass_pane",
+        "{}",
+        connected
+    ));
+    assert!(!preview_states_match("minecraft:stone", "{}", connected));
+    assert!(!preview_states_match(
+        "minecraft:glass_pane",
+        "{}",
+        r#"{"other":0}"#
+    ));
 }
 
 pub(crate) fn canonical(state: &BlockState) -> String {
@@ -445,7 +484,7 @@ fn create(
             scale: (1., 1., 1.),
         },
         tint: if textured {
-            (0.68, 0.84, 1., opacity)
+            (0.32, 0.62, 1., opacity)
         } else {
             (1., 1., 1., opacity)
         },

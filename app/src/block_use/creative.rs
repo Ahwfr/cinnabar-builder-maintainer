@@ -16,7 +16,6 @@ use std::time::Duration;
 pub(crate) struct CreativePlacement {
     pub offer: Option<CreativePlacementOffer>,
     pending: Option<Pending>,
-    claimed: bool,
 }
 
 type StackKey = (i32, u32, i32);
@@ -37,6 +36,7 @@ struct Pending {
     selecting: bool,
     aim: Option<TemporaryAim>,
     bridge: bool,
+    trigger: ItemUseTrigger,
 }
 
 #[derive(Clone, Copy)]
@@ -161,6 +161,7 @@ pub(super) fn try_start(
     observed: &FrozenBlockObservation,
     movement: &mut MovementTicker,
     bridge: bool,
+    trigger: ItemUseTrigger,
 ) -> bool {
     let Some(policy) = context.creative.as_deref_mut() else {
         return false;
@@ -201,7 +202,6 @@ pub(super) fn try_start(
         })
     };
     let selected = observed.selection.slot;
-    policy.claimed = false;
     if observed.target.face > 5
         || placement_cell(observed.target.position, observed.target.face) != offer.position
     {
@@ -215,7 +215,6 @@ pub(super) fn try_start(
         return false;
     }
     if policy.pending.is_some() {
-        policy.claimed = true;
         return true;
     }
 
@@ -281,7 +280,6 @@ pub(super) fn try_start(
         }
         (slot, item, None, Some(Catalog::Opening(id)))
     };
-    policy.claimed = true;
     bevy::log::info!(block = %offer.name, slot, ?request, ?catalog, ?game_mode, item_network_id = key.0,
         metadata = key.1, item_block_runtime_id = key.2, "Fast Place waiting for inventory and selection");
     policy.pending = Some(Pending {
@@ -300,9 +298,10 @@ pub(super) fn try_start(
         key,
         request,
         catalog,
-        selecting: false,
+        selecting: slot == selected && request.is_none() && catalog.is_none(),
         aim: None,
         bridge,
+        trigger,
     });
     true
 }
@@ -321,7 +320,6 @@ pub(super) fn clear(
         {
             movement.end_placement_facing();
         }
-        policy.claimed = false;
         player
             .inventory
             .ledger_mut()
@@ -349,13 +347,11 @@ pub(super) fn resume(
     let Some(policy) = context.creative.as_deref_mut() else {
         return false;
     };
-    policy.claimed &= held && policy.offer.is_some();
     let Some(mut pending) = policy.pending.take() else {
-        return policy.claimed;
+        return false;
     };
     if policy.offer.as_ref() != Some(&pending.offer) {
         bevy::log::debug!(ghost = ?pending.offer.position, current = ?policy.offer, "Fast Place: schematic offer changed before placement");
-        policy.claimed = false;
         movement.end_placement_facing();
         player
             .inventory
@@ -378,6 +374,7 @@ pub(super) fn resume(
                 stream.current_dimension(),
             )
         || context.time.elapsed() >= pending.expires
+        || (pending.trigger == ItemUseTrigger::SimulationTick && !held)
         || pending.input_generation != authority.0
         || pending.position_generation != movement.position_authority_identity().1
         || context.client_world.respawn.input_held()
@@ -397,7 +394,6 @@ pub(super) fn resume(
             || context.input.movement() != [0.0; 2]
         {
             movement.end_placement_facing();
-            policy.claimed = false;
             return false;
         }
         if !aim.written(movement) {
@@ -539,10 +535,6 @@ pub(super) fn resume(
         return true;
     }
     let mut view = *context.view;
-    if pending.bridge && pending.aim.is_none() {
-        movement.end_placement_facing();
-        return true;
-    }
     let observed = if let Some(aim) = pending.aim {
         let Some(adjusted) =
             super::orientation::recapture(player, context, observed, &state, aim.placement)
@@ -558,14 +550,8 @@ pub(super) fn resume(
     runtime.forget_press_resolution();
     runtime.selection_changed(&observed.selection);
     let clock = RepeatClock::for_state(context.time.elapsed(), &state, Some(pending.game_mode));
-    let mut build = build::BuildInput::new(
-        observed,
-        state,
-        ItemUseTrigger::PlayerInput,
-        clock.now,
-        clock,
-        view,
-    );
+    let mut build =
+        build::BuildInput::new(observed, state, pending.trigger, clock.now, clock, view);
     build.expected = Some(pending.offer);
     bevy::log::debug!(
         slot = pending.slot,

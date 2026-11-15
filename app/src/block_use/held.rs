@@ -173,7 +173,7 @@ pub(super) fn maintain_block_use(
         ) {
             continue;
         }
-        let Some(observed) = observe_use_target(
+        let observed = observe_use_target(
             &player_runtime,
             &context,
             &context.origin,
@@ -185,23 +185,46 @@ pub(super) fn maintain_block_use(
             Some(pick),
             trigger,
             &state,
-        ) else {
+        );
+        if let Some(offer) = context
+            .creative
+            .as_ref()
+            .and_then(|policy| policy.offer.as_ref())
+        {
+            let native = observed.as_ref().filter(|hit| {
+                placement_cell(hit.target.position, hit.target.face) == offer.position
+            });
+            let bridge = native
+                .is_none()
+                .then(|| {
+                    super::target::observe_bridge_target(
+                        &player_runtime,
+                        &context,
+                        &context.origin,
+                        input_mode,
+                        input_authority,
+                        movement.position_authority_identity().1,
+                        &state,
+                    )
+                })
+                .flatten();
+            if let Some(target) = native.or(bridge.as_ref())
+                && creative::try_start(
+                    &mut player_runtime,
+                    &mut context,
+                    target,
+                    &mut movement,
+                    bridge.is_some(),
+                    trigger,
+                )
+            {
+                break;
+            }
+        }
+        let Some(observed) = observed else {
             runtime.record(trigger, due, tick, LocalUse::Nothing, false, clock);
             continue;
         };
-        if use_phase.pressed
-            && trigger == ItemUseTrigger::PlayerInput
-            && creative::try_start(
-                &mut player_runtime,
-                &mut context,
-                &observed,
-                &mut movement,
-                false,
-            )
-        {
-            runtime.clear_press();
-            break;
-        }
         let mut attempt =
             build::BuildInput::new(observed, state, trigger, due, clock, *context.view);
         build::advance(

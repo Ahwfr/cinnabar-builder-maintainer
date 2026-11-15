@@ -19,7 +19,10 @@ fn main() -> Result<()> {
     let result = run();
     #[cfg(windows)]
     if let Err(error) = &result
-        && env::args_os().len() == 1
+        && (env::args_os().len() == 1
+            || env::args_os()
+                .nth(1)
+                .is_some_and(|arg| arg == "import-dialog"))
     {
         picker::show_error(&format!("{error:#}"));
     }

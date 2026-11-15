@@ -87,6 +87,8 @@ pub struct MeshOptions<'a> {
     pub overlays: &'a [crate::CellOverlay],
     /// Visual-only, caller-resolved coverage rules for full block model faces.
     pub surface_rules: &'a [crate::surface::SurfaceRule],
+    /// Authored pane link masks for retained previews, indexed by network block state.
+    pub pane_links: &'a [(u32, u8)],
 }
 
 /// Greedy-mesh the bounded palette snapshot with solved block/sky light.
@@ -223,6 +225,7 @@ fn mesh_sub_chunk_core<
         visuals,
         network_id_mode,
         neighbourhood,
+        pane_links: options.pane_links,
     };
 
     let seasonal_coverage =

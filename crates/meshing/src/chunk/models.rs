@@ -163,13 +163,19 @@ pub(crate) fn select_model_templates<'a>(
             chorus::select_template(context, facts, neighbour_facts, coordinate, entry)
         }
         ModelTemplateSelection::Pane => {
-            let mask = connected_model_mask(
-                context,
-                facts,
-                neighbour_facts,
-                coordinate,
-                MODEL_TEMPLATE_FLAG_PANE,
-            );
+            let mask = context
+                .pane_links
+                .iter()
+                .find_map(|&(id, mask)| (id == entry.network_value).then_some(u32::from(mask & 15)))
+                .unwrap_or_else(|| {
+                    connected_model_mask(
+                        context,
+                        facts,
+                        neighbour_facts,
+                        coordinate,
+                        MODEL_TEMPLATE_FLAG_PANE,
+                    )
+                });
             entry.model_template + mask
         }
         ModelTemplateSelection::Fence(fence_flag) => {
@@ -399,6 +405,7 @@ pub(crate) struct PaletteResolutionContext<'assets, 'chunks> {
     pub(crate) visuals: &'assets RuntimeAssets,
     pub(crate) network_id_mode: NetworkIdMode,
     pub(crate) neighbourhood: &'assets MeshNeighbourhood<'chunks>,
+    pub(crate) pane_links: &'assets [(u32, u8)],
 }
 
 pub(crate) fn adjacent_palette_entry<'a>(

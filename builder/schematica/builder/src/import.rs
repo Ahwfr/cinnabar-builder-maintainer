@@ -84,14 +84,28 @@ fn import_bytes(data: &[u8], name: String, ext: &str) -> Result<Schematic> {
                 }
                 let key = state.to_string();
                 if !translations.contains_key(&key) {
-                    let translated = blockpedia::BlockState::parse(&key)
-                        .and_then(|state| state.to_bedrock())
+                    let source = blockpedia::BlockState::parse(&key)
+                        .map_err(|e| anyhow!("cannot parse {key}: {e}"))?;
+                    let translated = source
+                        .to_bedrock()
                         .map_err(|e| anyhow!("cannot translate {key} to Bedrock: {e}"))?;
                     let mut mapped = BlockState::new(translated.id());
                     for (key, value) in translated.properties() {
                         mapped
                             .states
                             .insert(key.to_string(), StateValue::parse(value));
+                    }
+                    if mapped.name.ends_with("glass_pane") || mapped.name == "minecraft:iron_bars" {
+                        for (direction, value) in source.properties() {
+                            if matches!(direction.as_str(), "north" | "east" | "south" | "west")
+                                && matches!(value.as_str(), "true" | "false")
+                            {
+                                mapped.states.insert(
+                                    format!("minecraft:connection_{direction}"),
+                                    StateValue::Bool(value == "true"),
+                                );
+                            }
+                        }
                     }
                     translations.insert(key.clone(), mapped);
                 }

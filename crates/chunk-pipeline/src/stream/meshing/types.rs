@@ -118,6 +118,7 @@ impl MeshSnapshot {
                 water_filled: self.java_meshing.as_deref().unwrap_or_default(),
                 overlays: &overlays,
                 surface_rules: &self.surface_rules,
+                pane_links: &[],
             },
             scratch,
         )
