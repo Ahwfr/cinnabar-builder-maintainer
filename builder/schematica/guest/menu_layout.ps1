@@ -40,8 +40,8 @@ function Button-Face($text,$w,$h,$fill,$pressed,$colorBinding,$subtitle) {
     $textY=if($subtitle){4+$drop}else{[int][Math]::Floor(($h-$depth-8)/2)+$drop}
     $caption=New-Label $text $textX $textY ($w-$textX*2) $captionInk $align
     $caption.size[1]=8
+    # The outer button draws the border in every state.
     $children=@(
-        @{cover=(New-Rect 0 0 $w $h $border)},
         @{bottom=(New-Rect 1 ($h-$depth) ($w-2) $depth $shade)},
         @{face=$face}
     )
@@ -359,5 +359,8 @@ foreach($screen in $Screens){
     $panel.size=@('100%','100%')
     $payload.reference_size=$size.Clone()
     $payload.surface.document=ConvertTo-Json $document -Depth 100 -Compress
+    if ([Text.Encoding]::UTF8.GetByteCount($payload.surface.document) -gt 192KB) {
+        throw "$screen exceeds Cinnabar's surface size limit"
+    }
     $payload | ConvertTo-Json -Depth 100 -Compress | Set-Content -LiteralPath (Join-Path $PSScriptRoot "ui/$screen-full.json")
 }
