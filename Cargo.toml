@@ -168,11 +168,11 @@ mimalloc = { version = "=0.1.52", default-features = false }
 sha2 = "=0.10.9"
 # Crates that generate random UUIDs add `v4`; wasm32-unknown-unknown has no source for it.
 uuid = "1"
-wasmtime = { version = "=36.0.16", default-features = false, features = ["component-model", "cranelift", "runtime", "std", "wat"] }
+wasmtime = { version = "=36.0.20", default-features = false, features = ["component-model", "cranelift", "runtime", "std", "wat"] }
 wit-bindgen = "=0.57.1"
 # WASI for trusted packet mods only, pinned with wasmtime.
-wasmtime-wasi = { version = "=36.0.16", default-features = false, features = ["preview1"] }
-wasi-preview1-component-adapter-provider = "=36.0.16"
+wasmtime-wasi = { version = "=36.0.20", default-features = false, features = ["preview1"] }
+wasi-preview1-component-adapter-provider = "=36.0.20"
 wit-component = "=0.247.0"
 wit-parser = "=0.247.0"
 

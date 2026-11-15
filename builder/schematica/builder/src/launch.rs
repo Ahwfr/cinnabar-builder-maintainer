@@ -175,7 +175,7 @@ pub fn start(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Keeps the existing grants and enabled state while relocating this library's registration.
+/// Preserve the enabled state and normal gameplay grants while retiring unused capabilities.
 #[cfg(windows)]
 fn registration(profile: &Path, installed: &Path) -> Result<()> {
     let directory = profile.join("config");
@@ -196,6 +196,11 @@ fn registration(profile: &Path, installed: &Path) -> Result<()> {
             == Some(std::ffi::OsStr::new("schematica-builder.wasm"))
     }) {
         entry["component"] = serde_json::json!(installed);
+        if let Some(grants) = entry["grants"].as_object_mut() {
+            for capability in ["commands", "wasi", "packets", "packet_delay"] {
+                grants.remove(capability);
+            }
+        }
     } else {
         let mut grants: serde_json::Value =
             serde_json::from_slice(include_bytes!("../../guest/grants.json"))?;
