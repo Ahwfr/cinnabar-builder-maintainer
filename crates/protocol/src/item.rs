@@ -290,7 +290,7 @@ pub fn shulker_contents_match(
         })
         .or_else(|| {
             let mut item_tag = root_tag(&mut &*nbt, 10, b"tag")?;
-            compound_field(&mut item_tag, 9, b"Items").or_else(|| {
+            compound_field(&mut item_tag.clone(), 9, b"Items").or_else(|| {
                 let mut block = compound_field(&mut item_tag, 10, b"BlockEntityTag")?;
                 compound_field(&mut block, 9, b"Items")
             })
