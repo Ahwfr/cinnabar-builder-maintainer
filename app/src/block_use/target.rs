@@ -122,13 +122,12 @@ pub(super) fn observe_bridge_target(
                     direction = Some(aim.to_array());
                 }
             }
-            if best.is_none() && offer.strict_state {
-                let face = super::orientation::air_place_face(offer);
-                let mut point = offer.position.map(|coordinate| f64::from(coordinate) + 0.5);
-                let normal = placement_cell([0; 3], face);
-                for (axis, offset) in normal.into_iter().enumerate() {
-                    point[axis] += 0.5 * f64::from(offset);
-                }
+            if best.is_none()
+                && offer.strict_state
+                && super::orientation::air_place_preserves_state(offer)
+            {
+                let [x, y, z] = offer.position;
+                let point = [f64::from(x) + 0.5, f64::from(y) + 1.0, f64::from(z) + 0.5];
                 if !gameplay::interaction_authority::pick_point_in_range(
                     point.map(|axis| axis as f32),
                     state.position,
@@ -143,9 +142,6 @@ pub(super) fn observe_bridge_target(
                     return Ok(None);
                 }
                 let hit_world = sim::Vec3::new(point[0], point[1], point[2]);
-                let local = std::array::from_fn::<_, 3, _>(|axis| {
-                    point[axis] - f64::from(offer.position[axis])
-                });
                 let Some(aim) =
                     (Vec3::from_array(point.map(|axis| axis as f32)) - eye_f32).try_normalize()
                 else {
@@ -154,8 +150,8 @@ pub(super) fn observe_bridge_target(
                 direction = Some(aim.to_array());
                 best = Some(sim::BlockHit {
                     block_pos: offer.position,
-                    face,
-                    hit_local: sim::Vec3::new(local[0], local[1], local[2]),
+                    face: 1,
+                    hit_local: sim::Vec3::new(0.5, 1.0, 0.5),
                     hit_world,
                     runtime_id: stream.air_block_id(),
                     distance: (hit_world - eye).length_squared().sqrt(),

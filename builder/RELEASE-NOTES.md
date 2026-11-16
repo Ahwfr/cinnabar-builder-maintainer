@@ -1,7 +1,7 @@
 # Cinnabar Builder 0.3.11
 
 - V2 Strict can attempt to fill an empty schematic cell within reach when there is no usable support face. It reports the actual air runtime ID in a normal block-placement transaction. Bedrock confirms the block and Survival inventory update.
-- Verified a direct air placement on stock Bedrock 1.26.60.6 in Survival with cheats disabled. Server acceptance can vary.
+- Verified a direct air placement on stock Bedrock 1.26.60.6 in Survival with cheats disabled. Also verified opposite stair facings. Upside-down stairs, upper slabs and horizontal pillars use real support because the direct air click cannot be relied on to preserve the placement face. Server acceptance can vary.
 
 ## 0.3.10
 

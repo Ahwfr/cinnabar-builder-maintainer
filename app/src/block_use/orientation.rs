@@ -302,22 +302,20 @@ fn separate_facing(rotation: Quat, mut matches: impl FnMut(Quat) -> bool) -> Opt
         .find(|&candidate| matches(candidate))
 }
 
-/// Chooses a click face for Bedrock's replace-in-place transaction against air.
-pub(super) fn air_place_face(offer: &CreativePlacementOffer) -> u8 {
+/// Direct air clicks preserve reported yaw, but Bedrock can ignore the click face.
+pub(super) fn air_place_preserves_state(offer: &CreativePlacementOffer) -> bool {
     let Ok(planned) =
         serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&offer.states)
     else {
-        return 1;
+        return false;
     };
-    match planned
-        .get("pillar_axis")
-        .and_then(|state| state["value"].as_str())
-    {
-        Some("x") => 5,
-        Some("z") => 3,
-        _ if planned_upper(&planned) == Some(true) => 0,
-        _ => 1,
-    }
+    planned_upper(&planned) != Some(true)
+        && !matches!(
+            planned
+                .get("pillar_axis")
+                .and_then(|state| state["value"].as_str()),
+            Some("x" | "z")
+        )
 }
 
 fn planned_upper(planned: &serde_json::Map<String, serde_json::Value>) -> Option<bool> {
