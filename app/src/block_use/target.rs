@@ -48,11 +48,14 @@ pub(super) fn observe_bridge_target(
             }
             let eye_f32 = Vec3::new(eye.x as f32, eye.y as f32, eye.z as f32);
             let forward = Vec3::new(forward.x as f32, forward.y as f32, forward.z as f32);
+            let prefer_air = offer.strict_state
+                && offer.name.ends_with("_stairs")
+                && super::orientation::air_place_preserves_state(offer);
             let mut best = None;
             let mut score = f32::NEG_INFINITY;
             for face in 0..6 {
                 let support = placement_cell(offer.position, face ^ 1);
-                if world.is_air(support).unwrap_or(true) {
+                if prefer_air || world.is_air(support).unwrap_or(true) {
                     continue;
                 }
                 for aim in super::orientation::support_directions(support, face, eye_f32) {
@@ -95,7 +98,7 @@ pub(super) fn observe_bridge_target(
             if best.is_some() {
                 return Ok(best);
             }
-            for face in 0..6 {
+            for face in (0..6).filter(|_| !prefer_air) {
                 let Some(hit) = super::orientation::hidden_support_hit(world, offer.position, face)
                 else {
                     continue;

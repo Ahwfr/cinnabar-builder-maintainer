@@ -2,7 +2,7 @@
 param([switch]$Accept)
 
 $ErrorActionPreference = 'Stop'
-$checkout = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$checkout = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $candidate = "$checkout-update"
 $branch = 'builder-features'
 $trial = 'builder-update'
@@ -86,4 +86,4 @@ $null = Invoke-BuilderGit $checkout @('update-ref', $trialBaseRef, $nextBase)
 $null = Invoke-BuilderGit $checkout @('update-ref', $trialFromRef, $current)
 Write-Output "Staging $nextBase in $candidate"
 $null = Invoke-BuilderGit $candidate @('rebase', '--onto', $nextBase, $base)
-Write-Output "Build and play-test with $candidate\builder\Build-Builder.ps1 and Start-Builder.ps1. Then run Update-Builder.ps1 -Accept from the main checkout."
+Write-Output "Build and play-test with $candidate\builder\windows\Build-Builder.ps1 and Start-Builder.ps1. Then run Update-Builder.ps1 -Accept from the main checkout."

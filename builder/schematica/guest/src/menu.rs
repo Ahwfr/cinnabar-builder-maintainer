@@ -74,7 +74,11 @@ fn update(viewer: &Viewer) -> Result<(), String> {
             json!(if viewer.paste.is_some() {
                 "Cancel paste"
             } else if viewer.paste_confirm {
-                "Confirm paste"
+                if viewer.options.paste_destroy {
+                    "Confirm destroy"
+                } else {
+                    "Confirm paste"
+                }
             } else {
                 "Paste build"
             }),
@@ -128,6 +132,13 @@ fn update(viewer: &Viewer) -> Result<(), String> {
         }
         Screen::Load => crate::dashboard::bindings(viewer, &mut out),
         Screen::Settings => {
+            for (key, enabled) in [
+                ("#hold-place", viewer.options.hold_place),
+                ("#auto-layer", viewer.options.auto_layer),
+                ("#paste-destroy", viewer.options.paste_destroy),
+            ] {
+                out.insert(key.into(), json!(if enabled { "On" } else { "Off" }));
+            }
             out.insert(
                 "#remember-placement".into(),
                 json!(if viewer.options.remember_placement {
@@ -139,7 +150,7 @@ fn update(viewer: &Viewer) -> Result<(), String> {
             out.insert(
                 "#ui-layout".into(),
                 json!(if viewer.options.fullscreen_ui {
-                    "Full screen"
+                    "Full"
                 } else {
                     "Compact"
                 }),

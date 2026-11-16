@@ -10,7 +10,7 @@ Close Builder and run these commands in the updated checkout:
 
 ```powershell
 $env:CINNABAR_LOG = 'info,cinnabar::block_use=debug,cinnabar::inventory_requests=debug,cinnabar::placement_updates=debug'
-.\builder\Start-Builder.ps1
+.\builder\windows\Start-Builder.ps1
 ```
 
 Check `.local/builder-user/data/logs/client.log` for the session revision, then check **Settings → Mods** for the imported guest revision. Open a disposable local world, enable Fast Place in Schematica settings, and grant terrain, item use and inventory. Place a real support bordering one missing ghost. Click once and keep the crosshair still for one second.

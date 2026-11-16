@@ -9,6 +9,7 @@ const COMMAND_BYTES: usize = 128;
 pub(super) struct Paste {
     scope: (u64, i32),
     placement: Placement,
+    destroy: bool,
     cursor: usize,
     sent: usize,
     skipped: usize,
@@ -31,6 +32,7 @@ impl Viewer {
         self.paste = Some(Paste {
             scope,
             placement,
+            destroy: self.options.paste_destroy,
             cursor: 0,
             sent: 0,
             skipped: 0,
@@ -87,6 +89,7 @@ impl Viewer {
                     local,
                     palette_index,
                     formatted,
+                    run.destroy,
                 );
                 let Some(command) = command else {
                     run.cursor += 1;
@@ -137,7 +140,9 @@ fn command(
     local: [i32; 3],
     index: u32,
     state: &str,
+    destroy: bool,
 ) -> (Option<String>, usize) {
+    let mode = if destroy { "destroy" } else { "keep" };
     let [x, y, z] = local;
     let size = schematic.size();
     let start = placement.local_to_world(size, local);
@@ -149,13 +154,13 @@ fn command(
         let tail = placement.local_to_world(size, [end, y, z]);
         let [ax, ay, az] = std::array::from_fn(|axis| start[axis].min(tail[axis]));
         let [bx, by, bz] = std::array::from_fn(|axis| start[axis].max(tail[axis]));
-        let fill = format!("/fill {ax} {ay} {az} {bx} {by} {bz} {state} keep");
+        let fill = format!("/fill {ax} {ay} {az} {bx} {by} {bz} {state} {mode}");
         if fill.len() <= COMMAND_BYTES {
             return (Some(fill), (end - x + 1) as usize);
         }
     }
     let [x, y, z] = start;
-    let setblock = format!("/setblock {x} {y} {z} {state} keep");
+    let setblock = format!("/setblock {x} {y} {z} {state} {mode}");
     ((setblock.len() <= COMMAND_BYTES).then_some(setblock), 1)
 }
 

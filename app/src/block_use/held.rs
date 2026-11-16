@@ -191,6 +191,9 @@ pub(super) fn maintain_block_use(
             .as_ref()
             .and_then(|policy| policy.offer.as_ref())
         {
+            if trigger == ItemUseTrigger::SimulationTick && !offer.repeat_while_held {
+                break;
+            }
             let strict = offer.strict_state;
             let native = observed.as_ref().filter(|hit| {
                 placement_cell(hit.target.position, hit.target.face) == offer.position

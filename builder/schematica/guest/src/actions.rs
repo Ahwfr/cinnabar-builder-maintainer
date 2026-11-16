@@ -30,6 +30,7 @@ impl Viewer {
             .and_then(|value| value.parse::<usize>().ok())
         {
             if self.active_entry == Some(index) && !self.locked {
+                self.remember_unload();
                 self.placement = None;
                 self.active_entry = None;
                 self.loaded = false;
@@ -146,6 +147,9 @@ impl Viewer {
             }
             "assist" => {
                 self.options.assist = !self.options.assist;
+                if !self.options.assist {
+                    self.show_label("");
+                }
                 self.options.save();
                 return;
             }
@@ -174,6 +178,22 @@ impl Viewer {
                 menu::prepare(self);
                 return;
             }
+            "hold-place" => {
+                self.options.hold_place = !self.options.hold_place;
+                self.options.save();
+                return;
+            }
+            "auto-layer" => {
+                self.options.auto_layer = !self.options.auto_layer;
+                self.options.save();
+                return;
+            }
+            "paste-destroy" => {
+                self.options.paste_destroy = !self.options.paste_destroy;
+                self.paste_confirm = false;
+                self.options.save();
+                return;
+            }
             "bridge-place" => {
                 self.options.bridge_place = !self.options.bridge_place;
                 self.options.save();
@@ -191,7 +211,11 @@ impl Viewer {
                 if self.locked {
                     return;
                 }
+                self.remember_unload();
                 self.placement = None;
+                self.active_entry = None;
+                self.loaded = false;
+                self.auto_place = false;
                 self.dirty = true;
                 let _ = panel::close();
                 return;

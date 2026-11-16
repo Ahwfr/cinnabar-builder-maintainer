@@ -517,7 +517,8 @@ fn preview_states_match(name: &str, expected: &str, actual: &str) -> bool {
     }
     let wall = name.ends_with("_wall");
     let wire = name == "minecraft:trip_wire";
-    if !wall && !wire && !name.ends_with("glass_pane") && name != "minecraft:iron_bars" {
+    let stair = name.ends_with("_stairs");
+    if !stair && !wall && !wire && !name.ends_with("glass_pane") && name != "minecraft:iron_bars" {
         return false;
     }
     let without_connections = |state| {
@@ -529,6 +530,9 @@ fn preview_states_match(name: &str, expected: &str, actual: &str) -> bool {
                 format!("minecraft:connection_{key}")
             };
             values.remove(&key);
+        }
+        if stair {
+            values.remove("minecraft:corner");
         }
         if wall {
             values.remove("wall_post_bit");
@@ -657,4 +661,21 @@ fn add_box(mesh: &mut draw::Mesh, [x, y, z]: [i32; 3], color: (f32, f32, f32, f3
         2, 6, 3, 3, 6, 7,
     ];
     mesh.indices.extend(triangles.map(|i| base + i));
+}
+
+#[cfg(test)]
+#[test]
+fn stair_layers_compare_half_and_facing_independently_of_derived_corner() {
+    let planned = r#"{"minecraft:corner":{"value":"none"},"upside_down_bit":{"value":0},"weirdo_direction":{"value":2}}"#;
+    let joined = planned.replace("none", "outer_left");
+    assert!(preview_states_match(
+        "minecraft:oak_stairs",
+        planned,
+        &joined
+    ));
+    assert!(!preview_states_match(
+        "minecraft:oak_stairs",
+        planned,
+        &joined.replace("value\":0", "value\":1")
+    ));
 }

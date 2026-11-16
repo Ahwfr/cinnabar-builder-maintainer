@@ -87,6 +87,35 @@ mod tests {
         assert_eq!(library_payload(&component.finish())?, payload);
         Ok(())
     }
+
+    #[test]
+    fn new_and_legacy_registrations_carry_the_request_id_the_client_requires() -> Result<()> {
+        let installed = Path::new("/profile/data/mods/schematica-builder.wasm");
+        let created = registered(None, installed)?;
+        assert_eq!(created["request_id"], "builder");
+        assert_eq!(created["mods"][0]["enabled"], true);
+
+        let legacy = serde_json::json!({"version":2,"mods":[{"component":"/old/schematica-builder.wasm","enabled":false,"grants":{"commands":["say","fill","setblock"],"hud":true},"reload":3}]});
+        let repaired = registered(Some(legacy), installed)?;
+        assert_eq!(repaired["request_id"], "builder");
+        assert_eq!(repaired["mods"].as_array().map(Vec::len), Some(1));
+        assert_eq!(
+            repaired["mods"][0]["component"],
+            installed.to_str().unwrap()
+        );
+        assert_eq!(repaired["mods"][0]["enabled"], false);
+        assert_eq!(
+            repaired["mods"][0]["grants"]["commands"],
+            serde_json::json!(["fill", "setblock"])
+        );
+
+        let kept = serde_json::json!({"version":2,"request_id":"settings-7","mods":[]});
+        assert_eq!(
+            registered(Some(kept), installed)?["request_id"],
+            "settings-7"
+        );
+        Ok(())
+    }
 }
 
 /// Publishes only complete components and first preserves the previous revision.
@@ -122,7 +151,6 @@ fn publish(mods: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-#[cfg(windows)]
 pub fn import_dialog(mods: &Path) -> Result<()> {
     let Some(inputs) = super::picker::choose()? else {
         return Ok(());
@@ -159,29 +187,65 @@ pub fn append_imports(mods: &Path, inputs: &[PathBuf]) -> Result<()> {
     publish(mods, &bytes)
 }
 
-#[cfg(windows)]
-pub fn start(root: &Path) -> Result<()> {
-    let package = if root.join("App").is_dir() {
-        root.join("App")
-    } else {
-        root.to_path_buf()
-    };
-    let client = package.join("runtime/cinnabar.exe");
-    ensure!(
-        client.is_file(),
-        "Keep Cinnabar Builder.exe with the App folder from the same download."
-    );
-    let template_path = package.join("schematica-guest-template.bin");
-    let template =
-        fs::read(&template_path).context("Read this release's Schematica guest template")?;
-    let revision = fs::read_to_string(package.join("builder-commit.txt"))?;
+/// Where one build keeps the client, its working folder, guest template and build stamp.
+pub struct Package {
+    pub client: PathBuf,
+    working_dir: PathBuf,
+    template: PathBuf,
+    revision: PathBuf,
+    missing: &'static str,
+}
+
+impl Package {
+    /// The extracted release layout, with the payload in `App/` beside the launcher.
+    pub fn portable(root: &Path) -> Self {
+        let package = if root.join("App").is_dir() {
+            root.join("App")
+        } else {
+            root.to_path_buf()
+        };
+        Self {
+            client: package.join(format!("runtime/cinnabar{}", env::consts::EXE_SUFFIX)),
+            working_dir: package.join("runtime"),
+            template: package.join("schematica-guest-template.bin"),
+            revision: package.join("builder-commit.txt"),
+            missing: "Keep the Cinnabar Builder launcher with the App folder from the same download.",
+        }
+    }
+
+    /// A source checkout built by the Builder build script for one Cargo profile directory.
+    pub fn checkout(checkout: &Path, profile_dir: &str) -> Self {
+        let target = checkout.join("target");
+        Self {
+            client: target.join(format!("{profile_dir}/cinnabar{}", env::consts::EXE_SUFFIX)),
+            working_dir: checkout.to_path_buf(),
+            template: target
+                .join("builder-importer/wasm32-unknown-unknown/release/schematica_guest.wasm"),
+            revision: target.join(format!("{profile_dir}/builder-commit.txt")),
+            missing: "Build this checkout with the Builder build script before launching.",
+        }
+    }
+}
+
+/// Installs or upgrades the library in the profile, registers it and starts the client.
+///
+/// `CINNABAR_USER_ROOT` overrides `default_profile`. Returns the running client.
+pub fn start(package: &Package, default_profile: &Path) -> Result<std::process::Child> {
+    ensure!(package.client.is_file(), package.missing);
+    let template = fs::read(&package.template).with_context(|| {
+        format!(
+            "Read this build's Schematica guest template at {}",
+            package.template.display()
+        )
+    })?;
+    let revision = fs::read_to_string(&package.revision).context(package.missing)?;
     ensure!(
         super::guest_revision(&template)? == Some(revision.trim()),
-        "The launcher package and guest template belong to different builds. Extract the complete release ZIP."
+        "The client and Schematica guest belong to different builds. Rebuild, or extract the complete release."
     );
     let profile = env::var_os("CINNABAR_USER_ROOT")
         .map(PathBuf::from)
-        .unwrap_or_else(|| root.join("profile"));
+        .unwrap_or_else(|| default_profile.to_path_buf());
     fs::create_dir_all(&profile)?;
     let profile = profile.canonicalize()?;
     let mods = profile.join("data/mods");
@@ -193,28 +257,42 @@ pub fn start(root: &Path) -> Result<()> {
     };
     publish(&mods, &bytes)?;
     registration(&profile, &installed)?;
-    std::process::Command::new(client)
-        .current_dir(package.join("runtime"))
+    std::process::Command::new(&package.client)
+        .current_dir(&package.working_dir)
         .env("CINNABAR_USER_ROOT", &profile)
         .env("CINNABAR_SCHEMATICA_IMPORTER", env::current_exe()?)
-        .env("SCHEMATICA_GUEST_TEMPLATE", template_path)
+        .env("SCHEMATICA_GUEST_TEMPLATE", &package.template)
         .env("CINNABAR_UPDATE_CHECK", "0")
         .spawn()
-        .context("Start Cinnabar Builder")?;
-    Ok(())
+        .context("Start Cinnabar Builder")
 }
 
 /// Preserve the enabled state and normal gameplay grants while retiring unused capabilities.
-#[cfg(windows)]
 fn registration(profile: &Path, installed: &Path) -> Result<()> {
     let directory = profile.join("config");
     fs::create_dir_all(&directory)?;
     let path = directory.join("local-mod.json");
-    let mut document: serde_json::Value = if path.is_file() {
-        serde_json::from_slice(&fs::read(&path)?)?
+    let document = if path.is_file() {
+        Some(serde_json::from_slice(&fs::read(&path)?)?)
     } else {
-        serde_json::json!({"version":2,"mods":[]})
+        None
     };
+    let document = registered(document, installed)?;
+    let staged = path.with_extension("next");
+    fs::write(&staged, serde_json::to_vec(&document)?)?;
+    fs::rename(staged, path)?;
+    Ok(())
+}
+
+/// Adds or refreshes the library entry in a client mod list, creating a valid list when absent.
+///
+/// The client rejects a list without a request ID, which would leave every mod unloaded.
+fn registered(document: Option<serde_json::Value>, installed: &Path) -> Result<serde_json::Value> {
+    let mut document = document
+        .unwrap_or_else(|| serde_json::json!({"version":2,"request_id":"builder","mods":[]}));
+    if document["request_id"].as_str().is_none_or(str::is_empty) {
+        document["request_id"] = serde_json::json!("builder");
+    }
     let mods = document["mods"]
         .as_array_mut()
         .context("Invalid mod registration list")?;
@@ -244,8 +322,5 @@ fn registration(profile: &Path, installed: &Path) -> Result<()> {
             "component":installed,"enabled":true,"grants":grants,"reload":0
         }));
     }
-    let staged = path.with_extension("next");
-    fs::write(&staged, serde_json::to_vec(&document)?)?;
-    fs::rename(staged, path)?;
-    Ok(())
+    Ok(document)
 }

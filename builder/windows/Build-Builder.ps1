@@ -5,14 +5,14 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$checkout = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$checkout = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $missing = @('cargo', 'rustup' | Where-Object { !(Get-Command $_ -ErrorAction SilentlyContinue) })
 if (!$ImporterOnly) {
     $missing += @('go', 'make' | Where-Object { !(Get-Command $_ -ErrorAction SilentlyContinue) })
 }
 if ($missing) { throw "Install the required build tools and reopen PowerShell: $($missing -join ', ')." }
 
-$manifest = Join-Path $PSScriptRoot 'schematica/Cargo.toml'
+$manifest = Join-Path $PSScriptRoot '../schematica/Cargo.toml'
 $target = Join-Path $checkout 'target/builder-importer'
 $profileDir = if ($Profile -eq 'dev') { 'debug' } else { $Profile }
 $stamp = Join-Path $checkout "target/$profileDir/builder-commit.txt"

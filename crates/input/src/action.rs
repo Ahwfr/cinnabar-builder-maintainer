@@ -55,6 +55,14 @@ pub enum Action {
     SchematicPlacementConfig,
     SchematicNextLayer,
     SchematicPreviousLayer,
+    SchematicForward,
+    SchematicLeft,
+    SchematicRight,
+    SchematicBack,
+    SchematicDown,
+    SchematicUp,
+    SchematicRotateLeft,
+    SchematicRotateRight,
 }
 
 impl Action {
@@ -112,10 +120,18 @@ impl Action {
             Self::SchematicPlacementConfig => "schematic-placement-config",
             Self::SchematicNextLayer => "schematic-next-layer",
             Self::SchematicPreviousLayer => "schematic-previous-layer",
+            Self::SchematicForward => "schematic-forward",
+            Self::SchematicLeft => "schematic-left",
+            Self::SchematicRight => "schematic-right",
+            Self::SchematicBack => "schematic-back",
+            Self::SchematicDown => "schematic-down",
+            Self::SchematicUp => "schematic-up",
+            Self::SchematicRotateLeft => "schematic-rotate-left",
+            Self::SchematicRotateRight => "schematic-rotate-right",
         }
     }
 
-    pub const COUNT: usize = 51;
+    pub const COUNT: usize = 59;
 
     pub(crate) const ALL: [Self; Self::COUNT] = [
         Self::MoveForward,
@@ -169,6 +185,14 @@ impl Action {
         Self::SchematicPlacementConfig,
         Self::SchematicNextLayer,
         Self::SchematicPreviousLayer,
+        Self::SchematicForward,
+        Self::SchematicLeft,
+        Self::SchematicRight,
+        Self::SchematicBack,
+        Self::SchematicDown,
+        Self::SchematicUp,
+        Self::SchematicRotateLeft,
+        Self::SchematicRotateRight,
     ];
 
     pub(crate) const fn is_ui_preview(self) -> bool {

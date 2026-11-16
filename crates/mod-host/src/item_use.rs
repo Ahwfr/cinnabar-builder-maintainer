@@ -67,6 +67,15 @@ impl cinnabar::extension::item_use::Host for State {
         self.offer_placement(position, name, states, true, true)
     }
 
+    fn set_placement_repeat(&mut self, enabled: bool) -> Result<Result<(), String>> {
+        self.controls.budget(false)?;
+        let Some(offer) = self.item_use_policy.pending_placement.as_mut() else {
+            return Ok(Err("No admitted placement offer in this frame".into()));
+        };
+        offer.repeat_while_held = enabled;
+        Ok(Ok(()))
+    }
+
     /// Stages one use press edge while gameplay owns input and the use control is held.
     fn pulse_use(&mut self) -> Result<Result<(), String>> {
         self.item_use_policy.writes += 1;
@@ -116,6 +125,7 @@ impl State {
             states,
             correct_aim,
             strict_state,
+            repeat_while_held: true,
         });
         Ok(Ok(()))
     }

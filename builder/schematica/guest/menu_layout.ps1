@@ -295,21 +295,16 @@ foreach($screen in $Screens){
             Add-Button 'close' 'Done' 296 252 84 22 $activeFill
         }
         'settings' {
-            Add-Label 'Block preview' 24 85 175
-            Add-Button 'look' '#look' 208 78 76 24
-            Add-Button 'opacity' '#opacity' 290 78 77 24
-            Add-Label 'Target info' 24 109 200
-            Add-Button 'assist' '#assist' 246 102 121 22
-            Add-Label 'Fast Place' 24 133 200
-            Add-Button 'fast-place' '#fast-place' 246 126 121 22
-            Add-Label 'Auto orientation (server aim)' 24 157 215
-            Add-Button 'correct-aim' '#correct-aim' 246 150 121 22
-            Add-Label 'Bridge Assist' 24 181 215
-            Add-Button 'bridge-place' '#bridge-place' 246 174 121 22
-            Add-Label 'Remember local world placement' 24 205 215
-            Add-Button 'remember-placement' '#remember-placement' 246 198 121 22
-            Add-Label 'Menu layout' 24 229 200
-            Add-Button 'ui-layout' '#ui-layout' 246 222 121 22
+            for($i=0;$i -lt 5;$i++){
+                $y=79+33*$i
+                $left=@(@('Block preview','look'),@('Fast Place','fast-place'),@('Auto Orientation','correct-aim'),@('Nearby Placement Assist','bridge-place'),@('Remember World Positions','remember-placement'))[$i]
+                $right=@(@('Ghost opacity','opacity'),@('Hold to Place','hold-place'),@('Target Info','assist'),@('Auto Next Layer','auto-layer'),@('Destroy Overlaps on Paste','paste-destroy'))[$i]
+                Add-Label $left[0] 24 $y 169
+                Add-Label $right[0] 210 $y 157
+                Add-Button $left[1] ('#'+$left[1]) 24 ($y+12) 164 17
+                Add-Button $right[1] ('#'+$right[1]) 210 ($y+12) 157 17
+            }
+            Add-Button 'ui-layout' '#ui-layout' 244 252 48 22
             Add-Button 'hotkeys' 'Keybinds' 16 252 84 22
             Add-Button 'paste' '#paste' 109 252 130 22
             Add-Button 'close' 'Done' 296 252 84 22 $activeFill

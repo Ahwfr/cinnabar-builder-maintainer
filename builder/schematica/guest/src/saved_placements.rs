@@ -1,4 +1,4 @@
-//! Remembers the active schematic in each local world and dimension.
+//! Remembers each schematic transform and the active entry of each local world.
 
 use crate::{Mirror, Placement, Viewer};
 use serde_json::{Value, json};
@@ -12,7 +12,7 @@ pub(super) fn load(value: &Value) -> BTreeMap<String, Value> {
         .as_object()
         .into_iter()
         .flatten()
-        .filter(|(key, value)| key.len() <= 29 && decode(value).is_some())
+        .filter(|(key, value)| key.len() <= 33 && decode(value).is_some())
         .take(MAX_SAVED)
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect()
@@ -46,30 +46,42 @@ fn decode(value: &Value) -> Option<(usize, Placement)> {
 }
 
 impl Viewer {
-    /// Restores the transform after decoding the saved library entry.
+    /// Restores the selected entry, with the older single-record format as a fallback.
     pub(super) fn restore_placement(&mut self, entering_from_world: bool) {
-        let Some((entry, placement)) = self
+        let Some(key) = self
             .placement_key
             .as_ref()
             .filter(|_| self.options.remember_placement)
-            .and_then(|key| self.options.saved_placements.get(key))
-            .and_then(decode)
-            .filter(|(entry, _)| {
-                *entry < self.library.len() && !self.options.deleted_entries.contains(entry)
-            })
         else {
             return;
         };
-        if self.active_entry == Some(entry) && self.loaded {
-            self.placement = Some(placement);
-            self.auto_place = false;
-            self.dirty = true;
-        } else if entering_from_world || !self.loaded {
+        let records = &self.options.saved_placements;
+        let last = records.get(key).and_then(decode);
+        let valid =
+            |entry| entry < self.library.len() && !self.options.deleted_entries.contains(&entry);
+        if let Some(entry) = self
+            .active_entry
+            .filter(|entry| self.loaded && valid(*entry))
+        {
+            let saved = records
+                .get(&format!("{key}/{entry}"))
+                .and_then(decode)
+                .or_else(|| last.filter(|(index, _)| *index == entry));
+            if let Some((_, placement)) = saved {
+                self.placement = Some(placement);
+                self.auto_place = false;
+                self.dirty = true;
+                return;
+            }
+        }
+        if (entering_from_world || !self.loaded)
+            && let Some((entry, _)) = last.filter(|(entry, _)| valid(*entry))
+        {
             self.request = Some(entry);
         }
     }
 
-    /// Writes changes only, including removing the saved position on explicit unload.
+    /// Saves the entry transform and keeps track of the last active entry for world rejoin.
     pub(super) fn remember_placement(&mut self) {
         let Some(key) = self
             .placement_key
@@ -78,29 +90,38 @@ impl Viewer {
         else {
             return;
         };
-        let records = &mut self.options.saved_placements;
-        let changed = if let Some((entry, placement)) = self.active_entry.zip(self.placement) {
-            let [x, y, z] = placement.origin;
-            let mirror = match placement.mirror {
-                Mirror::None => 0,
-                Mirror::X => 1,
-                Mirror::Z => 2,
-            };
-            let value = json!([entry, x, y, z, placement.quarter_turns, mirror]);
-            if records.get(key) == Some(&value)
-                || (records.len() >= MAX_SAVED && !records.contains_key(key))
-            {
-                false
-            } else {
-                records.insert(key.clone(), value);
-                true
-            }
-        } else if !self.loaded {
-            records.remove(key).is_some()
-        } else {
-            false
+        let Some((entry, placement)) = self.active_entry.zip(self.placement) else {
+            return;
         };
+        let [x, y, z] = placement.origin;
+        let mirror = match placement.mirror {
+            Mirror::None => 0,
+            Mirror::X => 1,
+            Mirror::Z => 2,
+        };
+        let value = json!([entry, x, y, z, placement.quarter_turns, mirror]);
+        let mut changed = false;
+        for key in [format!("{key}/{entry}"), key.clone()] {
+            let records = &mut self.options.saved_placements;
+            if records.get(&key) == Some(&value)
+                || (records.len() >= MAX_SAVED && !records.contains_key(&key))
+            {
+                continue;
+            }
+            records.insert(key, value.clone());
+            changed = true;
+        }
         if changed {
+            self.options.save();
+        }
+    }
+
+    /// Unloading stops automatic reopen while retaining the entry transform.
+    pub(super) fn remember_unload(&mut self) {
+        self.remember_placement();
+        if let Some(key) = &self.placement_key
+            && self.options.saved_placements.remove(key).is_some()
+        {
             self.options.save();
         }
     }
@@ -125,4 +146,29 @@ fn restores_only_the_matching_world_and_dimension() {
     viewer.placement_key = Some("world-a/0".into());
     viewer.restore_placement(false);
     assert_eq!(viewer.placement, Some(placement));
+}
+
+#[cfg(test)]
+#[test]
+fn reloads_each_entry_after_unloading_and_switching() {
+    let mut viewer = crate::tests::reference_viewer();
+    viewer.options.remember_placement = true;
+    viewer.library = vec!["First".into(), "Second".into()];
+    viewer.placement_key = Some("world-a/0".into());
+    let first = Placement::new([10, 64, 10]);
+    let second = Placement::new([32, 70, 12]);
+    viewer.active_entry = Some(0);
+    viewer.placement = Some(first);
+    viewer.remember_unload();
+    assert!(!viewer.options.saved_placements.contains_key("world-a/0"));
+    viewer.active_entry = Some(1);
+    viewer.placement = Some(second);
+    viewer.remember_placement();
+    viewer.active_entry = Some(0);
+    viewer.placement = None;
+    viewer.restore_placement(false);
+    assert_eq!(viewer.placement, Some(first));
+    viewer.active_entry = Some(1);
+    viewer.restore_placement(false);
+    assert_eq!(viewer.placement, Some(second));
 }

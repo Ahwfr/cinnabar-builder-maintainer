@@ -1,4 +1,12 @@
-# Cinnabar Builder 0.3.11
+# Cinnabar Builder 0.3.12
+
+- Added Hold to Place and remappable camera-relative numpad movement and rotation. The Controls panel remains available.
+- Added Destroy Overlaps on Paste, separate per-schematic local-world positions, and an Auto Next Layer switch.
+- Target Info Off hides the Fast Place target coordinates. Bridge Assist is now Nearby Placement Assist.
+- V2 tries direct air placement for normal stairs when there is no direct native support hit. Upper slabs and upside-down stairs use a support face.
+- Organized Builder build entry points by platform and preserved ThsSilentKnight’s Linux port.
+
+## 0.3.11
 
 - V2 Strict can attempt to fill an empty schematic cell within reach when there is no usable support face. It reports the actual air runtime ID in a normal block-placement transaction. Bedrock confirms the block and Survival inventory update.
 - Verified a direct air placement on stock Bedrock 1.26.60.6 in Survival with cheats disabled. Also verified opposite stair facings. Upside-down stairs, upper slabs and horizontal pillars use real support because the direct air click cannot be relied on to preserve the placement face. Server acceptance can vary.

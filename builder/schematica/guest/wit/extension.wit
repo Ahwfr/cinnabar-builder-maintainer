@@ -938,6 +938,8 @@ interface item-use {
     /// Offers the same placement with opt-in correction of the server-facing aim.
     offer-oriented-placement: func(position: tuple<s32, s32, s32>, name: string, states: string) -> result<_, string>;
     offer-strict-placement: func(position: tuple<s32, s32, s32>, name: string, states: string) -> result<_, string>;
+    /// Sets whether the offered placement can repeat under physically held use in this frame.
+    set-placement-repeat: func(enabled: bool) -> result<_, string>;
 }
 
 /// Bounded local terrain reads. The queries a callback reads become its subscriptions, which the

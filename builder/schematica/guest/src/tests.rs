@@ -53,6 +53,9 @@ pub(super) fn reference_viewer() -> Viewer {
             fast_place: true,
             correct_aim: false,
             strict_place: false,
+            hold_place: false,
+            auto_layer: true,
+            paste_destroy: false,
             remember_placement: false,
             saved_placements: BTreeMap::new(),
             fullscreen_ui: true,
@@ -117,6 +120,9 @@ fn menu_edits_turn_the_guide_and_select_layer_ranges() {
             fast_place: false,
             correct_aim: false,
             strict_place: false,
+            hold_place: false,
+            auto_layer: true,
+            paste_destroy: false,
             remember_placement: false,
             saved_placements: BTreeMap::new(),
             fullscreen_ui: true,
@@ -217,5 +223,27 @@ fn bridge_uses_the_far_side_of_the_aimed_support_in_both_depth_directions() {
             pos == [0, 64, 2] || pos == [0, 64, 4]
         });
         assert_eq!(selected, Some(ghost));
+    }
+}
+
+#[test]
+fn numpad_nudges_follow_the_nearest_camera_heading() {
+    use std::f32::consts::FRAC_PI_2;
+    for (turn, forward, left) in [
+        (0., [0, -1], [-1, 0]),
+        (1., [-1, 0], [0, 1]),
+        (2., [0, 1], [1, 0]),
+        (3., [1, 0], [0, -1]),
+    ] {
+        assert_eq!(crate::view_step(turn * FRAC_PI_2, "ViewForward"), forward);
+        assert_eq!(crate::view_step(turn * FRAC_PI_2, "ViewLeft"), left);
+        assert_eq!(
+            crate::view_step(turn * FRAC_PI_2, "ViewBack"),
+            forward.map(|axis| -axis)
+        );
+        assert_eq!(
+            crate::view_step(turn * FRAC_PI_2, "ViewRight"),
+            left.map(|axis| -axis)
+        );
     }
 }

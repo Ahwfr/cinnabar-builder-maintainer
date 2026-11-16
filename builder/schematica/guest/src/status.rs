@@ -25,13 +25,19 @@ impl Viewer {
     }
 
     pub(super) fn publish_label(&mut self, placement_cell: Option<[i32; 3]>) {
-        if let Some(pos) = placement_cell
+        if self.options.assist
+            && let Some(pos) = placement_cell
             && let Some(block) = self.planned_block(pos)
             && self.tiles.iter().any(|tile| tile.is_missing(pos))
         {
             let message = format!(
-                "Fast Place | {} at {pos:?} | Right-click to place",
-                block.name
+                "Fast Place | {} at {pos:?} | {}",
+                block.name,
+                if self.options.hold_place {
+                    "Hold right-click"
+                } else {
+                    "Right-click to place"
+                }
             );
             self.show_label(&message);
             return;

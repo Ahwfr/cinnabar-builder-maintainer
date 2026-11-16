@@ -4,9 +4,8 @@ use std::{path::Path, process::Command};
 
 /// Opens the converter's native picker and waits for its atomic library publication.
 pub(super) fn import(mods: &Path) -> Result<bool, String> {
-    let helper = std::env::var_os("CINNABAR_SCHEMATICA_IMPORTER").ok_or(
-        "Launch Cinnabar Builder.exe from the complete Builder download to import schematics.",
-    )?;
+    let helper = std::env::var_os("CINNABAR_SCHEMATICA_IMPORTER")
+        .ok_or("Start Cinnabar Builder from its launcher or start script to import schematics.")?;
     let mut command = Command::new(helper);
     command.arg("import-dialog").arg(mods);
     #[cfg(windows)]

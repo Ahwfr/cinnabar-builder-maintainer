@@ -9,7 +9,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$checkout = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$checkout = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $profileDir = Join-Path $checkout "target/$Profile"
 $client = Join-Path $profileDir 'cinnabar.exe'
 $userRoot = Join-Path $checkout '.local/builder-user'
@@ -38,10 +38,10 @@ if ($Check) {
 }
 
 if ($ImportOnly -and !$InputFiles -and !$Demo) { $Import = $true }
-if (!$ImportOnly -and !$built) { throw 'Build this revision with builder/Build-Builder.ps1 before launching.' }
+if (!$ImportOnly -and !$built) { throw 'Build this revision with builder/windows/Build-Builder.ps1 before launching.' }
 
 if ($Import -or $InputFiles -or $Demo) {
-    if (!$importerReady) { throw 'Build the importer with builder/Build-Builder.ps1 -ImporterOnly first.' }
+    if (!$importerReady) { throw 'Build the importer with builder/windows/Build-Builder.ps1 -ImporterOnly first.' }
     if ($Import -and !$InputFiles) {
         Add-Type -AssemblyName System.Windows.Forms
         $picker = New-Object System.Windows.Forms.OpenFileDialog

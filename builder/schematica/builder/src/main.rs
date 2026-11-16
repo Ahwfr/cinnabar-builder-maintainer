@@ -2,7 +2,8 @@
 
 mod import;
 mod launch;
-#[cfg(windows)]
+#[cfg_attr(windows, path = "picker/windows.rs")]
+#[cfg_attr(not(windows), path = "picker/unix.rs")]
 mod picker;
 
 use anyhow::{Context, Result, bail, ensure};
@@ -17,7 +18,6 @@ use wasm_encoder::{ComponentNameSection, CustomSection, Encode};
 
 fn main() -> Result<()> {
     let result = run();
-    #[cfg(windows)]
     if let Err(error) = &result
         && (env::args_os().len() == 1
             || env::args_os()
@@ -32,22 +32,28 @@ fn main() -> Result<()> {
 fn run() -> Result<()> {
     let args: Vec<_> = env::args_os().skip(1).collect();
     match args.as_slice() {
-        #[cfg(windows)]
         [] => {
             let root = env::current_exe()?
                 .parent()
                 .context("launcher folder")?
                 .to_path_buf();
-            if root.join("runtime/cinnabar.exe").is_file()
+            let package = launch::Package::portable(&root);
+            if package.client.is_file()
                 || env::current_exe()?.file_stem() == Some(std::ffi::OsStr::new("Cinnabar Builder"))
             {
-                launch::start(&root)?;
+                launch::start(&package, &root.join("profile"))?;
             } else {
                 picker::run();
             }
             Ok(())
         }
-        #[cfg(windows)]
+        [cmd, checkout, profile] if cmd == "start-checkout" => {
+            let checkout = Path::new(checkout);
+            let package = launch::Package::checkout(checkout, &profile.to_string_lossy());
+            let status = launch::start(&package, &checkout.join(".local/builder-user"))?.wait()?;
+            ensure!(status.success(), "Cinnabar Builder exited with {status}.");
+            Ok(())
+        }
         [cmd, mods] if cmd == "import-dialog" => launch::import_dialog(Path::new(mods)),
         [cmd, mods, inputs @ ..] if cmd == "append-library" && !inputs.is_empty() => {
             let inputs: Vec<_> = inputs.iter().map(PathBuf::from).collect();
@@ -94,7 +100,7 @@ fn run() -> Result<()> {
             Ok(())
         }
         _ => bail!(
-            "usage: schematica-builder convert INPUT | library OUTPUT.wasm INPUT... | demo OUTPUT.scb | import INPUT OUTPUT.scb | pack GUEST.wasm OUTPUT.wasm"
+            "usage: schematica-builder convert INPUT | library OUTPUT.wasm INPUT... | demo OUTPUT.scb | import INPUT OUTPUT.scb | pack GUEST.wasm OUTPUT.wasm | start-checkout CHECKOUT PROFILE"
         ),
     }
 }

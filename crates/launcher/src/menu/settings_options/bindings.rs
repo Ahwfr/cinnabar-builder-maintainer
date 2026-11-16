@@ -136,6 +136,22 @@ bindings! {
         None, false, Some("Schematica Next Layer");
     SchematicPreviousLayer => "key.schematic-previous-layer", Some(Action::SchematicPreviousLayer), Some(DeviceRow::Action(33)), None,
         None, false, Some("Schematica Previous Layer");
+    SchematicForward => "key.schematic-forward", Some(Action::SchematicForward), Some(DeviceRow::Action(34)), None,
+        None, true, Some("Schematica Move Build Forward");
+    SchematicLeft => "key.schematic-left", Some(Action::SchematicLeft), Some(DeviceRow::Action(35)), None,
+        None, true, Some("Schematica Move Build Left");
+    SchematicRight => "key.schematic-right", Some(Action::SchematicRight), Some(DeviceRow::Action(36)), None,
+        None, true, Some("Schematica Move Build Right");
+    SchematicBack => "key.schematic-back", Some(Action::SchematicBack), Some(DeviceRow::Action(37)), None,
+        None, true, Some("Schematica Move Build Back");
+    SchematicDown => "key.schematic-down", Some(Action::SchematicDown), Some(DeviceRow::Action(38)), None,
+        None, true, Some("Schematica Move Build Down");
+    SchematicUp => "key.schematic-up", Some(Action::SchematicUp), Some(DeviceRow::Action(39)), None,
+        None, true, Some("Schematica Move Build Up");
+    SchematicRotateLeft => "key.schematic-rotate-left", Some(Action::SchematicRotateLeft), Some(DeviceRow::Action(40)), None,
+        None, true, Some("Schematica Rotate Build Left");
+    SchematicRotateRight => "key.schematic-rotate-right", Some(Action::SchematicRotateRight), Some(DeviceRow::Action(41)), None,
+        None, true, Some("Schematica Rotate Build Right");
     Inventory => "key.inventory", None, Some(DeviceRow::Extra(0, Some(PhysicalControl::KeyboardUsage(0x08)))), Some(DeviceRow::Extra(0, Some(PhysicalControl::GamepadButton(2)))),
         None, false, None;
     Chat => "key.chat", None, Some(DeviceRow::Extra(1, Some(PhysicalControl::KeyboardUsage(0x17)))), Some(DeviceRow::Extra(1, Some(PhysicalControl::GamepadButton(14)))),

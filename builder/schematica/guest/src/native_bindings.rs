@@ -3,6 +3,17 @@
 use crate::{hotkeys::Action, input};
 use std::cell::RefCell;
 
+pub(super) const TRANSFORMS: [(&str, &str); 8] = [
+    ("schematic-forward", "ViewForward"),
+    ("schematic-left", "ViewLeft"),
+    ("schematic-right", "ViewRight"),
+    ("schematic-back", "ViewBack"),
+    ("schematic-down", "PageDown"),
+    ("schematic-up", "PageUp"),
+    ("schematic-rotate-left", "RotateLeft"),
+    ("schematic-rotate-right", "KeyR"),
+];
+
 #[derive(Default)]
 struct Cache {
     revision: Option<u64>,

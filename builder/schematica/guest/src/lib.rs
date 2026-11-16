@@ -52,11 +52,14 @@ mod saved_placements;
 
 thread_local! {
     static RUNTIME: RefCell<(Runtime, Vec<&'static [u8]>, Options, Option<usize>)> =
-        const { RefCell::new((Runtime::Start, Vec::new(), Options { textured: true, assist: false, fast_place: false, strict_place: false, correct_aim: false, fullscreen_ui: true, bridge_place: true, opacity: 65, hotkeys: BTreeMap::new(), library_revision: 0, deleted_entries: Vec::new(), remember_placement: false, saved_placements: BTreeMap::new() }, None)) };
+        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, auto_layer: true, paste_destroy: false, textured: true, assist: false, fast_place: false, strict_place: false, correct_aim: false, fullscreen_ui: true, bridge_place: true, opacity: 65, hotkeys: BTreeMap::new(), library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new() }, None)) };
 }
 
 #[derive(Clone)]
 struct Options {
+    hold_place: bool,
+    auto_layer: bool,
+    paste_destroy: bool,
     textured: bool,
     assist: bool,
     fast_place: bool,
@@ -77,6 +80,9 @@ impl Options {
         #[cfg(not(test))]
         let _ = settings::save(
             &serde_json::json!({
+                "hold_place": self.hold_place,
+                "auto_layer": self.auto_layer,
+                "paste_destroy": self.paste_destroy,
                 "textured":self.textured, "assist":self.assist, "fast_place": self.fast_place,
                 "correct_aim": self.correct_aim,
                 "strict_place": self.strict_place,
@@ -114,6 +120,9 @@ impl Guest for Schematica {
         {
             RUNTIME.with(|state| {
                 let options = &mut state.borrow_mut().2;
+                options.hold_place = value["hold_place"].as_bool().unwrap_or(false);
+                options.auto_layer = value["auto_layer"].as_bool().unwrap_or(true);
+                options.paste_destroy = value["paste_destroy"].as_bool().unwrap_or(false);
                 options.textured = value["textured"].as_bool().unwrap_or(options.textured);
                 options.assist = value["assist"].as_bool().unwrap_or(options.assist);
                 options.fast_place = value["fast_place"].as_bool().unwrap_or(options.fast_place);
@@ -123,7 +132,7 @@ impl Guest for Schematica {
                     .unwrap_or(options.correct_aim);
                 options.fullscreen_ui = value["fullscreen_ui"].as_bool().unwrap_or(true);
                 options.bridge_place = value["bridge_place"].as_bool().unwrap_or(true);
-                options.remember_placement = value["remember_placement"].as_bool().unwrap_or(false);
+                options.remember_placement = value["remember_placement"].as_bool().unwrap_or(true);
                 options.saved_placements = saved_placements::load(&value["saved_placements"]);
                 options.library_revision = value["library_revision"].as_u64().unwrap_or(0);
                 options.deleted_entries = value["deleted_entries"]
@@ -176,6 +185,7 @@ impl Guest for Schematica {
                 Runtime::Ready(viewer) => {
                     if let Some(index) = viewer.request {
                         if viewer.release_for_switch() {
+                            viewer.remember_placement();
                             *options = viewer.options.clone();
                             *active_entry = Some(index);
                             match blueprint::Decoder::new(catalog[index]) {
@@ -532,6 +542,11 @@ impl Viewer {
             return;
         }
 
+        for (binding, command) in native_bindings::TRANSFORMS {
+            if native_bindings::pressed(binding, &keys) {
+                self.dirty |= self.control(command);
+            }
+        }
         if alt {
             for key in &keys.keys_pressed {
                 self.dirty |= self.control(key);
@@ -615,6 +630,7 @@ impl Viewer {
                 self.show_label(&format!("Fast Place | {error}"));
                 return;
             }
+            let _ = item_use::set_placement_repeat(self.options.hold_place);
         }
         if !self.retired.is_empty() {
             // A tile owns up to four handles. Stay under the host's 32 drawing
@@ -642,7 +658,8 @@ impl Viewer {
             ) {
                 self.cursor = (self.cursor + 1) % self.tiles.len();
                 let [width, height, depth] = self.schematic.size();
-                if self.layer_mode == 1
+                if self.options.auto_layer
+                    && self.layer_mode == 1
                     && self.layer + 1 < height
                     && overlay::layer_complete(&self.tiles, width, depth)
                 {
@@ -751,6 +768,12 @@ impl Viewer {
                     return false;
                 };
                 match key {
+                    "ViewForward" | "ViewLeft" | "ViewRight" | "ViewBack" => {
+                        let Some(view) = &self.pose else { return false };
+                        let [x, z] = view_step(view.yaw, key);
+                        p.origin[0] = (p.origin[0] + x).clamp(-30_000_000, 30_000_000);
+                        p.origin[2] = (p.origin[2] + z).clamp(-30_000_000, 30_000_000);
+                    }
                     "KeyR" => p.rotate_cw(),
                     "RotateLeft" => p.rotate_ccw(),
                     "KeyM" => {
@@ -966,6 +989,18 @@ impl Viewer {
             .extend(self.tiles.drain(..).filter(Tile::has_draws));
         self.clear_retired();
         self.retired.is_empty()
+    }
+}
+
+/// One horizontal grid step relative to the nearest cardinal camera heading.
+fn view_step(yaw: f32, direction: &str) -> [i32; 2] {
+    let quadrant = (yaw / std::f32::consts::FRAC_PI_2).round() as i32;
+    let [x, z] = [[0, -1], [-1, 0], [0, 1], [1, 0]][quadrant.rem_euclid(4) as usize];
+    match direction {
+        "ViewLeft" => [z, -x],
+        "ViewRight" => [-z, x],
+        "ViewBack" => [-x, -z],
+        _ => [x, z],
     }
 }
 

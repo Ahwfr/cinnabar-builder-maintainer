@@ -101,7 +101,7 @@ jobs:
         shell: pwsh
         env:
           CARGO_BUILD_BUILD_DIR: ${{ github.workspace }}/target/builder-importer
-        run: ./builder/Build-Builder.ps1 -ImporterOnly
+        run: ./builder/windows/Build-Builder.ps1 -ImporterOnly
       - name: Verify the cached build inputs
         shell: pwsh
         run: python .github/actions/build-cache/cache.py verify-inputs
