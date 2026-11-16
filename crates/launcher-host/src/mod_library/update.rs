@@ -145,7 +145,7 @@ impl PendingReload {
         }
         match library.active.iter().find(|active| active.id == self.id).map(|active| &active.status) {
             Some(Status::Starting) if now < self.deadline => None,
-            Some(Status::Starting) => Some(Err("The update was installed, but reload has not finished. Use Reload or restart Cinnabar.".into())),
+            Some(Status::Starting) => Some(Err("The update was installed, but reload has not finished. Use Reload or restart Cinnamatica.".into())),
             Some(Status::Failed(error) | Status::ReloadFailed(error)) => Some(Err(format!("The update was installed, but reload failed: {error}"))),
             Some(Status::Running | Status::NextJoin) | None => Some(Ok(self.message.clone())),
         }

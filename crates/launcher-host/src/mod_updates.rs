@@ -237,7 +237,7 @@ impl Checker {
             .is_err()
         {
             self.message =
-                Some("Mod updates are unavailable. Restart Cinnabar to try again.".into());
+                Some("Mod updates are unavailable. Restart Cinnamatica to try again.".into());
             return false;
         }
         self.progress.set(

@@ -392,7 +392,7 @@ impl Worker<'_> {
         }
         let Some(keys) = self.keys else {
             if !library.mods.is_empty() {
-                notify("Marketplace downloads are not enabled in this build. Update Cinnabar or import a local mod.".into());
+                notify("Marketplace downloads are not enabled in this build. Update Cinnamatica or import a local mod.".into());
             }
             return;
         };

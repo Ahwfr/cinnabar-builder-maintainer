@@ -1,4 +1,8 @@
-# Cinnabar Builder 0.3.13
+# Cinnamatica 0.3.14
+
+- Renamed the app, launcher, bundled mod and packaging to Cinnamatica. Existing worlds and schematic settings use the same profile.
+
+## 0.3.13
 
 - Highlight needed materials in open containers. Green outlines mark matching stacks and cyan marks shulker boxes whose item data lists a needed block.
 - Target Info Off clears the schematic HUD readout. Fast Place ignores auto-connected fence arms, places trapdoors closed before they are opened by hand, and stops substituting different logs for planned logs.
@@ -63,7 +67,7 @@
 
 - Bridge Assist searches up to five blocks off the crosshair and checks actual support reach before sending.
 - Auto Orientation samples the upper and lower parts of hidden support faces for slabs and stairs and tolerates small camera movements during a pending correction.
-- Added Remember local world placement in Schematica Settings. It restores the active library entry and its coordinates, rotation and mirror per local world and dimension.
+- Added Remember local world placement in Cinnamatica Settings. It restores the active library entry and its coordinates, rotation and mirror per local world and dimension.
 
 ## 0.3.3
 
@@ -87,7 +91,7 @@ Bulk operator paste remains separate future work.
 
 ## 0.3.0
 
-- Added a portable Cinnabar Builder.exe entry point with a persistent profile and first-run asset preparation.
+- Added a portable Cinnamatica.exe entry point with a persistent profile and first-run asset preparation.
 - Grouped support files under App so the play folder has one obvious executable.
 - Added in-game schematic importing through the native Mods page, with library backups and enabled-mod reload.
 - Added a browser layout with a schematic list, placement controls, build details and material preview.

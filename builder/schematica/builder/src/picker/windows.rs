@@ -71,7 +71,7 @@ pub fn choose() -> anyhow::Result<Option<Vec<PathBuf>>> {
 
 fn message(body: &str, icon: u32) {
     let body = wide(body);
-    let title = wide("Schematica Import");
+    let title = wide("Cinnamatica Import");
     unsafe { MessageBoxW(null_mut(), body.as_ptr(), title.as_ptr(), MB_OK | icon) };
 }
 

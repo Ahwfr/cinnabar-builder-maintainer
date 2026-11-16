@@ -156,7 +156,7 @@ impl Guest for Schematica {
                 }
             });
         }
-        RUNTIME.with(|runtime| label(&runtime.borrow().2.menu_hint("Schematica")));
+        RUNTIME.with(|runtime| label(&runtime.borrow().2.menu_hint("Cinnamatica")));
     }
 
     fn frame() {
@@ -280,7 +280,7 @@ impl Guest for Schematica {
                     );
                     viewer.active_entry = *active_entry;
                     *runtime = Runtime::Ready(viewer);
-                    label(&options.menu_hint("Schematica"));
+                    label(&options.menu_hint("Cinnamatica"));
                 }
                 Runtime::Invalid => {}
                 Runtime::Start => unreachable!(),
@@ -298,7 +298,7 @@ fn library_names(catalog: &[&[u8]]) -> Vec<String> {
 
 fn invalidate(runtime: &mut Runtime) {
     *runtime = Runtime::Invalid;
-    label("Schematica | Build the component with a valid embedded blueprint.");
+    label("Cinnamatica | Build the component with a valid embedded blueprint.");
 }
 
 export!(Schematica);
@@ -410,7 +410,7 @@ impl Viewer {
 
     fn frame(&mut self) {
         let Ok(world) = gameplay::read_frame() else {
-            label("Schematica | Grant terrain access in Settings > Mods.");
+            label("Cinnamatica | Grant terrain access in Settings > Mods.");
             return;
         };
         let active_world = world.is_some();
@@ -442,7 +442,7 @@ impl Viewer {
         }
 
         let Ok(keys) = input::read_controls() else {
-            label("Schematica | Grant controls access in Settings > Mods.");
+            label("Cinnamatica | Grant controls access in Settings > Mods.");
             return;
         };
         if !keys.focused {
@@ -545,7 +545,7 @@ impl Viewer {
         }
         let caps = drawing::capabilities();
         if !caps.contains(drawing::Permissions::WORLD_DRAW) {
-            label("Schematica | Grant world_draw in Settings > Mods.");
+            label("Cinnamatica | Grant world_draw in Settings > Mods.");
             return;
         }
 
@@ -561,8 +561,8 @@ impl Viewer {
         }
         if self.options.assist && alt && keys.keys_pressed.iter().any(|key| key == "KeyU") {
             let message = self.aimed_block().map_or_else(
-                || "Schematica | Aim at a planned block".into(),
-                |(block, pos)| format!("Schematica | {} at {pos:?}", block.name),
+                || "Cinnamatica | Aim at a planned block".into(),
+                |(block, pos)| format!("Cinnamatica | {} at {pos:?}", block.name),
             );
             label(&message);
             return;
@@ -680,7 +680,7 @@ impl Viewer {
             }
         }
         if self.options.textured && !textured && self.placement.is_some() {
-            self.show_label("Schematica | Textures need render_material");
+            self.show_label("Cinnamatica | Textures need render_material");
         } else {
             self.publish_label(placement_cell);
         }

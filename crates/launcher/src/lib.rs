@@ -4,7 +4,7 @@
 #[macro_export]
 macro_rules! product_name {
     () => {
-        "Cinnabar"
+        "Cinnamatica"
     };
 }
 
@@ -15,7 +15,7 @@ pub const PRODUCT_NAME: &str = product_name!();
 #[macro_export]
 macro_rules! repository_url {
     () => {
-        "https://github.com/cinnabar-mc/cinnabar"
+        "https://github.com/Ahwfr/cinnamatica"
     };
 }
 

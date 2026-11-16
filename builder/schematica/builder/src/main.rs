@@ -39,7 +39,7 @@ fn run() -> Result<()> {
                 .to_path_buf();
             let package = launch::Package::portable(&root);
             if package.client.is_file()
-                || env::current_exe()?.file_stem() == Some(std::ffi::OsStr::new("Cinnabar Builder"))
+                || env::current_exe()?.file_stem() == Some(std::ffi::OsStr::new("Cinnamatica"))
             {
                 launch::start(&package, &root.join("profile"))?;
             } else {
@@ -51,7 +51,7 @@ fn run() -> Result<()> {
             let checkout = Path::new(checkout);
             let package = launch::Package::checkout(checkout, &profile.to_string_lossy());
             let status = launch::start(&package, &checkout.join(".local/builder-user"))?.wait()?;
-            ensure!(status.success(), "Cinnabar Builder exited with {status}.");
+            ensure!(status.success(), "Cinnamatica exited with {status}.");
             Ok(())
         }
         [cmd, mods] if cmd == "import-dialog" => launch::import_dialog(Path::new(mods)),
@@ -90,7 +90,10 @@ fn run() -> Result<()> {
         [cmd, input, output] if cmd == "pack" => {
             let core = fs::read(input)?;
             fs::write(output, component(&core)?)?;
-            println!("Wrote Cinnabar component {}", Path::new(output).display());
+            println!(
+                "Wrote Cinnamatica component {}",
+                Path::new(output).display()
+            );
             Ok(())
         }
         [cmd, template, input, output] if cmd == "pack-blueprint" => {
@@ -258,8 +261,8 @@ mod tests {
 fn component(core: &[u8]) -> Result<Vec<u8>> {
     let build_version = guest_version(core)?.unwrap_or("legacy");
     let name = match guest_revision(core)? {
-        Some(revision) => format!("Schematica Builder v{build_version} [{}]", &revision[..7]),
-        None => "Schematica Builder [unstamped]".to_owned(),
+        Some(revision) => format!("Cinnamatica v{build_version} [{}]", &revision[..7]),
+        None => "Cinnamatica [unstamped]".to_owned(),
     };
     let mut component = wit_component::ComponentEncoder::default()
         .module(core)?

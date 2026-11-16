@@ -1,4 +1,4 @@
-# Builder guide
+# Cinnamatica guide
 
 Choose the [Windows](windows/README.md) or [Linux](linux/README.md) instructions to install or build the client. See [iOS](ios/README.md) and [Android](android/README.md) for port status.
 

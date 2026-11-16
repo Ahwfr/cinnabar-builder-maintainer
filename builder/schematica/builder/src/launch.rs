@@ -209,7 +209,7 @@ impl Package {
             working_dir: package.join("runtime"),
             template: package.join("schematica-guest-template.bin"),
             revision: package.join("builder-commit.txt"),
-            missing: "Keep the Cinnabar Builder launcher with the App folder from the same download.",
+            missing: "Keep the Cinnamatica launcher with the App folder from the same download.",
         }
     }
 
@@ -264,7 +264,7 @@ pub fn start(package: &Package, default_profile: &Path) -> Result<std::process::
         .env("SCHEMATICA_GUEST_TEMPLATE", &package.template)
         .env("CINNABAR_UPDATE_CHECK", "0")
         .spawn()
-        .context("Start Cinnabar Builder")
+        .context("Start Cinnamatica")
 }
 
 /// Preserve the enabled state and normal gameplay grants while retiring unused capabilities.

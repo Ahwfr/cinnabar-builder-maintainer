@@ -1,4 +1,4 @@
-# Contributing to Builder
+# Contributing to Cinnamatica
 
 Start with `git status --short`, then make a branch from the current Builder base.
 Keep one issue per change and preserve upstream notices. Include the commit, platform,
@@ -15,7 +15,7 @@ packaging helpers use PowerShell and the standard Windows Rust linker toolchain.
 The following commands passed on Windows with a populated Cargo cache. For a fresh
 checkout, omit `--offline` if dependency download is needed. Native runtime support
 also needs the Go binaries from the same core revision and locally prepared game
-resources. Follow the upstream README and the Builder guide for their setup.
+resources. Follow the upstream README and the Cinnamatica guide for their setup.
 
 ```sh
 cargo test --locked --release --manifest-path builder/schematica/Cargo.toml -p schematica-guest

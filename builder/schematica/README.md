@@ -1,6 +1,6 @@
-# Schematica for Cinnabar Builder
+# Schematica for Cinnamatica
 
-This workspace is based on Schematica v4.2. See the [Builder guide](../README.md) for the fork's launcher and direct import workflow.
+This workspace is based on Schematica v4.2. See the [Cinnamatica guide](../README.md) for the fork's launcher and direct import workflow.
 
 ## Install the library
 
@@ -33,7 +33,7 @@ Use **Hotkeys** in the main menu to change the Litematica-style bindings. Enter 
 
 - **Block textures** uses Cinnabar's native block models and textures with adjustable opacity on Builder, starting at 65%. Stock Cinnabar uses the blocks' native opacity. **Hidden** turns off the missing-block preview. Yellow and red still mark wrong and extra blocks. [Cinnabar drawing contract](https://cinnabar.gg/docs/modding/reference/world-draw-drawing)
 - **Target info** shows the expected material and coordinates under your aim.
-- **Fast Place** requires the matching Builder fork and the Inventory and Item Use grants. It selects or requests a Creative item for one right-click on a supported missing block. See the [Builder guide](../README.md).
+- **Fast Place** requires the matching Builder fork and the Inventory and Item Use grants. It selects or requests a Creative item for one right-click on a supported missing block. See the [Cinnamatica guide](../README.md).
 
 ## Create a library with your own files
 

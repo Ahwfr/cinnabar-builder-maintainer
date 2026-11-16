@@ -31,11 +31,11 @@ fn titled_attributes(title: Option<&str>, size: LogicalSize<f64>) -> WindowAttri
 /// Decodes the shared original icon for a native window.
 pub fn icon() -> Icon {
     let image = image::load_from_memory(ICON_BYTES)
-        .expect("bundled Cinnabar window icon must decode")
+        .expect("bundled Cinnamatica window icon must decode")
         .into_rgba8();
     let (width, height) = image.dimensions();
     Icon::from_rgba(image.into_raw(), width, height)
-        .expect("bundled Cinnabar window icon must have valid RGBA dimensions")
+        .expect("bundled Cinnamatica window icon must have valid RGBA dimensions")
 }
 
 #[cfg(test)]

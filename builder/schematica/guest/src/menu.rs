@@ -26,7 +26,7 @@ pub fn prepare(viewer: &Viewer) -> bool {
     let content = content(viewer.screen, viewer.options.fullscreen_ui);
     let result = panel::set_content(content).and_then(|()| update(viewer));
     if let Err(e) = result {
-        label(&format!("Schematica panel: {e}"));
+        label(&format!("Cinnamatica panel: {e}"));
         return false;
     }
     true
@@ -34,7 +34,7 @@ pub fn prepare(viewer: &Viewer) -> bool {
 
 pub fn request_open() {
     if let Err(e) = panel::open() {
-        label(&format!("Schematica panel: {e}"));
+        label(&format!("Cinnamatica panel: {e}"));
     }
 }
 
@@ -53,7 +53,7 @@ fn content(screen: Screen, fullscreen: bool) -> &'static str {
 }
 pub fn refresh(viewer: &Viewer) {
     if let Err(e) = update(viewer) {
-        label(&format!("Schematica panel: {e}"));
+        label(&format!("Cinnamatica panel: {e}"));
     }
 }
 
@@ -377,7 +377,7 @@ mod tests {
             let mut panel: Value = serde_json::from_str(content(Screen::Main, true)).unwrap();
             let mut bindings = Map::new();
             crate::dashboard::bindings(&crate::tests::reference_viewer(), &mut bindings);
-            bindings.insert("#build".into(), json!("Builder preview"));
+            bindings.insert("#build".into(), json!("Cinnamatica preview"));
             panel["surface"]["bindings"] = json!(bindings);
             std::fs::write(path, panel.to_string()).unwrap();
             let path =

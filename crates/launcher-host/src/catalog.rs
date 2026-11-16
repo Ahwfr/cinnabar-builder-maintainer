@@ -50,7 +50,7 @@ impl Catalog {
                 self.child = Some(child);
                 Ok(())
             }
-            Err(_) => Err("Reopen Cinnabar to retry the account catalog.".to_owned()),
+            Err(_) => Err("Reopen Cinnamatica to retry the account catalog.".to_owned()),
         }
     }
     /// Reads one published catalog or helper failure without blocking the frame.

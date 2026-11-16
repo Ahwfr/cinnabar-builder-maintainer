@@ -132,7 +132,7 @@ impl Viewer {
                 if let Some(index) = self.selected {
                     self.request = Some(index);
                     let _ = panel::close();
-                    label("Schematica | Loading selected blueprint");
+                    label("Cinnamatica | Loading selected blueprint");
                 }
                 return;
             }

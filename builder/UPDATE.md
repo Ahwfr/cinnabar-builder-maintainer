@@ -1,12 +1,12 @@
 # Installing and updating Builder
 
-On Windows, run the setup EXE from a versioned release, then open **Cinnabar Builder** from Start. Setup installs for the current user. The portable ZIP also works when extracted into a writable folder.
+On Windows, run the setup EXE from a versioned release, then open **Cinnamatica** from Start. Setup installs for the current user. The portable ZIP also works when extracted into a writable folder.
 
-For the next release, close Builder and extract the new package into the same folder. Keep **profile/**. It contains your worlds, account data, settings, mods and library. The launcher checks that the template matches the package revision, upgrades the library code and backs up the previous component. Confirm the release version and guest hash in the Schematica header or Mods page.
+For the next release, close Builder and extract the new package into the same folder. Keep **profile/**. It contains your worlds, account data, settings, mods and library. The launcher checks that the template matches the package revision, upgrades the library code and backs up the previous component. Confirm the release version and guest hash in the Cinnamatica header or Mods page.
 
-Choose **Import schematics** in the Schematica menu to add local files to the current library. The library supports up to eight entries. The importer reads local files with bounded size and decoding limits. Original input files remain in place.
+Choose **Import schematics** in the Cinnamatica menu to add local files to the current library. The library supports up to eight entries. The importer reads local files with bounded size and decoding limits. Original input files remain in place.
 
-In Schematica Settings, cycle **Fast Place** between **Off**, **V1 Classic**, and **V2 Strict**. Enable **Hold to Place** to repeat while the use control is held. V2 can fill an empty cell within reach using normal Bedrock placement packets, including when there is no usable support face. It only sends a placement it predicts will match the plan.
+In Cinnamatica Settings, cycle **Fast Place** between **Off**, **V1 Classic**, and **V2 Strict**. Enable **Hold to Place** to repeat while the use control is held. V2 can fill an empty cell within reach using normal Bedrock placement packets, including when there is no usable support face. It only sends a placement it predicts will match the plan.
 
 To paste a guide into a cheats-enabled world, be a Creative operator and allow Schematica's `setblock` and `fill` permissions in Mods. Open Schematica, choose **Paste build**, then **Confirm paste**. The server validates the resulting commands. Paste preserves occupied cells and reports any unsupported state encodings.
 
@@ -22,6 +22,6 @@ The Windows workflow packages successful builds and publishes a versioned releas
 
 To publish an already staged and verified package, run **builder/Publish-BuilderRelease.ps1 -PackageDirectory PATH -Publish**. It excludes the private profile, editable source folder and compiler caches from the ZIP. It refuses to overwrite an existing version tag.
 
-To produce the setup EXE from the staged package, run **builder/windows/Build-BuilderInstaller.ps1 -PackageDirectory PATH -Compiler PATH_TO_ISCC** with Inno Setup. Game data in the install directory's **profile/** is retained on update and uninstall.
+To produce the setup EXE from the staged package, run **builder/windows/Build-CinnamaticaInstaller.ps1 -PackageDirectory PATH -Compiler PATH_TO_ISCC** with Inno Setup. Game data in the install directory's **profile/** is retained on update and uninstall.
 
 Numpad **8/2** moves the guide forward/back, **4/6** left/right, **7/9** down/up, and **1/3** rotates left/right. Adjust bindings in Keyboard & Mouse settings.

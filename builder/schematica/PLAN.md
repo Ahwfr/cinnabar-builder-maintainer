@@ -14,7 +14,7 @@ The fork keeps the upstream runtime and adds generic native capabilities used by
 | Guest upgrades | Portable launcher copies the old library payload into the new template, backs up the old component, and stamps the name and metadata version | Nested payload preservation regression and actual library smoke check |
 | UI | Minecraft-style gray/green panels, button feedback, full viewport or compact mode | Requires rendered checks at small and large window sizes |
 | Bindings | Schematica has normal Keyboard & Mouse rows. The guest observes their physical assignments | Remap and unbind regression. Legacy Alt+J/I/K remain |
-| Packaging | One Cinnabar Builder.exe entry point beside runtime, template and persistent profile. Includes asset preparation kit and exact source ZIP | Needs extracted package startup check |
+| Packaging | One Cinnamatica.exe entry point beside runtime, template and persistent profile. Includes asset preparation kit and exact source ZIP | Needs extracted package startup check |
 
 The UI uses the existing JSON-UI mod surface with Minecraft-style controls. Import and binding edits use native OreUI Settings. Every release keeps the same mod filename so its enabled state, permissions and settings can follow the upgraded code.
 

@@ -12,4 +12,4 @@ if ($stamp -ne $version) { throw "Expected a staged Builder $version package." }
 $definition = Join-Path $PSScriptRoot '../../packaging/windows/builder.iss'
 & $Compiler '/Qp' "/DBuilderVersion=$version" "/DPackagePath=$package" "/O$package" $definition
 if ($LASTEXITCODE) { throw "Inno Setup failed with exit code $LASTEXITCODE." }
-Get-Item -LiteralPath (Join-Path $package "Cinnabar-Builder-v$version-windows-x64-setup.exe")
+Get-Item -LiteralPath (Join-Path $package "Cinnamatica-v$version-windows-x64-setup.exe")

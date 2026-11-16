@@ -1,4 +1,4 @@
-name: Builder Windows
+name: Cinnamatica Windows
 
 on:
   push:
@@ -101,7 +101,7 @@ jobs:
         shell: pwsh
         env:
           CARGO_BUILD_BUILD_DIR: ${{ github.workspace }}/target/builder-importer
-        run: ./builder/windows/Build-Builder.ps1 -ImporterOnly
+        run: ./builder/windows/Build-Cinnamatica.ps1 -ImporterOnly
       - name: Verify the cached build inputs
         shell: pwsh
         run: python .github/actions/build-cache/cache.py verify-inputs
@@ -117,7 +117,7 @@ jobs:
           }
           Copy-Item -LiteralPath 'target/release/assetc.exe' -Destination $release
           ./packaging/windows/fetch-dxc.ps1 -Out $release
-          Copy-Item -LiteralPath 'target/builder-importer/release/schematica-builder.exe' -Destination 'builder-artifact/Cinnabar Builder.exe'
+          Copy-Item -LiteralPath 'target/builder-importer/release/schematica-builder.exe' -Destination 'builder-artifact/Cinnamatica.exe'
           Copy-Item -LiteralPath 'target/builder-importer/wasm32-unknown-unknown/release/schematica_guest.wasm' -Destination 'builder-artifact/schematica-guest-template.bin'
           ./packaging/windows/stage-prep-kit.ps1 -Root $PWD -Kit "$release/resources/prep-kit" -Assetc "$release/assetc.exe"
           New-Item -ItemType Directory -Force -Path "$release/resources/fonts", "$release/resources/assets" | Out-Null
@@ -129,7 +129,7 @@ jobs:
           Copy-Item -LiteralPath 'assets/licenses' -Destination 'builder-artifact' -Recurse
           Set-Content -LiteralPath 'builder-artifact/builder-commit.txt' -Value $env:GITHUB_SHA -Encoding ASCII
           Copy-Item -LiteralPath 'builder/PORTABLE-README.md' -Destination 'builder-artifact/README.md'
-          git archive --format=zip --output=builder-artifact/Builder-Source.zip HEAD
+          git archive --format=zip --output=builder-artifact/Cinnamatica-Source.zip HEAD
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Publish the versioned Builder release
         if: env.HEADLESS_TEST != 'true'
@@ -140,9 +140,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: env.HEADLESS_TEST != 'true'
         with:
-          name: cinnabar-builder-windows-x64
+          name: cinnamatica-windows-x64
           path: |
-            builder-artifact/Cinnabar Builder.exe
+            builder-artifact/Cinnamatica.exe
             builder-artifact/App/
           if-no-files-found: error
           retention-days: 14
@@ -158,7 +158,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: env.HEADLESS_TEST == 'true'
         with:
-          name: cinnabar-builder-headless-test-windows-x64
+          name: cinnamatica-headless-test-windows-x64
           path: headless-test-artifact/
           if-no-files-found: error
           retention-days: 7

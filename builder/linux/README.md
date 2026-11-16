@@ -1,9 +1,9 @@
-# Builder for Linux
+# Cinnamatica for Linux
 
-ThsSilentKnight contributed the Linux build and launch scripts and the schematic picker. The repository currently has no prebuilt Linux Builder download.
+ThsSilentKnight contributed the Linux build and launch scripts and the schematic picker. The repository currently has no prebuilt Linux Cinnamatica download.
 
-    git clone https://github.com/Ahwfr/cinnabar-builder.git
-    cd cinnabar-builder
+    git clone https://github.com/Ahwfr/cinnamatica.git
+    cd cinnamatica
     builder/linux/build-builder.sh
     builder/linux/start-builder.sh
 
