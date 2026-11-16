@@ -79,6 +79,6 @@ impl Options {
     pub(super) fn menu_hint(&self, title: &str) -> String {
         let menu = native_bindings::caption(hotkeys::Action::Main);
         let settings = native_bindings::caption(hotkeys::Action::Config);
-        format!("{title} | {menu} Menu | {settings} Settings")
+        format!("{title} | P / {menu} Menu | {settings} Settings")
     }
 }

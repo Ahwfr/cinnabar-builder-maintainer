@@ -36,18 +36,17 @@ pub fn sample() {
             Ok(Some(page)) => page,
             Ok(None) => return,
             Err(_) => {
-                *cache = Cache::default();
+                cache.pending.clear();
+                cache.collecting = None;
                 return;
             }
         };
-        if cache.revision != Some(page.revision) {
-            cache.bindings.clear();
-        }
         if cache
             .collecting
             .is_some_and(|revision| revision != page.revision)
         {
-            *cache = Cache::default();
+            cache.pending.clear();
+            cache.collecting = None;
             return;
         }
         cache.collecting = Some(page.revision);
@@ -97,18 +96,43 @@ pub fn pressed(action: &str, keys: &input::Controls) -> bool {
     })
 }
 
+pub fn is_held(action: &str, keys: &input::Controls) -> bool {
+    CACHE.with(|cache| {
+        cache.borrow().bindings.iter().any(|binding| {
+            binding.action == action
+                && binding.context == input::BindingContext::Gameplay
+                && held(binding, keys)
+                && keys.keys_admitted.contains(&binding.key)
+        })
+    })
+}
+
+fn fallback(action: Action) -> Option<(&'static str, &'static str)> {
+    match action {
+        Action::Main => Some(("KeyM", "M")),
+        Action::Config => Some(("F6", "F6")),
+        _ => None,
+    }
+}
+
 /// Resolves guest features from the same physical settings rows the native router observes.
 pub fn action(keys: &input::Controls, armed: &mut bool) -> Option<Action> {
-    if CACHE.with(|cache| cache.borrow().revision.is_none()) {
-        for (key, action) in [("KeyM", Action::Main), ("F6", Action::Config)] {
-            if keys.keys_pressed.iter().any(|pressed| pressed == key) {
-                *armed = false;
-                return Some(action);
-            }
-        }
-    }
     for (action, _, _) in crate::hotkeys::BINDINGS {
         if pressed(name(action), keys) {
+            *armed = false;
+            return Some(action);
+        }
+    }
+    for action in [Action::Main, Action::Config] {
+        let bound = CACHE.with(|cache| {
+            cache.borrow().bindings.iter().any(|binding| {
+                binding.action == name(action) && binding.context == input::BindingContext::Gameplay
+            })
+        });
+        if !bound
+            && fallback(action)
+                .is_some_and(|(key, _)| keys.keys_pressed.iter().any(|value| value == key))
+        {
             *armed = false;
             return Some(action);
         }
@@ -122,9 +146,15 @@ pub fn caption(action: Action) -> String {
             .borrow()
             .bindings
             .iter()
-            .find(|binding| binding.action == name(action))
+            .find(|binding| {
+                binding.action == name(action) && binding.context == input::BindingContext::Gameplay
+            })
             .map_or_else(
-                || "Unbound".into(),
+                || {
+                    fallback(action)
+                        .map_or("Unbound", |(_, title)| title)
+                        .into()
+                },
                 |binding| {
                     binding
                         .key
@@ -141,7 +171,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_remapped_binding_uses_the_new_key_and_can_be_unbound() {
+    fn a_remapped_menu_key_works_with_a_default_fallback() {
         CACHE.with(|cache| {
             let mut cache = cache.borrow_mut();
             cache.revision = Some(1);
@@ -174,5 +204,8 @@ mod tests {
         assert!(action(&keys, &mut false) == Some(Action::Main));
         CACHE.with(|cache| cache.borrow_mut().bindings.clear());
         assert!(action(&keys, &mut false).is_none());
+        keys.keys_pressed = vec!["KeyM".into()];
+        assert!(action(&keys, &mut false) == Some(Action::Main));
+        assert_eq!(caption(Action::Main), "M");
     }
 }

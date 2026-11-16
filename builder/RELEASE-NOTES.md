@@ -1,4 +1,10 @@
-# Cinnamatica 0.3.16
+# Cinnamatica 0.3.17
+
+- Restore conservative ghost refresh scheduling and keep visible tiles during temporary terrain read failures. Large schematics use smaller tiles in a bounded window around the player. Dense mismatches show a limited number of 3D markers per tile, while the verifier still lists every scanned mismatch.
+- Keep P and the default M shortcut available if the client cannot supply the menu binding.
+- Preserve crosshair-only Hold to Place from 0.3.16.
+
+## 0.3.16
 
 - Open the schematic window on the P key press. A press during schematic loading is queued.
 - Hold to Place requires a ghost directly under the crosshair and stops at solid terrain. Nearby placement assist remains available with Hold to Place off.

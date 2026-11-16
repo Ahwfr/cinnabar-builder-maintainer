@@ -337,6 +337,9 @@ struct Viewer {
     highlight_dirty: bool,
     layer_counts: Vec<u64>,
     layer_count_cursor: usize,
+    highlight_scan: Option<(usize, Vec<u64>)>,
+    highlight_again: bool,
+    highlight_delay: u8,
     placement: Option<Placement>,
     world: Option<(u64, i32)>,
     placement_key: Option<String>,
@@ -354,6 +357,8 @@ struct Viewer {
     menu_armed: bool,
     last_target: Option<[i32; 3]>,
     recently_targeted: Option<([i32; 3], u8)>,
+    scan_priority: bool,
+    nearby_aim: Option<(([f32; 3], [f32; 3]), Option<[i32; 3]>, Option<[i32; 3]>)>,
     options: Options,
     material_page: usize,
     /// The open tab of the P window.
@@ -409,6 +414,8 @@ impl Viewer {
             menu_armed: false,
             last_target: None,
             recently_targeted: None,
+            scan_priority: false,
+            nearby_aim: None,
             options,
             material_page: 0,
             browser_tab: browser::Tab::default(),
@@ -425,6 +432,9 @@ impl Viewer {
             highlight_dirty: true,
             layer_counts: Vec::new(),
             layer_count_cursor: 0,
+            highlight_scan: None,
+            highlight_again: false,
+            highlight_delay: 0,
             active_entry: None,
             request: None,
             loaded,
@@ -599,6 +609,9 @@ impl Viewer {
             .or_else(|| self.builder_hotkey(&keys, alt, gameplay))
         {
             self.screen = screen;
+            if screen == Screen::Browser && self.browser_tab == browser::Tab::Materials {
+                self.browser_tab = browser::Tab::Import;
+            }
             self.selected = None;
             self.verifier_page = 0;
             self.material_page = 0;
@@ -609,7 +622,13 @@ impl Viewer {
             }
             return;
         }
+        let publish_highlights = self.highlight_dirty && !self.dirty && self.highlight_delay == 0;
+        self.highlight_delay = self.highlight_delay.saturating_sub(1);
         if !gameplay {
+            if publish_highlights {
+                self.publish_item_highlights();
+                self.highlight_delay = 5;
+            }
             self.menu_armed = false;
             return;
         }
@@ -678,6 +697,8 @@ impl Viewer {
             .map(|(eye, _)| eye.map(|axis| axis.floor() as i32));
         let inside_ghost = eye_cell
             .is_some_and(|cell| self.planned_block(cell).is_some() && self.may_need_block(cell));
+        let use_held = keys.keys_held.iter().any(|key| key == "MouseRight")
+            || native_bindings::is_held("use", &keys);
         let placement_cell = if self.options.fast_place && self.shown && self.placement.is_some() {
             let native = item_use::read_placement_cell()
                 .ok()
@@ -694,13 +715,13 @@ impl Viewer {
                     .or_else(|| {
                         self.options
                             .bridge_place
-                            .then(|| self.bridge_ghost())
+                            .then(|| self.bridge_ghost(world_target, use_held))
                             .flatten()
                     })
             } else {
                 native.or_else(|| {
                     (self.options.correct_aim && self.options.bridge_place)
-                        .then(|| self.bridge_ghost())
+                        .then(|| self.bridge_ghost(world_target, use_held))
                         .flatten()
                 })
             }
@@ -726,6 +747,11 @@ impl Viewer {
             }
             let _ = item_use::set_placement_repeat(self.options.hold_place);
         }
+        if publish_highlights && budget::remaining_fuel() >= 600_000 {
+            self.publish_item_highlights();
+            self.highlight_delay = 5;
+            return;
+        }
         if !self.retired.is_empty() {
             // A tile owns up to four handles. Stay under the host's 32 drawing
             // calls per callback even when moving or hiding a large guide.
@@ -744,53 +770,42 @@ impl Viewer {
         if self.shown && !self.tiles.is_empty() {
             let opacity = textured.then_some(f32::from(self.options.opacity) / 100.);
             let dimension = self.world.unwrap().1;
-            let priority = [world_target, recent, aimed]
+            // Alternate the hot tile and the background cursor. One tile can consume
+            // most of a frame when many cells change or need discrepancy markers.
+            let priority = [recent, world_target, aimed]
                 .into_iter()
                 .flatten()
-                .filter_map(|cell| self.tiles.iter().position(|tile| tile.contains(cell)))
-                .fold(Vec::new(), |mut list, tile| {
-                    if !list.contains(&tile) && list.len() < 2 {
-                        list.push(tile);
-                    }
-                    list
-                });
-            let mut scanned = priority.clone();
+                .find_map(|cell| self.tiles.iter().position(|tile| tile.contains(cell)));
+            self.scan_priority = !self.scan_priority;
+            let index = if self.scan_priority {
+                priority.unwrap_or(self.cursor)
+            } else {
+                self.cursor
+            };
             let mut changed = false;
-            for index in priority {
-                if budget::remaining_fuel() < 400_000 {
-                    break;
-                }
-                changed |= self.tiles[index]
-                    .step(&self.preview, &self.schematic, dimension, opacity)
-                    .1;
-            }
-            for _ in 0..2 {
-                if budget::remaining_fuel() < 400_000 {
-                    break;
-                }
-                let index = self.cursor;
-                if scanned.contains(&index) {
-                    self.cursor = (index + 1) % self.tiles.len();
-                    continue;
-                }
-                scanned.push(index);
+            if budget::remaining_fuel() >= 650_000 {
                 let (advance, updated) =
                     self.tiles[index].step(&self.preview, &self.schematic, dimension, opacity);
-                changed |= updated;
-                if !advance {
-                    break;
+                changed = updated;
+                if advance && index == self.cursor {
+                    self.cursor = (self.cursor + 1) % self.tiles.len();
                 }
-                self.cursor = (index + 1) % self.tiles.len();
-            }
-            if budget::remaining_fuel() >= 150_000 && scanned.len() < 4 {
-                let index =
-                    (self.cursor + usize::from(scanned.contains(&self.cursor))) % self.tiles.len();
-                if !scanned.contains(&index) {
-                    self.tiles[index].prefetch();
+                // Keep the two hot subscriptions warm using stamp-only reads. They
+                // will be rendered in their own frame when there is enough fuel.
+                let other = if index == self.cursor {
+                    priority
+                } else {
+                    Some(self.cursor)
+                };
+                if let Some(next) = other.filter(|&next| next != index)
+                    && budget::remaining_fuel() >= 500_000
+                {
+                    self.tiles[next].prefetch();
                 }
             }
             if changed {
                 self.highlight_dirty = true;
+                self.highlight_again |= self.highlight_scan.is_some();
                 let [width, height, depth] = self.schematic.size();
                 if self.options.auto_layer
                     && self.layer_mode == 1
@@ -801,9 +816,6 @@ impl Viewer {
                     self.dirty = true;
                 }
             }
-        }
-        if self.highlight_dirty && !self.dirty && budget::remaining_fuel() >= 425_000 {
-            self.publish_item_highlights();
         }
         if self.options.textured && !textured && self.placement.is_some() {
             self.show_label("Cinnamatica | Textures need render_material");
@@ -1038,19 +1050,26 @@ impl Viewer {
     }
 
     /// Finds the nearest missing guide cell within the crosshair's placement area.
-    fn bridge_ghost(&self) -> Option<[i32; 3]> {
-        let target = gameplay::read_block_target().ok().flatten();
-        if target.is_none()
-            && let Some((_, pos)) = self.aimed_block()
-            && self.is_missing(pos)
+    fn bridge_ghost(&mut self, support: Option<[i32; 3]>, use_held: bool) -> Option<[i32; 3]> {
+        let ray = self.aim_ray()?;
+        if let Some((old_ray, old_support, cell)) = self.nearby_aim
+            && old_ray == ray
+            && old_support == support
+            && cell.is_none_or(|pos| self.is_missing(pos))
         {
-            return Some(pos);
+            return cell;
         }
-        let (eye, forward) = self.aim_ray()?;
-        let support = target.map(|p| [p.x, p.y, p.z]);
-        nearby_ghost(eye, forward, support, |pos| {
+        self.nearby_aim = None;
+        if !use_held || budget::remaining_fuel() < 750_000 {
+            return None;
+        }
+        let (eye, forward) = ray;
+        let center = support.map(|pos| pos.map(|v| v as f32 + 0.5));
+        let cell = nearby_ghost(eye, forward, center, |pos| {
             self.planned_block(pos).is_some() && self.is_missing(pos)
-        })
+        });
+        self.nearby_aim = Some((ray, support, cell));
+        cell
     }
 
     fn layers(&self) -> LayerMode {
@@ -1074,8 +1093,12 @@ impl Viewer {
     }
 
     fn rebuild(&mut self) {
+        self.nearby_aim = None;
         self.layer_counts.clear();
         self.layer_count_cursor = 0;
+        self.highlight_scan = None;
+        self.highlight_again = false;
+        self.highlight_delay = 0;
         self.highlight_dirty = true;
         self.clear_verifier_marker();
         self.verifier_target = None;
@@ -1103,11 +1126,30 @@ impl Viewer {
     fn publish_item_highlights(&mut self) {
         let mut names = Vec::new();
         if self.loaded && self.placement.is_some() {
+            if self.layers() == LayerMode::All
+                && self.layer_counts.is_empty()
+                && self.last_item_highlights.is_empty()
+            {
+                // Material totals are decoded before placement. Publish them first so
+                // opening a container before terrain verification still shows matches.
+                let mut all = self
+                    .materials
+                    .iter()
+                    .map(|line| line.name.clone())
+                    .collect::<Vec<_>>();
+                all.sort_unstable();
+                all.dedup();
+                all.truncate(1024);
+                if !all.is_empty() && hud::set_item_highlights(&all).is_ok() {
+                    self.last_item_highlights = all;
+                }
+                return;
+            }
             if self.layer_counts.is_empty() {
                 self.layer_counts.resize(self.schematic.palette().len(), 0);
             }
             let cells = self.schematic.layer_cells(self.layers());
-            let end = (self.layer_count_cursor + 8192).min(cells.len());
+            let end = (self.layer_count_cursor + 2048).min(cells.len());
             for &index in &cells[self.layer_count_cursor..end] {
                 self.layer_counts[index as usize] += 1;
             }
@@ -1115,10 +1157,18 @@ impl Viewer {
             if end < cells.len() {
                 return;
             }
-            let mut needed = self.layer_counts.clone();
-            for tile in &self.tiles {
-                tile.subtract_placed_materials(&mut needed);
+            let (cursor, needed) = self
+                .highlight_scan
+                .get_or_insert_with(|| (0, self.layer_counts.clone()));
+            let end = (*cursor + 4).min(self.tiles.len());
+            for tile in &self.tiles[*cursor..end] {
+                tile.subtract_placed_materials(needed);
             }
+            *cursor = end;
+            if end < self.tiles.len() {
+                return;
+            }
+            let (_, needed) = self.highlight_scan.take().unwrap();
             names.extend(needed.into_iter().enumerate().filter_map(|(index, count)| {
                 let block = &self.schematic.palette()[index];
                 (count > 0 && !block.is_air() && !block.is_placement_artifact())
@@ -1134,7 +1184,7 @@ impl Viewer {
             }
             self.last_item_highlights = names;
         }
-        self.highlight_dirty = false;
+        self.highlight_dirty = std::mem::take(&mut self.highlight_again);
     }
 
     fn preview_focus(&self) -> Option<[i32; 3]> {
@@ -1154,6 +1204,8 @@ impl Viewer {
             return;
         }
         self.tile_focus = focus;
+        self.highlight_scan = None;
+        self.highlight_dirty = true;
         let mut previous: BTreeMap<_, _> = self
             .tiles
             .drain(..)

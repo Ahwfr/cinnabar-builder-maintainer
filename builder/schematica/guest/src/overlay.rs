@@ -3,10 +3,13 @@ use schematica_core::{BlockState, CellStatus, LayerMode, Placement, Schematic, S
 use serde_json::{Map, json};
 
 const SMALL_TILE_EDGE: i32 = 4;
-const LARGE_TILE_EDGE: i32 = 10;
+const LARGE_TILE_EDGE: i32 = 5;
 const MAX_VISIBLE_TILES: i32 = 128;
-const WINDOW_TILES: i32 = 4;
+const WINDOW_TILES: i32 = 5;
 const DEFAULT_LIGHT: u32 = 0xffff0000;
+// Lowering triangle vertices to WASM host calls dominates dense mismatch tiles.
+// The verifier and material counts still track every cell.
+const MAX_TILE_MARKERS: usize = 12;
 
 #[derive(Default)]
 pub struct Preview {
@@ -16,13 +19,6 @@ pub struct Preview {
 }
 
 impl Preview {
-    #[cfg(test)]
-    pub fn new(placement: Placement, layers: LayerMode) -> Self {
-        let mut preview = Self::default();
-        preview.reposition(placement, layers);
-        preview
-    }
-
     pub fn reposition(&mut self, placement: Placement, layers: LayerMode) {
         if self.placement.is_none_or(|previous| {
             previous.quarter_turns != placement.quarter_turns || previous.mirror != placement.mirror
@@ -35,7 +31,7 @@ impl Preview {
 
     pub fn prepare(&mut self, schematic: &Schematic) -> bool {
         let placement = self.placement.unwrap();
-        for state in schematic.palette().iter().skip(self.palette.len()).take(24) {
+        for state in schematic.palette().iter().skip(self.palette.len()).take(8) {
             if budget::remaining_fuel() < 500_000 {
                 break;
             }
@@ -155,11 +151,19 @@ pub(super) fn layer_complete(tiles: &[Tile], width: i32, depth: i32) -> bool {
 
 #[cfg(test)]
 #[test]
-fn cardiff_dimensions_fit_without_a_moving_preview_window() {
+fn large_schematic_keeps_a_bounded_window_around_the_camera() {
     let size = [47, 45, 36];
-    let edge = tile_edge([0; 3], size);
-    assert_eq!(edge, 10);
-    assert_eq!(tile_counts([0; 3], size, edge).iter().product::<i32>(), 100);
+    let mut preview = Preview::default();
+    preview.reposition(Placement::new([0; 3]), LayerMode::All);
+    let eye = [40., 35., 30.];
+    let tiles = preview.tiles(size, preview.focus(size, eye));
+    assert!(tiles.len() <= MAX_VISIBLE_TILES as usize);
+    assert!(tiles.iter().any(|tile| tile.contains([40, 35, 30])));
+    assert!(
+        tiles
+            .iter()
+            .all(|tile| (0..3).all(|i| tile.hi[i] - tile.lo[i] <= LARGE_TILE_EDGE))
+    );
 }
 
 #[cfg(test)]
@@ -339,6 +343,9 @@ impl Tile {
             Ok(terrain::ReadResult::Unchanged(_)) => {}
             Ok(terrain::ReadResult::Changed(region)) => {
                 self.pending_frames = 0;
+                if budget::remaining_fuel() < 575_000 {
+                    return (false, false);
+                }
                 let previous_revision = self.stamp.map(|stamp| stamp.revision);
                 self.render(
                     preview,
@@ -353,7 +360,8 @@ impl Tile {
                 );
             }
             Err(e) => {
-                self.clear();
+                // A deferred or out-of-range observation does not invalidate the
+                // already visible guide.
                 self.error = Some(format!("Terrain: {e:?}"));
             }
         }
@@ -427,6 +435,7 @@ impl Tile {
             indices: Vec::new(),
         };
         let mut used_texture = false;
+        let mut marker_count = 0;
         let mut materials = vec![[0; 3]; preview.palette.len()];
         let mut tally = Tally::default();
         for x in 0..sx {
@@ -469,8 +478,12 @@ impl Tile {
                         _ => None,
                     };
                     cells.push(word);
-                    if let Some(color) = color {
+                    if let Some(color) = color
+                        && marker_count < MAX_TILE_MARKERS
+                        && budget::remaining_fuel() >= 350_000
+                    {
                         add_box(&mut highlights, [x, y, z], color);
+                        marker_count += 1;
                     }
                 }
             }
