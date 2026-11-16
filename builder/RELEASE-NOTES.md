@@ -1,4 +1,10 @@
-# Cinnamatica 0.3.15
+# Cinnamatica 0.3.16
+
+- Open the schematic window on the P key press. A press during schematic loading is queued.
+- Hold to Place requires a ghost directly under the crosshair and stops at solid terrain. Nearby placement assist remains available with Hold to Place off.
+- Prepare the ghost palette faster and overlap terrain reads. Keep the last targeted block under review when it breaks, so the mismatch can clear even when the crosshair moves to the block behind it.
+
+## 0.3.15
 
 - Brought ThsSilentKnight’s tabbed window to Windows. P and M open the shared window. F6 opens its Settings tab during play. The Controls tab manages placement, layers, the verifier, and paste.
 - Fixed an unreachable fuel check for container material highlights. Needed stacks have green outlines, and shulker boxes with matching contents have cyan outlines when the server supplies their item data.

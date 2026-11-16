@@ -16,17 +16,26 @@ pub struct Preview {
 }
 
 impl Preview {
+    #[cfg(test)]
     pub fn new(placement: Placement, layers: LayerMode) -> Self {
-        Self {
-            placement: Some(placement),
-            palette: Vec::new(),
-            layers: Some(layers),
+        let mut preview = Self::default();
+        preview.reposition(placement, layers);
+        preview
+    }
+
+    pub fn reposition(&mut self, placement: Placement, layers: LayerMode) {
+        if self.placement.is_none_or(|previous| {
+            previous.quarter_turns != placement.quarter_turns || previous.mirror != placement.mirror
+        }) {
+            self.palette.clear();
         }
+        self.placement = Some(placement);
+        self.layers = Some(layers);
     }
 
     pub fn prepare(&mut self, schematic: &Schematic) -> bool {
         let placement = self.placement.unwrap();
-        for state in schematic.palette().iter().skip(self.palette.len()).take(4) {
+        for state in schematic.palette().iter().skip(self.palette.len()).take(24) {
             if budget::remaining_fuel() < 500_000 {
                 break;
             }
@@ -294,6 +303,18 @@ impl Tile {
         self.mismatches.len()
     }
 
+    fn query(&self) -> terrain::RegionQuery {
+        terrain::RegionQuery {
+            min: position(self.lo),
+            max: position(self.hi),
+            geometry: terrain::Geometry::empty(),
+        }
+    }
+
+    pub fn prefetch(&self) {
+        let _ = terrain::read_region(self.query(), self.stamp);
+    }
+
     pub fn step(
         &mut self,
         preview: &Preview,
@@ -308,12 +329,7 @@ impl Tile {
             self.fallback = error.code != draw::ErrorCode::BudgetExceeded;
             self.error = Some(format!("Texture unavailable: {}", error.detail));
         }
-        let query = terrain::RegionQuery {
-            min: position(self.lo),
-            max: position(self.hi),
-            geometry: terrain::Geometry::empty(),
-        };
-        match terrain::read_region(query, self.stamp) {
+        match terrain::read_region(self.query(), self.stamp) {
             Ok(terrain::ReadResult::Pending) => {
                 self.pending_frames += 1;
                 if self.pending_frames < 2 {

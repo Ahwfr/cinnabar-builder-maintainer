@@ -11,6 +11,36 @@ fn looking_from_inside_a_ghost_starts_at_the_next_voxel() {
     assert_eq!(crossed, [[1, 0, 0], [2, 0, 0]]);
 }
 
+#[test]
+fn hold_aim_stops_at_a_real_block_and_ignores_off_ray_ghosts() {
+    use schematica_core::BlockState;
+    let mut viewer = reference_viewer();
+    viewer.schematic = Schematic::new("Aim", [4, 1, 4]);
+    viewer.placement = Some(Placement::new([0, 0, 0]));
+    viewer.pose = Some(gameplay::Snapshot {
+        session: 1,
+        dimension: 0,
+        eye: gameplay::Vector3 {
+            x: 0.5,
+            y: 0.5,
+            z: 3.5,
+        },
+        yaw: 0.,
+        pitch: 0.,
+        frame_seconds: 0.016,
+        players: Vec::new(),
+    });
+    for cell in [[1, 0, 2], [0, 0, 1]] {
+        viewer
+            .schematic
+            .set(cell, BlockState::new("minecraft:stone"));
+    }
+    assert_eq!(viewer.aimed_next_ghost(None), Some([0, 0, 1]));
+    assert_eq!(viewer.aimed_next_ghost(Some([0, 0, 2])), None);
+    viewer.schematic.set([0, 0, 1], BlockState::air());
+    assert_eq!(viewer.aimed_next_ghost(None), None);
+}
+
 pub(super) fn reference_viewer() -> Viewer {
     let entries = [
         ("minecraft:oak_planks", 104),

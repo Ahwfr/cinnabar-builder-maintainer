@@ -47,11 +47,16 @@ use cinnabar::{
 use menu::Screen;
 use overlay::{Preview, Tile};
 use schematica_core::{LayerMode, MaterialLine, Mirror, Placement, Schematic, blueprint};
-use std::{cell::RefCell, collections::BTreeMap, f32::consts::TAU};
+use std::{
+    cell::{Cell, RefCell},
+    collections::BTreeMap,
+    f32::consts::TAU,
+};
 
 mod saved_placements;
 
 thread_local! {
+    static OPEN_AFTER_LOAD: Cell<bool> = const { Cell::new(false) };
     static RUNTIME: RefCell<(Runtime, Vec<&'static [u8]>, Options, Option<usize>)> =
         const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, auto_layer: true, paste_destroy: false, textured: true, assist: false, fast_place: false, strict_place: false, correct_aim: false, fullscreen_ui: true, bridge_place: true, opacity: 65, hotkeys: BTreeMap::new(), library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new() }, None)) };
 }
@@ -182,6 +187,19 @@ impl Guest for Schematica {
                     Err(_) => invalidate(runtime),
                 }
             }
+            if matches!(
+                runtime,
+                Runtime::Loading(_) | Runtime::Counting { .. } | Runtime::Finishing(..)
+            ) && let Ok(keys) = input::read_controls()
+                && keys.focused
+                && keys.gameplay
+            {
+                if keys.keys_pressed.iter().any(|key| key == browser::KEY) {
+                    OPEN_AFTER_LOAD.set(true);
+                } else if keys.keys_pressed.iter().any(|key| key == "Escape") {
+                    OPEN_AFTER_LOAD.set(false);
+                }
+            }
             match &mut *runtime {
                 Runtime::Ready(viewer) => {
                     if let Some(index) = viewer.request {
@@ -200,7 +218,7 @@ impl Guest for Schematica {
                     }
                 }
                 Runtime::Loading(decoder) => {
-                    for _ in 0..8 {
+                    for _ in 0..32 {
                         if budget::remaining_fuel() < 500_000 {
                             break;
                         }
@@ -238,7 +256,7 @@ impl Guest for Schematica {
                     totals,
                     cursor,
                 } => {
-                    let stop = (*cursor + 8).min(counts.len());
+                    let stop = (*cursor + 24).min(counts.len());
                     while *cursor < stop && budget::remaining_fuel() >= 500_000 {
                         let state = &schematic.palette()[*cursor];
                         let count = counts[*cursor];
@@ -334,7 +352,8 @@ struct Viewer {
     render_all: bool,
     locked: bool,
     menu_armed: bool,
-    pending_menu_open: u8,
+    last_target: Option<[i32; 3]>,
+    recently_targeted: Option<([i32; 3], u8)>,
     options: Options,
     material_page: usize,
     /// The open tab of the P window.
@@ -388,7 +407,8 @@ impl Viewer {
             render_all: true,
             locked: false,
             menu_armed: false,
-            pending_menu_open: 0,
+            last_target: None,
+            recently_targeted: None,
             options,
             material_page: 0,
             browser_tab: browser::Tab::default(),
@@ -458,15 +478,6 @@ impl Viewer {
         };
         if !keys.focused {
             self.menu_armed = false;
-            self.pending_menu_open = 0;
-            return;
-        }
-        if keys.panel_open || keys.keys_pressed.iter().any(|key| key == "Escape") {
-            self.pending_menu_open = 0;
-        }
-        if self.pending_menu_open > 0 {
-            self.pending_menu_open -= 1;
-            menu::request_open();
             return;
         }
         native_bindings::sample();
@@ -575,8 +586,14 @@ impl Viewer {
         let gameplay = active_world && keys.gameplay;
         // Opening a panel needs focused input, not a current placement snapshot.
         // The host withholds key edges while another screen owns input.
-        let browser = (gameplay && !alt && keys.keys_pressed.iter().any(|key| key == browser::KEY))
-            .then_some(Screen::Browser);
+        if keys.keys_pressed.iter().any(|key| key == "Escape") {
+            OPEN_AFTER_LOAD.set(false);
+        }
+        let browser = (keys.gameplay
+            && !alt
+            && (OPEN_AFTER_LOAD.replace(false)
+                || keys.keys_pressed.iter().any(|key| key == browser::KEY)))
+        .then_some(Screen::Browser);
         if let Some(screen) = legacy
             .or(browser)
             .or_else(|| self.builder_hotkey(&keys, alt, gameplay))
@@ -588,7 +605,7 @@ impl Viewer {
             // The window's search field opens empty.
             self.browser_search.clear();
             if menu::prepare(self) {
-                self.pending_menu_open = 4;
+                menu::request_open();
             }
             return;
         }
@@ -599,9 +616,6 @@ impl Viewer {
         self.paste_confirm = false;
         if self.paste_step() {
             return;
-        }
-        if self.highlight_dirty && !self.dirty && budget::remaining_fuel() >= 400_000 {
-            self.publish_item_highlights();
         }
         let caps = drawing::capabilities();
         if !caps.contains(drawing::Permissions::WORLD_DRAW) {
@@ -644,41 +658,54 @@ impl Viewer {
                 self.verifier_marker = overlay::highlight(self.world.unwrap().1, cell).ok();
             }
         }
-        let placement_cell = if self.options.fast_place && self.shown && self.placement.is_some() {
-            item_use::read_placement_cell()
-                .ok()
-                .flatten()
-                .map(|(x, y, z)| [x, y, z])
-        } else {
-            None
-        };
-        let native_cell = placement_cell.filter(|pos| self.planned_block(*pos).is_some());
+        let world_target = gameplay::read_block_target()
+            .ok()
+            .flatten()
+            .map(|pos| [pos.x, pos.y, pos.z].map(|axis| axis.floor() as i32));
+        if world_target != self.last_target {
+            if let Some(previous) = self.last_target {
+                self.recently_targeted = Some((previous, 10));
+            }
+            self.last_target = world_target;
+        }
+        let recent = self.recently_targeted.map(|(pos, _)| pos);
+        self.recently_targeted = self
+            .recently_targeted
+            .and_then(|(pos, frames)| (frames > 1).then_some((pos, frames - 1)));
+        let aimed = self.aimed_next_ghost(world_target);
         let eye_cell = self
             .aim_ray()
             .map(|(eye, _)| eye.map(|axis| axis.floor() as i32));
         let inside_ghost = eye_cell
             .is_some_and(|cell| self.planned_block(cell).is_some() && self.may_need_block(cell));
-        let placement_cell = if self.options.fast_place
-            && (self.options.strict_place || inside_ghost)
-        {
-            self.aimed_next_ghost()
-                .or_else(|| {
-                    native_cell.filter(|pos| Some(*pos) != eye_cell && self.may_need_block(*pos))
-                })
-                .or_else(|| {
-                    self.options
-                        .bridge_place
+        let placement_cell = if self.options.fast_place && self.shown && self.placement.is_some() {
+            let native = item_use::read_placement_cell()
+                .ok()
+                .flatten()
+                .map(|(x, y, z)| [x, y, z])
+                .filter(|pos| self.planned_block(*pos).is_some() && self.may_need_block(*pos));
+            if self.options.hold_place {
+                // A held click must acquire each new ghost on the current crosshair ray.
+                // Nearby assist may choose an off-ray cell only in the single-click mode.
+                aimed
+            } else if self.options.strict_place || inside_ghost {
+                aimed
+                    .or_else(|| native.filter(|pos| Some(*pos) != eye_cell))
+                    .or_else(|| {
+                        self.options
+                            .bridge_place
+                            .then(|| self.bridge_ghost())
+                            .flatten()
+                    })
+            } else {
+                native.or_else(|| {
+                    (self.options.correct_aim && self.options.bridge_place)
                         .then(|| self.bridge_ghost())
                         .flatten()
-                        .filter(|pos| Some(*pos) != eye_cell)
                 })
-        } else if self.options.fast_place && self.options.correct_aim && self.options.bridge_place {
-            native_cell
-                .filter(|pos| self.is_missing(*pos))
-                .or_else(|| self.bridge_ghost())
-                .or(native_cell)
+            }
         } else {
-            native_cell
+            None
         };
         if let Some(placement) = self.placement
             && let Some(pos @ [x, y, z]) = placement_cell
@@ -706,42 +733,60 @@ impl Viewer {
             self.publish_label(placement_cell);
             return;
         }
-        if !self.tiles.is_empty() && !self.preview.palette_ready(&self.schematic) {
-            self.preview.prepare(&self.schematic);
-            return;
-        }
-        if budget::remaining_fuel() < 650_000 {
+        if !self.tiles.is_empty()
+            && !self.preview.palette_ready(&self.schematic)
+            && !self.preview.prepare(&self.schematic)
+        {
             return;
         }
         let textured =
             self.options.textured && caps.contains(drawing::Permissions::RENDER_MATERIAL);
         if self.shown && !self.tiles.is_empty() {
-            let targeted = placement_cell
-                .or_else(|| {
-                    gameplay::read_block_target()
-                        .ok()
-                        .flatten()
-                        .map(|pos| [pos.x, pos.y, pos.z].map(|axis| axis.floor() as i32))
-                })
-                .and_then(|cell| self.tiles.iter().position(|tile| tile.contains(cell)));
             let opacity = textured.then_some(f32::from(self.options.opacity) / 100.);
             let dimension = self.world.unwrap().1;
+            let priority = [world_target, recent, aimed]
+                .into_iter()
+                .flatten()
+                .filter_map(|cell| self.tiles.iter().position(|tile| tile.contains(cell)))
+                .fold(Vec::new(), |mut list, tile| {
+                    if !list.contains(&tile) && list.len() < 2 {
+                        list.push(tile);
+                    }
+                    list
+                });
+            let mut scanned = priority.clone();
             let mut changed = false;
-            if let Some(index) = targeted.filter(|&index| index != self.cursor) {
+            for index in priority {
+                if budget::remaining_fuel() < 400_000 {
+                    break;
+                }
                 changed |= self.tiles[index]
                     .step(&self.preview, &self.schematic, dimension, opacity)
                     .1;
             }
-            if budget::remaining_fuel() >= 540_000 {
-                let (advance, updated) = self.tiles[self.cursor].step(
-                    &self.preview,
-                    &self.schematic,
-                    dimension,
-                    opacity,
-                );
+            for _ in 0..2 {
+                if budget::remaining_fuel() < 400_000 {
+                    break;
+                }
+                let index = self.cursor;
+                if scanned.contains(&index) {
+                    self.cursor = (index + 1) % self.tiles.len();
+                    continue;
+                }
+                scanned.push(index);
+                let (advance, updated) =
+                    self.tiles[index].step(&self.preview, &self.schematic, dimension, opacity);
                 changed |= updated;
-                if advance {
-                    self.cursor = (self.cursor + 1) % self.tiles.len();
+                if !advance {
+                    break;
+                }
+                self.cursor = (index + 1) % self.tiles.len();
+            }
+            if budget::remaining_fuel() >= 150_000 && scanned.len() < 4 {
+                let index =
+                    (self.cursor + usize::from(scanned.contains(&self.cursor))) % self.tiles.len();
+                if !scanned.contains(&index) {
+                    self.tiles[index].prefetch();
                 }
             }
             if changed {
@@ -756,6 +801,9 @@ impl Viewer {
                     self.dirty = true;
                 }
             }
+        }
+        if self.highlight_dirty && !self.dirty && budget::remaining_fuel() >= 425_000 {
+            self.publish_item_highlights();
         }
         if self.options.textured && !textured && self.placement.is_some() {
             self.show_label("Cinnamatica | Textures need render_material");
@@ -980,11 +1028,13 @@ impl Viewer {
         )
     }
 
-    fn aimed_next_ghost(&self) -> Option<[i32; 3]> {
+    fn aimed_next_ghost(&self, obstruction: Option<[i32; 3]>) -> Option<[i32; 3]> {
         let (eye, forward) = self.aim_ray()?;
         next_guide_cell(eye, forward, 6., |cell| {
-            self.planned_block(cell).is_some() && self.may_need_block(cell)
+            Some(cell) == obstruction
+                || (self.planned_block(cell).is_some() && self.may_need_block(cell))
         })
+        .filter(|cell| Some(*cell) != obstruction)
     }
 
     /// Finds the nearest missing guide cell within the crosshair's placement area.
@@ -1034,7 +1084,7 @@ impl Viewer {
             .extend(self.tiles.drain(..).filter(Tile::has_draws));
         self.cursor = 0;
         if let Some(p) = self.placement.filter(|_| self.shown && self.render_all) {
-            self.preview = Preview::new(p, self.layers());
+            self.preview.reposition(p, self.layers());
             self.tile_focus = self.preview_focus();
             self.tiles = self.preview.tiles(self.schematic.size(), self.tile_focus);
             self.sort_tiles_near_camera();
