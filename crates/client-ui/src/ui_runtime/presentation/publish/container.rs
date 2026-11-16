@@ -71,8 +71,14 @@ fn material_marks(
         return Vec::new();
     }
     let needed = |name: &str| {
-        names.contains(name)
-            || (name == "minecraft:string" && names.contains("minecraft:trip_wire"))
+        let placed = match name {
+            "minecraft:string" => "minecraft:trip_wire",
+            "minecraft:redstone" => "minecraft:redstone_wire",
+            "minecraft:repeater" => "minecraft:unpowered_repeater",
+            "minecraft:comparator" => "minecraft:unpowered_comparator",
+            _ => name,
+        };
+        names.contains(name) || names.contains(placed)
     };
     let mut marks = Vec::new();
     let mut check = |hit, stack: Option<&protocol::NetworkItemStack>| {
@@ -92,7 +98,7 @@ fn material_marks(
         check(Hit::Player(slot), ledger.displayed_stack(slot));
     }
     for slot in 0..ledger.storage_slot_count().unwrap_or(0) as u16 {
-        check(Hit::Storage(slot), ledger.furnace_visual_stack(slot));
+        check(Hit::Storage(slot), ledger.storage_stack(slot));
     }
     for slot in 0..64 {
         check(

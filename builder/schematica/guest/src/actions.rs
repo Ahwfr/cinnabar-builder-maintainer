@@ -74,7 +74,7 @@ impl Viewer {
                 return;
             }
             "hotkeys" => {
-                let _ = panel::open_settings("keyboard_and_mouse_forced_index");
+                self.screen = Screen::Hotkeys;
                 return;
             }
             "import" => {
@@ -226,7 +226,7 @@ impl Viewer {
                 return;
             }
             "back" => {
-                self.screen = Screen::Control;
+                self.screen = Screen::Browser;
                 return;
             }
             "sort" => {

@@ -688,7 +688,7 @@ fn paint_material_marks(
         };
         let [x, y] = std::array::from_fn(|i| frame.origin[i] + point[i] * frame.scale);
         let radius = 8.0 * frame.scale;
-        let stroke = frame.scale;
+        let stroke = frame.scale * 1.5;
         for bounds in [
             [x - radius, y - radius, x + radius, y - radius + stroke],
             [x - radius, y + radius - stroke, x + radius, y + radius],

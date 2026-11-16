@@ -71,6 +71,9 @@ pub(super) fn held_placement_block(
         let name = match item_identifier()?.as_ref() {
             "minecraft:cauldron" => "minecraft:cauldron",
             "minecraft:string" => "minecraft:trip_wire",
+            "minecraft:redstone" => "minecraft:redstone_wire",
+            "minecraft:repeater" => "minecraft:unpowered_repeater",
+            "minecraft:comparator" => "minecraft:unpowered_comparator",
             _ => return None,
         };
         collisions.block_default_runtime_id(stream.network_id_mode(), name)

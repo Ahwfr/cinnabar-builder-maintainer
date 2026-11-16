@@ -87,21 +87,25 @@ impl Schematic {
         counts
     }
 
-    /// Number of cells for each palette entry within the selected local layers.
+    /// Dense palette indices for the selected contiguous local layers.
+    pub fn layer_cells(&self, layers: crate::LayerMode) -> &[u32] {
+        use crate::LayerMode;
+        let (bottom, top) = match layers {
+            LayerMode::All => return &self.blocks,
+            LayerMode::Single(layer) => (layer, layer.saturating_add(1)),
+            LayerMode::Range { min, max } => (min, max.saturating_add(1)),
+        };
+        let area = self.size[0].max(0) as usize * self.size[2].max(0) as usize;
+        let height = self.size[1].max(0);
+        let start = bottom.clamp(0, height);
+        let end = top.clamp(start, height);
+        &self.blocks[start as usize * area..end as usize * area]
+    }
+
     pub fn layer_palette_counts(&self, layers: crate::LayerMode) -> Vec<u64> {
-        if layers == crate::LayerMode::All {
-            return self.palette_counts();
-        }
         let mut counts = vec![0; self.palette.len()];
-        let area = (self.size[0] * self.size[2]) as usize;
-        if area != 0 {
-            for (layer, cells) in self.blocks.chunks_exact(area).enumerate() {
-                if layers.includes(layer as i32) {
-                    for &index in cells {
-                        counts[index as usize] += 1;
-                    }
-                }
-            }
+        for &index in self.layer_cells(layers) {
+            counts[index as usize] += 1;
         }
         counts
     }

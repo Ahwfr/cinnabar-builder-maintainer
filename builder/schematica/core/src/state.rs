@@ -60,6 +60,19 @@ impl BlockState {
         self
     }
 
+    /// Structure masks and piston arm cells cannot be placed as inventory items.
+    pub fn is_placement_artifact(&self) -> bool {
+        matches!(
+            self.name.as_str(),
+            "minecraft:structure_void"
+                | "minecraft:piston_head"
+                | "minecraft:piston_arm_collision"
+                | "minecraft:sticky_piston_arm_collision"
+                | "minecraft:moving_piston"
+                | "minecraft:moving_block"
+        )
+    }
+
     pub fn is_air(&self) -> bool {
         matches!(
             self.name.as_str(),

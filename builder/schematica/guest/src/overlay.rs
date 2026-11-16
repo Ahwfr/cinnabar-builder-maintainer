@@ -191,7 +191,8 @@ pub struct Tile {
     markers: Option<DrawPair>,
     blocks: Option<DrawPair>,
     pending_frames: u8,
-    sample: Option<terrain::Region>,
+    grid_palette: Vec<u32>,
+    grid_cells: Vec<u32>,
 }
 
 pub(super) struct DrawPair {
@@ -223,6 +224,19 @@ pub(super) fn highlight(dimension: i32, cell: [i32; 3]) -> Result<DrawPair, draw
 }
 
 impl Tile {
+    pub fn distance_squared(&self, eye: [f32; 3]) -> f32 {
+        (0..3)
+            .map(|axis| {
+                let nearest = eye[axis].clamp(self.lo[axis] as f32, self.hi[axis] as f32);
+                (eye[axis] - nearest).powi(2)
+            })
+            .sum()
+    }
+
+    pub fn contains(&self, world: [i32; 3]) -> bool {
+        (0..3).all(|axis| (self.lo[axis]..self.hi[axis]).contains(&world[axis]))
+    }
+
     pub fn origin(&self) -> [i32; 3] {
         self.lo
     }
@@ -231,7 +245,7 @@ impl Tile {
     }
 
     pub(crate) fn status_at(&self, world: [i32; 3]) -> Option<CellStatus> {
-        if (0..3).any(|axis| world[axis] < self.lo[axis] || world[axis] >= self.hi[axis]) {
+        if !self.contains(world) {
             return None;
         }
         let [x, y, z] = [0, 1, 2].map(|axis| world[axis] - self.lo[axis]);
@@ -254,6 +268,7 @@ impl Tile {
             pair.remove();
         }
         self.stamp = None;
+        self.grid_cells.clear();
         self.statuses.clear();
         self.materials.clear();
         self.mismatches.clear();
@@ -285,23 +300,13 @@ impl Tile {
         schematic: &Schematic,
         dimension: i32,
         opacity: Option<f32>,
-    ) -> bool {
-        if let Some(region) = self.sample.take() {
-            self.render(
-                preview,
-                schematic,
-                dimension,
-                opacity.filter(|_| !self.fallback),
-                region,
-            );
-            return true;
-        }
-        if let Some(pair) = &self.blocks {
-            if let Err(e) = draw::geometry_status(pair.geometry) {
-                self.clear();
-                self.fallback = true;
-                self.error = Some(format!("Texture unavailable: {}", e.detail));
-            }
+    ) -> (bool, bool) {
+        if let Some(pair) = &self.blocks
+            && let Err(error) = draw::geometry_status(pair.geometry)
+        {
+            self.clear();
+            self.fallback = error.code != draw::ErrorCode::BudgetExceeded;
+            self.error = Some(format!("Texture unavailable: {}", error.detail));
         }
         let query = terrain::RegionQuery {
             min: position(self.lo),
@@ -311,15 +316,25 @@ impl Tile {
         match terrain::read_region(query, self.stamp) {
             Ok(terrain::ReadResult::Pending) => {
                 self.pending_frames += 1;
-                if self.pending_frames < 8 {
-                    return false;
+                if self.pending_frames < 2 {
+                    return (false, false);
                 }
             }
             Ok(terrain::ReadResult::Unchanged(_)) => {}
             Ok(terrain::ReadResult::Changed(region)) => {
-                self.sample = Some(region);
                 self.pending_frames = 0;
-                return false;
+                let previous_revision = self.stamp.map(|stamp| stamp.revision);
+                self.render(
+                    preview,
+                    schematic,
+                    dimension,
+                    opacity.filter(|_| !self.fallback),
+                    region,
+                );
+                return (
+                    true,
+                    self.stamp.map(|stamp| stamp.revision) != previous_revision,
+                );
             }
             Err(e) => {
                 self.clear();
@@ -327,7 +342,7 @@ impl Tile {
             }
         }
         self.pending_frames = 0;
-        true
+        (true, false)
     }
 
     fn render(
@@ -343,6 +358,7 @@ impl Tile {
         let mut ids = Vec::with_capacity(volume);
         let mut statuses = Vec::with_capacity(volume);
         let p = preview.placement.unwrap();
+        let mut comparisons = std::collections::HashMap::new();
         for x in 0..sx {
             for z in 0..sz {
                 for y in 0..sy {
@@ -350,10 +366,22 @@ impl Tile {
                     let local = p.world_to_local(schematic.size(), world).unwrap();
                     let id = schematic.palette_index(local).unwrap();
                     let expected = &preview.palette[id as usize];
-                    let status = if expected.name == "minecraft:structure_void" {
+                    let status = if schematic.palette()[id as usize].is_placement_artifact() {
                         CellStatus::Correct
                     } else {
-                        compare(&region, ids.len(), expected, schematic.is_air_index(id))
+                        let cell = ids.len();
+                        if region
+                            .loaded
+                            .get(cell / 64)
+                            .is_some_and(|bits| bits & (1 << (cell % 64)) != 0)
+                            && let Some(&actual) = region.states.get(cell)
+                        {
+                            *comparisons.entry((id, actual)).or_insert_with(|| {
+                                compare(&region, cell, expected, schematic.is_air_index(id))
+                            })
+                        } else {
+                            CellStatus::Unloaded
+                        }
                     };
                     ids.push(id);
                     statuses.push(status);
@@ -364,9 +392,18 @@ impl Tile {
             self.stamp = Some(region.stamp);
             return;
         }
-        self.clear();
-        if !self.fallback {
-            self.error = None;
+        let mut used_palette: Vec<_> = ids
+            .iter()
+            .copied()
+            .filter(|&id| !schematic.is_air_index(id))
+            .collect();
+        used_palette.sort_unstable();
+        used_palette.dedup();
+        self.grid_palette = used_palette;
+        self.error = None;
+        self.mismatches.clear();
+        if let Some(pair) = self.markers.take() {
+            pair.remove();
         }
         let mut cells = Vec::with_capacity(volume);
         let mut highlights = draw::Mesh {
@@ -382,8 +419,9 @@ impl Tile {
                     let id = ids[cells.len()] as usize;
                     let status = statuses[cells.len()];
                     let air = schematic.is_air_index(id as u32);
+                    let ignored = schematic.palette()[id].is_placement_artifact();
                     let mut word = DEFAULT_LIGHT;
-                    if !air || status == CellStatus::Extra {
+                    if (!air && !ignored) || status == CellStatus::Extra {
                         tally.add(status);
                         if status != CellStatus::Correct {
                             self.mismatches
@@ -391,25 +429,25 @@ impl Tile {
                         }
                     }
                     let color = match status {
-                        CellStatus::Missing => {
-                            materials[id][0] += 1;
+                        CellStatus::Missing | CellStatus::Unloaded if !air && !ignored => {
+                            materials[id][usize::from(status == CellStatus::Unloaded) * 2] += 1;
                             if opacity.is_some() {
-                                word |= id as u32 + 1;
+                                let palette_index =
+                                    self.grid_palette.binary_search(&(id as u32)).unwrap();
+                                word |= palette_index as u32 + 1;
                                 used_texture = true;
+                                None
+                            } else {
+                                Some((0.16, 0.60, 0.94, 0.30))
                             }
-                            None
                         }
                         CellStatus::Wrong | CellStatus::WrongState => {
                             materials[id][0] += 1;
                             Some((1., 0.7, 0.08, 0.52))
                         }
                         CellStatus::Extra => Some((1., 0.15, 0.12, 0.48)),
-                        CellStatus::Correct if !air => {
+                        CellStatus::Correct if !air && !ignored => {
                             materials[id][1] += 1;
-                            None
-                        }
-                        CellStatus::Unloaded if !air => {
-                            materials[id][2] += 1;
                             None
                         }
                         _ => None,
@@ -433,40 +471,82 @@ impl Tile {
             }
         }
         if let Some(opacity) = opacity.filter(|_| used_texture) {
-            let mut palette = vec![draw::BlockState::Named(draw::NamedBlock {
-                name: "minecraft:air".into(),
-                states: "{}".into(),
-            })];
-            // Send only states referenced by this tile. A bad mapping in another tile
-            // must not make this one fall back to colored boxes.
-            let mut remap = vec![0; preview.palette.len() + 1];
-            for word in &mut cells {
-                let id = (*word & 0xffff) as usize;
-                if id == 0 {
-                    continue;
+            if let Some(pair) = &self.blocks {
+                let edits = self
+                    .grid_cells
+                    .iter()
+                    .zip(&cells)
+                    .enumerate()
+                    .filter_map(|(index, (&old, &new))| {
+                        if old == new {
+                            return None;
+                        }
+                        let y = index as u32 % sy as u32;
+                        let z = index as u32 / sy as u32 % sz as u32;
+                        let x = index as u32 / (sy * sz) as u32;
+                        Some(draw::BlockEdit {
+                            position: (x, y, z),
+                            cell: draw::BlockCell {
+                                palette: new & 0xffff,
+                                sky_light: None,
+                                block_light: None,
+                            },
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                match draw::geometry_status(pair.geometry) {
+                    Ok(draw::GeometryState::Pending) if !edits.is_empty() => {
+                        self.stamp = None;
+                        self.statuses = statuses;
+                        self.materials = materials;
+                        self.tally = tally;
+                        return;
+                    }
+                    Ok(_)
+                        if edits.is_empty()
+                            || draw::update_blocks(pair.geometry, &edits).is_ok() =>
+                    {
+                        self.grid_cells = cells;
+                    }
+                    _ => {
+                        if let Some(pair) = self.blocks.take() {
+                            pair.remove();
+                        }
+                        self.error = Some("Rebuilding tile mesh".into());
+                        return;
+                    }
                 }
-                if remap[id] == 0 {
-                    remap[id] = palette.len() as u32;
-                    palette.push(draw::BlockState::Named(preview.palette[id - 1].clone()));
+            } else {
+                let palette = std::iter::once(draw::BlockState::Named(draw::NamedBlock {
+                    name: "minecraft:air".into(),
+                    states: "{}".into(),
+                }))
+                .chain(
+                    self.grid_palette
+                        .iter()
+                        .map(|&id| draw::BlockState::Named(preview.palette[id as usize].clone())),
+                )
+                .collect();
+                let grid = draw::BlockGrid {
+                    size: (sx as u32, sy as u32, sz as u32),
+                    palette,
+                    cells: cells.clone(),
+                };
+                match create(draw::GeometrySpec::Blocks(grid), anchor, opacity) {
+                    Ok(pair) => {
+                        self.blocks = Some(pair);
+                        self.grid_cells = cells;
+                    }
+                    Err(error) => {
+                        self.fallback = error.code != draw::ErrorCode::BudgetExceeded;
+                        self.error = Some(format!("Texture unavailable: {}", error.detail));
+                        return;
+                    }
                 }
-                *word = DEFAULT_LIGHT | remap[id];
             }
-            let grid = draw::BlockGrid {
-                size: (sx as u32, sy as u32, sz as u32),
-                palette,
-                cells,
-            };
-            match create(draw::GeometrySpec::Blocks(grid), anchor, opacity) {
-                Ok(pair) => self.blocks = Some(pair),
-                Err(e) => {
-                    self.fallback = true;
-                    self.error = Some(format!("Texture unavailable: {}", e.detail));
-                    // Resample so mismatch markers and counts still update.
-                    self.materials = materials;
-                    self.tally = tally;
-                    return;
-                }
-            }
+        } else if let Some(pair) = self.blocks.take() {
+            pair.remove();
+            self.grid_cells.clear();
         }
         self.stamp = Some(region.stamp);
         self.statuses = statuses;
@@ -523,12 +603,21 @@ fn preview_states_match(name: &str, expected: &str, actual: &str) -> bool {
     }
     let wall = name.ends_with("_wall");
     let wire = name == "minecraft:trip_wire";
+    let leaves =
+        name.ends_with("_leaves") || matches!(name, "minecraft:leaves" | "minecraft:leaves2");
+    let redstone = name == "minecraft:redstone_wire";
+    let observer = name == "minecraft:observer";
+    let hopper = name == "minecraft:hopper";
     let fence = name.ends_with("_fence");
     let stair = name.ends_with("_stairs");
     if !stair
         && !wall
         && !fence
         && !wire
+        && !leaves
+        && !redstone
+        && !observer
+        && !hopper
         && !name.ends_with("glass_pane")
         && name != "minecraft:iron_bars"
     {
@@ -555,11 +644,31 @@ fn preview_states_match(name: &str, expected: &str, actual: &str) -> bool {
                 values.remove(key);
             }
         }
+        values.retain(|key, _| {
+            !((leaves && matches!(key.as_str(), "persistent_bit" | "update_bit"))
+                || (redstone && key.starts_with("redstone_"))
+                || (observer && key == "powered_bit")
+                || (hopper && key == "toggle_bit"))
+        });
         Some(values)
     };
     without_connections(expected)
         .zip(without_connections(actual))
         .is_some_and(|(a, b)| a == b)
+}
+
+#[cfg(test)]
+#[test]
+fn natural_and_persistent_leaves_are_the_same_material() {
+    let natural =
+        r#"{"persistent_bit":{"type":"byte","value":0},"update_bit":{"type":"byte","value":1}}"#;
+    let placed =
+        r#"{"persistent_bit":{"type":"byte","value":1},"update_bit":{"type":"byte","value":0}}"#;
+    assert!(preview_states_match(
+        "minecraft:oak_leaves",
+        natural,
+        placed
+    ));
 }
 
 #[cfg(test)]

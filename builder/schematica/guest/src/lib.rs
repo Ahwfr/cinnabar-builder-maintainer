@@ -5,6 +5,7 @@ wit_bindgen::generate!({
 });
 
 mod actions;
+mod browser;
 mod dashboard;
 mod hotkeys;
 mod library;
@@ -316,6 +317,8 @@ struct Viewer {
     materials: Vec<schematica_core::MaterialLine>,
     last_item_highlights: Vec<String>,
     highlight_dirty: bool,
+    layer_counts: Vec<u64>,
+    layer_count_cursor: usize,
     placement: Option<Placement>,
     world: Option<(u64, i32)>,
     placement_key: Option<String>,
@@ -334,6 +337,10 @@ struct Viewer {
     pending_menu_open: u8,
     options: Options,
     material_page: usize,
+    /// The open tab of the P window.
+    browser_tab: browser::Tab,
+    /// Text typed into the P window's material search.
+    browser_search: String,
     material_offset: usize,
     verifier_page: usize,
     verifier_marker: Option<overlay::DrawPair>,
@@ -384,6 +391,8 @@ impl Viewer {
             pending_menu_open: 0,
             options,
             material_page: 0,
+            browser_tab: browser::Tab::default(),
+            browser_search: String::new(),
             material_offset: 0,
             verifier_page: 0,
             verifier_marker: None,
@@ -394,6 +403,8 @@ impl Viewer {
             selected: None,
             last_item_highlights: Vec::new(),
             highlight_dirty: true,
+            layer_counts: Vec::new(),
+            layer_count_cursor: 0,
             active_entry: None,
             request: None,
             loaded,
@@ -488,6 +499,45 @@ impl Viewer {
                     changed |= self.scroll_materials(-keys.wheel.signum() as isize);
                 }
             }
+            if self.screen == Screen::Browser {
+                // P types into the search field while it is being edited.
+                let editing = input::read_native_editing().unwrap_or(false);
+                if !alt && !editing && keys.keys_pressed.iter().any(|key| key == browser::KEY) {
+                    let _ = panel::close();
+                    return;
+                }
+                let mut changed = keys.wheel != 0. && self.browser_scroll(keys.wheel < 0.);
+                if !editing && keys.keys_pressed.iter().any(|key| key == "F6") {
+                    self.browser_tab = browser::Tab::Settings;
+                    changed = true;
+                }
+                for event in input::read_field_events().unwrap_or_default() {
+                    if let input::FieldEvent::Change(text) | input::FieldEvent::Submit(text) = event
+                    {
+                        changed |= self.browser_search_changed(&text.id, text.value);
+                    }
+                }
+                for event in keys.events {
+                    self.browser_event(&event.id, event.value);
+                    changed = true;
+                }
+                if changed && self.dirty {
+                    self.remember_placement();
+                }
+                if self.screen != Screen::Browser {
+                    menu::prepare(self);
+                    return;
+                }
+                // Loading a schematic closes the window so the guide can appear.
+                if self.request.is_some() {
+                    let _ = panel::close();
+                    return;
+                }
+                if changed {
+                    menu::refresh(self);
+                }
+                return;
+            }
             if self.screen == Screen::Control {
                 for edit in input::read_text_events().unwrap_or_default() {
                     changed |= self.edit_number(&edit.id, &edit.value);
@@ -525,11 +575,18 @@ impl Viewer {
         let gameplay = active_world && keys.gameplay;
         // Opening a panel needs focused input, not a current placement snapshot.
         // The host withholds key edges while another screen owns input.
-        if let Some(screen) = legacy.or_else(|| self.builder_hotkey(&keys, alt, gameplay)) {
+        let browser = (gameplay && !alt && keys.keys_pressed.iter().any(|key| key == browser::KEY))
+            .then_some(Screen::Browser);
+        if let Some(screen) = legacy
+            .or(browser)
+            .or_else(|| self.builder_hotkey(&keys, alt, gameplay))
+        {
             self.screen = screen;
             self.selected = None;
             self.verifier_page = 0;
             self.material_page = 0;
+            // The window's search field opens empty.
+            self.browser_search.clear();
             if menu::prepare(self) {
                 self.pending_menu_open = 4;
             }
@@ -542,6 +599,9 @@ impl Viewer {
         self.paste_confirm = false;
         if self.paste_step() {
             return;
+        }
+        if self.highlight_dirty && !self.dirty && budget::remaining_fuel() >= 400_000 {
+            self.publish_item_highlights();
         }
         let caps = drawing::capabilities();
         if !caps.contains(drawing::Permissions::WORLD_DRAW) {
@@ -578,9 +638,6 @@ impl Viewer {
             return;
         }
         self.update_preview_window();
-        if self.highlight_dirty && budget::remaining_fuel() >= 2_000_000 {
-            self.publish_item_highlights();
-        }
         if std::mem::take(&mut self.verifier_marker_changed) {
             self.clear_verifier_marker();
             if let Some(cell) = self.verifier_target {
@@ -659,15 +716,36 @@ impl Viewer {
         let textured =
             self.options.textured && caps.contains(drawing::Permissions::RENDER_MATERIAL);
         if self.shown && !self.tiles.is_empty() {
-            let tile = &mut self.tiles[self.cursor];
-            if tile.step(
-                &self.preview,
-                &self.schematic,
-                self.world.unwrap().1,
-                textured.then_some(f32::from(self.options.opacity) / 100.),
-            ) {
-                self.cursor = (self.cursor + 1) % self.tiles.len();
-                self.highlight_dirty |= self.cursor == 0;
+            let targeted = placement_cell
+                .or_else(|| {
+                    gameplay::read_block_target()
+                        .ok()
+                        .flatten()
+                        .map(|pos| [pos.x, pos.y, pos.z].map(|axis| axis.floor() as i32))
+                })
+                .and_then(|cell| self.tiles.iter().position(|tile| tile.contains(cell)));
+            let opacity = textured.then_some(f32::from(self.options.opacity) / 100.);
+            let dimension = self.world.unwrap().1;
+            let mut changed = false;
+            if let Some(index) = targeted.filter(|&index| index != self.cursor) {
+                changed |= self.tiles[index]
+                    .step(&self.preview, &self.schematic, dimension, opacity)
+                    .1;
+            }
+            if budget::remaining_fuel() >= 540_000 {
+                let (advance, updated) = self.tiles[self.cursor].step(
+                    &self.preview,
+                    &self.schematic,
+                    dimension,
+                    opacity,
+                );
+                changed |= updated;
+                if advance {
+                    self.cursor = (self.cursor + 1) % self.tiles.len();
+                }
+            }
+            if changed {
+                self.highlight_dirty = true;
                 let [width, height, depth] = self.schematic.size();
                 if self.options.auto_layer
                     && self.layer_mode == 1
@@ -701,14 +779,20 @@ impl Viewer {
             self.menu_armed = false;
             return None;
         }
+        if !gameplay {
+            self.menu_armed = false;
+            return None;
+        }
         use hotkeys::Action;
         match native_bindings::action(keys, &mut self.menu_armed)? {
-            Action::Main => return Some(Screen::Main),
-            Action::Config => return Some(Screen::Settings),
+            Action::Main => return Some(Screen::Browser),
+            Action::Config => {
+                self.browser_tab = browser::Tab::Settings;
+                return Some(Screen::Browser);
+            }
             Action::Placement | Action::PlacementConfig => return Some(Screen::Control),
             Action::Verifier => return Some(Screen::Verifier),
             Action::Materials => return Some(Screen::Materials),
-            _ if !gameplay => return None,
             Action::Render => {
                 self.render_all = !self.render_all;
                 self.dirty = true;
@@ -855,7 +939,8 @@ impl Viewer {
             .placement?
             .world_to_local(self.schematic.size(), world)?;
         let block = self.schematic.get(local)?;
-        (self.layers().includes(local[1]) && !block.is_air()).then_some(block)
+        (self.layers().includes(local[1]) && !block.is_air() && !block.is_placement_artifact())
+            .then_some(block)
     }
 
     fn aim_ray(&self) -> Option<([f32; 3], [f32; 3])> {
@@ -939,6 +1024,8 @@ impl Viewer {
     }
 
     fn rebuild(&mut self) {
+        self.layer_counts.clear();
+        self.layer_count_cursor = 0;
         self.highlight_dirty = true;
         self.clear_verifier_marker();
         self.verifier_target = None;
@@ -950,6 +1037,15 @@ impl Viewer {
             self.preview = Preview::new(p, self.layers());
             self.tile_focus = self.preview_focus();
             self.tiles = self.preview.tiles(self.schematic.size(), self.tile_focus);
+            self.sort_tiles_near_camera();
+        }
+    }
+
+    fn sort_tiles_near_camera(&mut self) {
+        if let Some(pose) = &self.pose {
+            let eye = [pose.eye.x, pose.eye.y, pose.eye.z];
+            self.tiles
+                .sort_by(|a, b| a.distance_squared(eye).total_cmp(&b.distance_squared(eye)));
         }
     }
 
@@ -957,17 +1053,30 @@ impl Viewer {
     fn publish_item_highlights(&mut self) {
         let mut names = Vec::new();
         if self.loaded && self.placement.is_some() {
-            let mut needed = self.schematic.layer_palette_counts(self.layers());
+            if self.layer_counts.is_empty() {
+                self.layer_counts.resize(self.schematic.palette().len(), 0);
+            }
+            let cells = self.schematic.layer_cells(self.layers());
+            let end = (self.layer_count_cursor + 8192).min(cells.len());
+            for &index in &cells[self.layer_count_cursor..end] {
+                self.layer_counts[index as usize] += 1;
+            }
+            self.layer_count_cursor = end;
+            if end < cells.len() {
+                return;
+            }
+            let mut needed = self.layer_counts.clone();
             for tile in &self.tiles {
                 tile.subtract_placed_materials(&mut needed);
             }
             names.extend(needed.into_iter().enumerate().filter_map(|(index, count)| {
                 let block = &self.schematic.palette()[index];
-                (count > 0 && !block.is_air() && block.name != "minecraft:structure_void")
+                (count > 0 && !block.is_air() && !block.is_placement_artifact())
                     .then(|| block.name.clone())
             }));
             names.sort_unstable();
             names.dedup();
+            names.truncate(1024);
         }
         if names != self.last_item_highlights {
             if hud::set_item_highlights(&names).is_err() {
@@ -1009,6 +1118,7 @@ impl Viewer {
         self.retired
             .extend(previous.into_values().filter(Tile::has_draws));
         self.cursor = 0;
+        self.sort_tiles_near_camera();
     }
 
     fn clear_retired(&mut self) {

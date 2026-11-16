@@ -29,25 +29,21 @@ impl Viewer {
             self.show_label("");
             return;
         }
-        if let Some(pos) = placement_cell
-            && let Some(block) = self.planned_block(pos)
-            && self.tiles.iter().any(|tile| tile.is_missing(pos))
-        {
-            let message = format!(
-                "Fast Place | {} at {pos:?} | {}",
-                block.name,
-                if self.options.hold_place {
-                    "Hold right-click"
-                } else {
-                    "Right-click to place"
-                }
-            );
-            self.show_label(&message);
-            return;
-        }
-        if let Some((block, pos)) = self.aimed_block() {
-            let message = format!("Target | {} at {pos:?}", block.name);
-            self.show_label(&message);
+        let target = placement_cell
+            .filter(|pos| self.tiles.iter().any(|tile| tile.is_missing(*pos)))
+            .and_then(|pos| self.planned_block(pos).map(|block| (block, pos, true)))
+            .or_else(|| self.aimed_block().map(|(block, pos)| (block, pos, false)));
+        if let Some((block, [x, y, z], fast)) = target {
+            let name = block.name.strip_prefix("minecraft:").unwrap_or(&block.name);
+            let name = name.replace('_', " ");
+            let action = if fast && self.options.hold_place {
+                "  |  Hold right-click"
+            } else if fast {
+                "  |  Right-click"
+            } else {
+                ""
+            };
+            self.show_label(&format!("{name}  |  {x}, {y}, {z}{action}"));
             return;
         }
         let pending = self

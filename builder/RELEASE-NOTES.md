@@ -1,4 +1,11 @@
-# Cinnamatica 0.3.14
+# Cinnamatica 0.3.15
+
+- Brought ThsSilentKnight’s tabbed window to Windows. P and M open the shared window. F6 opens its Settings tab during play. The Controls tab manages placement, layers, the verifier, and paste.
+- Fixed an unreachable fuel check for container material highlights. Needed stacks have green outlines, and shulker boxes with matching contents have cyan outlines when the server supplies their item data.
+- Added placement prediction for leaves, observers, chests, and several redstone parts. Fast Place ignores piston heads and moving piston blocks.
+- Prioritized tiles near the camera and the current target. Ghosts appear while terrain is still loading and existing tile meshes are edited when their block coverage changes.
+
+## 0.3.14
 
 - Renamed the app, launcher, bundled mod and packaging to Cinnamatica. Existing worlds and schematic settings use the same profile.
 

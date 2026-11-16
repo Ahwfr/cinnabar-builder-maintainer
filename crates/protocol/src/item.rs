@@ -283,10 +283,19 @@ pub fn shulker_contents_match(
     let Some(nbt) = decode_extra_nbt(&stack.extra_data) else {
         return false;
     };
-    let Some(mut list) = root_tag(&mut &*nbt, 9, b"Items").or_else(|| {
-        let mut block = root_tag(&mut &*nbt, 10, b"BlockEntityTag")?;
-        compound_field(&mut block, 9, b"Items")
-    }) else {
+    let Some(mut list) = root_tag(&mut &*nbt, 9, b"Items")
+        .or_else(|| {
+            let mut block = root_tag(&mut &*nbt, 10, b"BlockEntityTag")?;
+            compound_field(&mut block, 9, b"Items")
+        })
+        .or_else(|| {
+            let mut item_tag = root_tag(&mut &*nbt, 10, b"tag")?;
+            compound_field(&mut item_tag, 9, b"Items").or_else(|| {
+                let mut block = compound_field(&mut item_tag, 10, b"BlockEntityTag")?;
+                compound_field(&mut block, 9, b"Items")
+            })
+        })
+    else {
         return false;
     };
     if read_u8(&mut list) != Some(10) {

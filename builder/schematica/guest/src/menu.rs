@@ -20,6 +20,8 @@ pub enum Screen {
     Materials,
     Verifier,
     Hotkeys,
+    /// The tabbed window opened with P; see [`crate::browser`].
+    Browser,
 }
 
 pub fn prepare(viewer: &Viewer) -> bool {
@@ -48,6 +50,7 @@ fn content(screen: Screen, fullscreen: bool) -> &'static str {
         Screen::Materials => (MATERIALS, include_str!("../ui/materials-full.json")),
         Screen::Verifier => (VERIFIER, include_str!("../ui/verifier-full.json")),
         Screen::Hotkeys => (HOTKEYS, include_str!("../ui/hotkeys-full.json")),
+        Screen::Browser => (crate::browser::LAYOUT, crate::browser::LAYOUT),
     };
     if fullscreen { full } else { compact }
 }
@@ -201,6 +204,7 @@ fn update(viewer: &Viewer) -> Result<(), String> {
             );
         }
         Screen::Materials => materials(viewer, &mut out),
+        Screen::Browser => crate::browser::bindings(viewer, &mut out, &mut controls),
         Screen::Verifier => verifier(viewer, &mut out),
         Screen::Hotkeys => {
             for (index, (_, title, _)) in crate::hotkeys::BINDINGS.into_iter().enumerate() {

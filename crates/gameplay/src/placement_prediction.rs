@@ -55,6 +55,16 @@ pub fn predicted_placement(
     let canonical = collisions.block_canonical_state(mode, held)?;
     let identifier = collisions.block_identifier(mode, held);
     let trip_wire = identifier == Some("minecraft:trip_wire");
+    let ground_redstone = matches!(
+        identifier,
+        Some(
+            "minecraft:redstone_wire"
+                | "minecraft:unpowered_repeater"
+                | "minecraft:powered_repeater"
+                | "minecraft:unpowered_comparator"
+                | "minecraft:powered_comparator"
+        )
+    );
     let original = serde_json::from_str(canonical).ok()?;
     if context.input.face > 5 {
         return None;
@@ -179,7 +189,16 @@ pub fn predicted_placement(
                     )
                 })
                 .or_else(|| door_pair.as_ref().map(|pair| pair.0.clone()))
-                .or_else(|| match collisions.block_identifier(mode, held)? {
+                .or_else(|| {
+                    crate::placement_facing::named_states(
+                        identifier?,
+                        &original,
+                        position,
+                        context.surroundings.player_box,
+                        context.input.yaw,
+                    )
+                })
+                .or_else(|| match identifier? {
                     "minecraft:anvil" | "minecraft:chipped_anvil" | "minecraft:damaged_anvil" => {
                         crate::placement_state::anvil_states(canonical, context.input.yaw)
                     }
@@ -194,6 +213,8 @@ pub fn predicted_placement(
     // Stacking existing snow skips the first-placement support check.
     let requirement = if full_cell || trip_wire {
         SupportRequirement::Independent
+    } else if ground_redstone {
+        SupportRequirement::Face(0)
     } else {
         support_requirement(placed_fact, &states)
     };

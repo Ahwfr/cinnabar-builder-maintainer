@@ -116,6 +116,25 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn deleted_entries_free_their_slots_only_for_the_matching_revision() {
+        let full = || (0..8u8).map(|n| vec![n]).collect::<Vec<_>>();
+        let settings =
+            serde_json::json!({"library_revision": 7, "deleted_entries": [2, 1, 0, 7, 4, 5]});
+
+        let mut entries = full();
+        assert!(prune_deleted(&mut entries, 7, Some(&settings)));
+        assert_eq!(entries, vec![vec![3], vec![6]]);
+
+        let mut stale = full();
+        assert!(!prune_deleted(&mut stale, 8, Some(&settings)));
+        assert_eq!(stale.len(), 8);
+
+        let mut missing = full();
+        assert!(!prune_deleted(&mut missing, 7, None));
+        assert_eq!(missing.len(), 8);
+    }
 }
 
 /// Publishes only complete components and first preserves the previous revision.
@@ -181,10 +200,45 @@ pub fn append_imports(mods: &Path, inputs: &[PathBuf]) -> Result<()> {
         .map(<[u8]>::to_vec)
         .collect();
     // Preserve existing indices and their saved placements and deletion preferences.
-    let revision = blueprint::library_revision(&payload);
+    let mut revision = blueprint::library_revision(&payload);
+    let settings = fs::read_to_string(mods.join("schematica-builder.settings.json"))
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok());
+    if prune_deleted(&mut entries, revision, settings.as_ref()) {
+        // Indices shifted, so a new revision makes the guest drop stale removals and placements.
+        revision = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos() as u64;
+    }
     super::add_inputs(&mut entries, inputs)?;
     let bytes = super::encode_component(&template()?, &entries, revision)?;
     publish(mods, &bytes)
+}
+
+/// Drops the entries the guest's settings mark as deleted for this library revision, so removed
+/// schematics free their library slots. Returns whether any entry was dropped.
+fn prune_deleted(
+    entries: &mut Vec<Vec<u8>>,
+    revision: u64,
+    settings: Option<&serde_json::Value>,
+) -> bool {
+    let Some(settings) =
+        settings.filter(|value| value["library_revision"].as_u64() == Some(revision))
+    else {
+        return false;
+    };
+    let deleted: Vec<u64> = settings["deleted_entries"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_u64)
+        .collect();
+    let before = entries.len();
+    let mut index = 0;
+    entries.retain(|_| {
+        let keep = !deleted.contains(&index);
+        index += 1;
+        keep
+    });
+    entries.len() != before
 }
 
 /// Where one build keeps the client, its working folder, guest template and build stamp.

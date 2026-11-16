@@ -158,7 +158,12 @@ impl Placement {
                 let d = self.apply_dir(t[*i as usize]);
                 Int(t.iter().position(|&x| x == d).unwrap() as i32)
             }
-            ("minecraft:cardinal_direction", Str(s)) | ("torch_facing_direction", Str(s)) => {
+            (
+                "minecraft:cardinal_direction"
+                | "minecraft:facing_direction"
+                | "torch_facing_direction",
+                Str(s),
+            ) => {
                 match Dir::from_name(s) {
                     Some(d) => Str(self.apply_dir(d).name().to_string()),
                     None => v.clone(), // e.g. torch "top"

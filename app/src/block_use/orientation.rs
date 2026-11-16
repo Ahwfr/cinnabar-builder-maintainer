@@ -68,7 +68,16 @@ pub(super) fn correction(
     if !caps.can_build {
         return None;
     }
-    let held = held_block_store_id(stream, observed.selection.item.block_runtime_id())?;
+    let held = super::build::held_placement_block(
+        &context.collisions,
+        stream,
+        observed.selection.item.block_runtime_id(),
+        || {
+            stream
+                .authority()
+                .item_identifier(observed.selection.item.network_id())
+        },
+    )?;
     let pick = crate::interaction_authority::pick_context(
         stream,
         &context.collisions,
@@ -307,7 +316,13 @@ pub(super) fn air_place_preserves_state(offer: &CreativePlacementOffer) -> bool 
     else {
         return false;
     };
+    let hopper_needs_side = offer.name == "minecraft:hopper"
+        && planned
+            .get("facing_direction")
+            .and_then(|state| state["value"].as_u64())
+            .is_some_and(|face| face != 0);
     !offer.name.ends_with("trapdoor")
+        && !hopper_needs_side
         && planned_upper(&planned) != Some(true)
         && !matches!(
             planned
@@ -360,12 +375,28 @@ fn placement_properties(
     let wall = offer.name.ends_with("_wall");
     let pane = offer.name.ends_with("glass_pane") || offer.name == "minecraft:iron_bars";
     let wire = offer.name == "minecraft:trip_wire";
+    let leaves = offer.name.as_str().ends_with("_leaves")
+        || matches!(
+            offer.name.as_str(),
+            "minecraft:leaves" | "minecraft:leaves2"
+        );
+    let redstone = offer.name.as_str() == "minecraft:redstone_wire";
+    let observer = offer.name.as_str() == "minecraft:observer";
+    let hopper = offer.name == "minecraft:hopper";
+    let repeater = offer.name.ends_with("_repeater");
+    let comparator = offer.name.ends_with("_comparator");
     let fence = offer.name.ends_with("_fence");
     let trapdoor = offer.name.ends_with("trapdoor");
     planned.retain(|key, _| {
         !((wall && (key == "wall_post_bit" || key.starts_with("wall_connection_type_")))
             || ((pane || wire || fence) && key.starts_with("minecraft:connection_"))
             || (trapdoor && key == "open_bit")
+            || (leaves && matches!(key.as_str(), "persistent_bit" | "update_bit"))
+            || (redstone && key.starts_with("redstone_"))
+            || (observer && key == "powered_bit")
+            || (hopper && key == "toggle_bit")
+            || (repeater && key == "repeater_delay")
+            || (comparator && matches!(key.as_str(), "output_lit_bit" | "output_subtract_bit"))
             || (wire
                 && matches!(
                     key.as_str(),

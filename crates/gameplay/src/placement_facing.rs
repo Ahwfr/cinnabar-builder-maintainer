@@ -41,6 +41,55 @@ pub(crate) fn facing_states(
     Some(states)
 }
 
+/// Placement-controlled states for the exact vanilla registry identities.
+pub(crate) fn named_states(
+    name: &str,
+    original: &Map<String, Value>,
+    position: [i32; 3],
+    player: BoxBounds,
+    yaw: f32,
+) -> Option<Map<String, Value>> {
+    let mut states = original.clone();
+    match name {
+        name if assets::facts::SupportKind::for_identifier(name)
+            == assets::facts::SupportKind::Leaves =>
+        {
+            set_bit(&mut states, "persistent_bit", true)?;
+            set_bit(&mut states, "update_bit", false)?;
+        }
+        "minecraft:observer" => {
+            // The facing property points toward the detecting face, away from the player.
+            let face = body_facing(position, player, yaw, 0.)? ^ 1;
+            let direction = ["down", "up", "north", "south", "west", "east"][face as usize];
+            set_value(
+                &mut states,
+                "minecraft:facing_direction",
+                Value::from(direction),
+            )?;
+            set_bit(&mut states, "powered_bit", false)?;
+        }
+        "minecraft:chest"
+        | "minecraft:trapped_chest"
+        | "minecraft:ender_chest"
+        | "minecraft:unpowered_repeater"
+        | "minecraft:powered_repeater"
+        | "minecraft:unpowered_comparator"
+        | "minecraft:powered_comparator" => {
+            let direction = ["north", "east", "south", "west"][yaw_quadrant(yaw)?];
+            set_value(
+                &mut states,
+                "minecraft:cardinal_direction",
+                Value::from(direction),
+            )?;
+        }
+        "minecraft:redstone_wire" => {
+            set_value(&mut states, "redstone_signal", Value::from(0))?;
+        }
+        _ => return None,
+    }
+    Some(states)
+}
+
 /// Nearby vertical placements use strict body bounds; other placements use the yaw table.
 pub(crate) fn body_facing(
     position: [i32; 3],
@@ -74,6 +123,34 @@ pub(crate) fn body_facing(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn leaves_are_persistent_and_observers_face_away() {
+        let player = ([0.2, 4.0, 0.2], [0.8, 5.8, 0.8]);
+        let leaves = serde_json::from_value(serde_json::json!({
+            "persistent_bit": {"type":"byte", "value":0},
+            "update_bit": {"type":"byte", "value":1}
+        }))
+        .unwrap();
+        let placed = named_states("minecraft:oak_leaves", &leaves, [0, 3, 0], player, 0.).unwrap();
+        assert_eq!(placed["persistent_bit"]["value"], 1);
+        assert_eq!(placed["update_bit"]["value"], 0);
+
+        let observer = serde_json::from_value(serde_json::json!({
+            "minecraft:facing_direction": {"type":"string", "value":"north"},
+            "powered_bit": {"type":"byte", "value":1}
+        }))
+        .unwrap();
+        for (cell, yaw, facing) in [
+            ([0, 3, 0], 0., "down"),
+            ([3, 4, 0], 0., "south"),
+            ([3, 4, 0], 90., "west"),
+        ] {
+            let placed = named_states("minecraft:observer", &observer, cell, player, yaw).unwrap();
+            assert_eq!(placed["minecraft:facing_direction"]["value"], facing);
+            assert_eq!(placed["powered_bit"]["value"], 0);
+        }
+    }
 
     #[test]
     fn six_faces_use_body_proximity_and_per_type_rotation() {
