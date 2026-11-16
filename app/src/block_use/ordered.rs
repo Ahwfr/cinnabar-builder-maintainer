@@ -121,6 +121,14 @@ pub(crate) fn press(
             );
             return false;
         }
+        let strict_offer = context
+            .creative
+            .as_ref()
+            .and_then(|policy| policy.offer.as_ref())
+            .is_some_and(|offer| offer.strict_state);
+        if strict_offer && !on_planned_face {
+            return false;
+        }
         let Some(observed) = observed else {
             bevy::log::debug!("Fast Place trace: use press has no native support hit");
             creative::clear(context.creative.as_deref_mut(), &mut player, &mut movement);
@@ -154,6 +162,9 @@ pub(crate) fn press(
                 mode,
                 input.context.identity,
             );
+            return false;
+        }
+        if strict_offer {
             return false;
         }
         let mut build = build::BuildInput::new(

@@ -46,9 +46,7 @@ pub fn resolve_placement_state(
             P::WeirdoDirection.name(),
             Value::from([2, 1, 3, 0][yaw_quadrant(input.yaw)?]),
         )?;
-        if upper_half(input)? {
-            set_bit(&mut states, P::UpsideDownBit.name(), true)?;
-        }
+        set_bit(&mut states, P::UpsideDownBit.name(), upper_half(input)?)?;
         set_value(&mut states, P::MinecraftCorner.name(), Value::from("none"))?;
     } else if fact.placement == R::Loom && only_keys(&states, &[P::Direction.name()]) {
         valid_property(fact, &states, P::Direction)?;

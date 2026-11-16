@@ -1,4 +1,13 @@
-# Cinnabar Builder 0.3.8
+# Cinnabar Builder 0.3.9
+
+- In-game imports add files to the current library and preserve its existing entries and placement settings.
+- Fast Place cycles through Off, V1 Classic and V2 Strict. V2 aims beyond the ghost containing the eye and requires the predicted stair or slab half and orientation to match.
+- Fast Place recognizes string as the item for the Bedrock tripwire block.
+- Large guides use larger tiles to display more of the build at once. A Cardiff-sized guide fits within the retained tile budget.
+- Single Layer mode advances after every required block on the current layer has been verified.
+- Paste build uses the server's block commands in Creative when operator cheats are available. It requires the `setblock` and `fill` mod permissions and preserves occupied cells.
+
+## 0.3.8
 
 - Import larger schematics through the in-game picker. Blueprints can contain up to 100,000 cells, with the original file and decompression limits still in effect.
 - Show cyan outlines on textured ghosts. Large builds show the nearby part of the guide as you move around it.

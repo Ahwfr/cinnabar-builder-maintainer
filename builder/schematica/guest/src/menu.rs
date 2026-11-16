@@ -156,9 +156,23 @@ fn update(viewer: &Viewer) -> Result<(), String> {
             out.insert(
                 "#fast-place".into(),
                 json!(if viewer.options.fast_place {
-                    "On"
+                    if viewer.options.strict_place {
+                        "V2 Strict"
+                    } else {
+                        "V1 Classic"
+                    }
                 } else {
                     "Off"
+                }),
+            );
+            out.insert(
+                "#paste".into(),
+                json!(if viewer.paste.is_some() {
+                    "Cancel paste"
+                } else if viewer.paste_confirm {
+                    "Confirm paste"
+                } else {
+                    "Paste build"
                 }),
             );
             out.insert(

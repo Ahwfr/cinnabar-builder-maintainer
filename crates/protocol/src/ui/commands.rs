@@ -293,6 +293,13 @@ fn contains_partial(candidate: &str, partial: &str) -> bool {
 }
 
 impl ChatAutocompleteCatalog {
+    /// Checks the currently advertised command tree against the player's permission level.
+    pub fn advertises(&self, name: &str, permission: u8) -> bool {
+        self.commands
+            .iter()
+            .any(|command| command.name.as_ref() == name && command.permission <= permission)
+    }
+
     pub fn apply(
         &mut self,
         event: ChatAutocompleteEvent,

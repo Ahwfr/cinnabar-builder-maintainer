@@ -49,6 +49,10 @@ fn run() -> Result<()> {
         }
         #[cfg(windows)]
         [cmd, mods] if cmd == "import-dialog" => launch::import_dialog(Path::new(mods)),
+        [cmd, mods, inputs @ ..] if cmd == "append-library" && !inputs.is_empty() => {
+            let inputs: Vec<_> = inputs.iter().map(PathBuf::from).collect();
+            launch::append_imports(Path::new(mods), &inputs)
+        }
         [cmd, input, output] if cmd == "refresh-component" => {
             let bytes = launch::refresh(&fs::read(input)?)?;
             fs::write(output, bytes)?;
@@ -130,18 +134,11 @@ fn write_library(inputs: &[PathBuf], output: &Path, include_demo: bool) -> Resul
     if include_demo {
         entries.push(encode_blueprint(&demo())?);
     }
-    for input in inputs {
-        let schematic =
-            import::import(input).with_context(|| format!("import {}", input.display()))?;
-        entries.push(encode_blueprint(&schematic)?);
-    }
+    add_inputs(&mut entries, inputs)?;
     let revision = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_nanos() as u64;
-    let payload =
-        blueprint::encode_library_revision(&entries, revision).map_err(anyhow::Error::msg)?;
-    let core = populate_template(&template, &payload)?;
-    let component = component(&core)?;
+    let bytes = encode_component(&template, &entries, revision)?;
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -152,8 +149,28 @@ fn write_library(inputs: &[PathBuf], output: &Path, include_demo: bool) -> Resul
                 output.display()
             )
         })?;
-    file.write_all(&component)?;
+    file.write_all(&bytes)?;
     Ok(())
+}
+
+fn add_inputs(entries: &mut Vec<Vec<u8>>, inputs: &[PathBuf]) -> Result<()> {
+    ensure!(
+        entries.len() + inputs.len() <= blueprint::MAX_LIBRARY,
+        "this library can hold at most {} schematic files",
+        blueprint::MAX_LIBRARY
+    );
+    for input in inputs {
+        let schematic =
+            import::import(input).with_context(|| format!("import {}", input.display()))?;
+        entries.push(encode_blueprint(&schematic)?);
+    }
+    Ok(())
+}
+
+fn encode_component(template: &[u8], entries: &[Vec<u8>], revision: u64) -> Result<Vec<u8>> {
+    let payload =
+        blueprint::encode_library_revision(entries, revision).map_err(anyhow::Error::msg)?;
+    component(&populate_template(template, &payload)?)
 }
 
 fn populate_template(template: &[u8], payload: &[u8]) -> Result<Vec<u8>> {

@@ -46,7 +46,7 @@ impl cinnabar::extension::item_use::Host for State {
         name: String,
         states: String,
     ) -> Result<Result<(), String>> {
-        self.offer_placement(position, name, states, false)
+        self.offer_placement(position, name, states, false, false)
     }
 
     fn offer_oriented_placement(
@@ -55,7 +55,16 @@ impl cinnabar::extension::item_use::Host for State {
         name: String,
         states: String,
     ) -> Result<Result<(), String>> {
-        self.offer_placement(position, name, states, true)
+        self.offer_placement(position, name, states, true, false)
+    }
+
+    fn offer_strict_placement(
+        &mut self,
+        position: (i32, i32, i32),
+        name: String,
+        states: String,
+    ) -> Result<Result<(), String>> {
+        self.offer_placement(position, name, states, true, true)
     }
 
     /// Stages one use press edge while gameplay owns input and the use control is held.
@@ -82,6 +91,7 @@ impl State {
         name: String,
         states: String,
         correct_aim: bool,
+        strict_state: bool,
     ) -> Result<Result<(), String>> {
         self.item_use_policy.writes += 1;
         if self.item_use_policy.writes > MAX_IMPORT_WRITES {
@@ -105,6 +115,7 @@ impl State {
             name,
             states,
             correct_aim,
+            strict_state,
         });
         Ok(Ok(()))
     }

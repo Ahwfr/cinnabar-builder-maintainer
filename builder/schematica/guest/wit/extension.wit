@@ -734,6 +734,7 @@ interface gameplay {
 
     /// Sent as a player command request after frame returns; the command must be granted by name.
     request-command: func(command: string) -> result<_, string>;
+    can-paste-blocks: func() -> bool;
 }
 
 /// Local presentation cues shared by loaded mods; they carry no authority.
@@ -936,6 +937,7 @@ interface item-use {
     offer-creative-placement: func(position: tuple<s32, s32, s32>, name: string, states: string) -> result<_, string>;
     /// Offers the same placement with opt-in correction of the server-facing aim.
     offer-oriented-placement: func(position: tuple<s32, s32, s32>, name: string, states: string) -> result<_, string>;
+    offer-strict-placement: func(position: tuple<s32, s32, s32>, name: string, states: string) -> result<_, string>;
 }
 
 /// Bounded local terrain reads. The queries a callback reads become its subscriptions, which the

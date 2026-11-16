@@ -53,6 +53,8 @@ pub fn predicted_placement(
     let fact = collisions.block_facts(mode, held);
     let identity = fact.identity?;
     let canonical = collisions.block_canonical_state(mode, held)?;
+    let identifier = collisions.block_identifier(mode, held);
+    let trip_wire = identifier == Some("minecraft:trip_wire");
     let original = serde_json::from_str(canonical).ok()?;
     if context.input.face > 5 {
         return None;
@@ -159,7 +161,8 @@ pub fn predicted_placement(
         {
             (name, states, false)
         } else if fact.family == ModelFamily::Wall
-            || collisions.block_identifier(mode, held) == Some("minecraft:cauldron")
+            || trip_wire
+            || identifier == Some("minecraft:cauldron")
         {
             // The held state supplies the wall material or empty cauldron. Bedrock
             // reconciles changes to wall arms and posts as neighboring blocks arrive.
@@ -189,7 +192,7 @@ pub fn predicted_placement(
         collisions.block_state_runtime_id(mode, I::Compiled(placed_identity), &states)?;
     let placed_fact = collisions.block_facts(mode, placed_id);
     // Stacking existing snow skips the first-placement support check.
-    let requirement = if full_cell {
+    let requirement = if full_cell || trip_wire {
         SupportRequirement::Independent
     } else {
         support_requirement(placed_fact, &states)

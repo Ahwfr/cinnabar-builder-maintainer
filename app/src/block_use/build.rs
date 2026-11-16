@@ -58,19 +58,20 @@ impl BuildInput {
     }
 }
 
-/// Resolves the cauldron's item-form stack even when Bedrock advertises no block runtime ID.
+/// Resolves item-form stacks whose Bedrock placement lacks an advertised block runtime ID.
 pub(super) fn held_placement_block(
     collisions: &PhysicsCollisionRegistries,
     stream: &chunk_pipeline::WorldStream,
     block_id: i32,
-    is_cauldron: impl FnOnce() -> bool,
+    item_identifier: impl FnOnce() -> Option<std::sync::Arc<str>>,
 ) -> Option<u32> {
     held_block_store_id(stream, block_id).or_else(|| {
-        if is_cauldron() {
-            collisions.block_default_runtime_id(stream.network_id_mode(), "minecraft:cauldron")
-        } else {
-            None
-        }
+        let name = match item_identifier()?.as_ref() {
+            "minecraft:cauldron" => "minecraft:cauldron",
+            "minecraft:string" => "minecraft:trip_wire",
+            _ => return None,
+        };
+        collisions.block_default_runtime_id(stream.network_id_mode(), name)
     })
 }
 
@@ -149,7 +150,7 @@ fn prepare(
                 &context.collisions,
                 stream,
                 observed.selection.item.block_runtime_id(),
-                || identifier.as_deref() == Some("minecraft:cauldron"),
+                || identifier.clone(),
             )
         });
         let placement = (ready && caps.can_build && local_use != LocalUse::Interact)
@@ -182,6 +183,10 @@ fn prepare(
                 || !world.is_air(expected.position).ok()?
                 || placement.position != expected.position
                 || actual_name != Some(expected.name.as_str())
+                || (expected.strict_state
+                    && !actual_states.is_some_and(|actual| {
+                        super::orientation::strict_state_matches(expected, actual)
+                    }))
             {
                 let (yaw, pitch, _) = attempt.view.rotation().to_euler(bevy::math::EulerRot::YXZ);
                 bevy::log::info!(block = %expected.name, states = %expected.states, ghost = ?expected.position,

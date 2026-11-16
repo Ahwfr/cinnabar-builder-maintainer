@@ -2,7 +2,9 @@ use crate::{budget, drawing as draw, terrain};
 use schematica_core::{BlockState, CellStatus, LayerMode, Placement, Schematic, StateValue, Tally};
 use serde_json::{Map, json};
 
-const TILE_EDGE: i32 = 4;
+const SMALL_TILE_EDGE: i32 = 4;
+const LARGE_TILE_EDGE: i32 = 10;
+const MAX_VISIBLE_TILES: i32 = 128;
 const WINDOW_TILES: i32 = 4;
 const DEFAULT_LIGHT: u32 = 0xffff0000;
 
@@ -71,11 +73,12 @@ impl Preview {
 
     pub fn focus(&self, size: [i32; 3], eye: [f32; 3]) -> Option<[i32; 3]> {
         let (min, max) = self.bounds(size);
-        let counts = [0, 1, 2].map(|i| (max[i] - min[i] + TILE_EDGE - 1) / TILE_EDGE);
-        (counts.iter().product::<i32>() > 128).then(|| {
+        let edge = tile_edge(min, max);
+        let counts = tile_counts(min, max, edge);
+        (counts.iter().product::<i32>() > MAX_VISIBLE_TILES).then(|| {
             [0, 1, 2].map(|i| {
                 let cell = (eye[i].floor() as i32).clamp(min[i], max[i] - 1);
-                let center = (cell - min[i]) / TILE_EDGE;
+                let center = (cell - min[i]) / edge;
                 (center - WINDOW_TILES / 2 + 1).clamp(0, (counts[i] - WINDOW_TILES).max(0))
             })
         })
@@ -83,19 +86,20 @@ impl Preview {
 
     pub fn tiles(&self, size: [i32; 3], focus: Option<[i32; 3]>) -> Vec<Tile> {
         let (min, bounds_max) = self.bounds(size);
+        let edge = tile_edge(min, bounds_max);
         let (start, end) = if let Some(focus) = focus {
-            let start = [0, 1, 2].map(|i| min[i] + focus[i] * TILE_EDGE);
-            let end = [0, 1, 2].map(|i| (start[i] + WINDOW_TILES * TILE_EDGE).min(bounds_max[i]));
+            let start = [0, 1, 2].map(|i| min[i] + focus[i] * edge);
+            let end = [0, 1, 2].map(|i| (start[i] + WINDOW_TILES * edge).min(bounds_max[i]));
             (start, end)
         } else {
             (min, bounds_max)
         };
         let mut tiles = Vec::new();
-        for x in (start[0]..end[0]).step_by(TILE_EDGE as usize) {
-            for z in (start[2]..end[2]).step_by(TILE_EDGE as usize) {
-                for y in (start[1]..end[1]).step_by(TILE_EDGE as usize) {
+        for x in (start[0]..end[0]).step_by(edge as usize) {
+            for z in (start[2]..end[2]).step_by(edge as usize) {
+                for y in (start[1]..end[1]).step_by(edge as usize) {
                     let lo = [x, y, z];
-                    let hi = [0, 1, 2].map(|i| (lo[i] + TILE_EDGE).min(bounds_max[i]));
+                    let hi = [0, 1, 2].map(|i| (lo[i] + edge).min(bounds_max[i]));
                     tiles.push(Tile {
                         lo,
                         hi,
@@ -106,6 +110,71 @@ impl Preview {
         }
         tiles
     }
+}
+
+fn tile_counts(min: [i32; 3], max: [i32; 3], edge: i32) -> [i32; 3] {
+    std::array::from_fn(|i| (max[i] - min[i] + edge - 1) / edge)
+}
+
+fn tile_edge(min: [i32; 3], max: [i32; 3]) -> i32 {
+    if tile_counts(min, max, SMALL_TILE_EDGE)
+        .iter()
+        .product::<i32>()
+        > MAX_VISIBLE_TILES
+    {
+        LARGE_TILE_EDGE
+    } else {
+        SMALL_TILE_EDGE
+    }
+}
+
+/// Partial focus windows and tiles without a terrain result cannot finish a layer.
+pub(super) fn layer_complete(tiles: &[Tile], width: i32, depth: i32) -> bool {
+    let mut cells = 0;
+    for tile in tiles {
+        if tile.stamp.is_none()
+            || tile.tally.missing != 0
+            || tile.tally.wrong != 0
+            || tile.tally.unloaded != 0
+        {
+            return false;
+        }
+        cells += (tile.hi[0] - tile.lo[0]) * (tile.hi[2] - tile.lo[2]);
+    }
+    cells == width * depth
+}
+
+#[cfg(test)]
+#[test]
+fn cardiff_dimensions_fit_without_a_moving_preview_window() {
+    let size = [47, 45, 36];
+    let edge = tile_edge([0; 3], size);
+    assert_eq!(edge, 10);
+    assert_eq!(tile_counts([0; 3], size, edge).iter().product::<i32>(), 100);
+}
+
+#[cfg(test)]
+#[test]
+fn layer_completion_requires_all_tiles_and_correct_required_blocks() {
+    let mut tile = Tile {
+        hi: [4, 1, 2],
+        stamp: Some(terrain::Stamp {
+            session: 1,
+            dimension: 0,
+            registry: 1,
+            revision: 1,
+        }),
+        ..Tile::default()
+    };
+    tile.tally.correct = 5;
+    tile.tally.extra = 1;
+    assert!(layer_complete(std::slice::from_ref(&tile), 4, 2));
+    assert!(!layer_complete(std::slice::from_ref(&tile), 8, 2));
+    tile.tally.wrong = 1;
+    assert!(!layer_complete(std::slice::from_ref(&tile), 4, 2));
+    tile.tally.wrong = 0;
+    tile.stamp = None;
+    assert!(!layer_complete(&[tile], 4, 2));
 }
 
 #[derive(Default)]
@@ -441,7 +510,8 @@ fn preview_states_match(name: &str, expected: &str, actual: &str) -> bool {
         return true;
     }
     let wall = name.ends_with("_wall");
-    if !wall && !name.ends_with("glass_pane") && name != "minecraft:iron_bars" {
+    let wire = name == "minecraft:trip_wire";
+    if !wall && !wire && !name.ends_with("glass_pane") && name != "minecraft:iron_bars" {
         return false;
     }
     let without_connections = |state| {
@@ -456,6 +526,11 @@ fn preview_states_match(name: &str, expected: &str, actual: &str) -> bool {
         }
         if wall {
             values.remove("wall_post_bit");
+        }
+        if wire {
+            for key in ["attached_bit", "powered_bit", "suspended_bit"] {
+                values.remove(key);
+            }
         }
         Some(values)
     };

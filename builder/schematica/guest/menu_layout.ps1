@@ -310,6 +310,7 @@ foreach($screen in $Screens){
             Add-Label 'Menu layout' 24 229 200
             Add-Button 'ui-layout' '#ui-layout' 246 222 121 22
             Add-Button 'hotkeys' 'Keybinds' 16 252 84 22
+            Add-Button 'paste' '#paste' 109 252 130 22
             Add-Button 'close' 'Done' 296 252 84 22 $activeFill
         }
         'verifier' {

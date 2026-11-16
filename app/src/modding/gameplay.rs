@@ -373,6 +373,7 @@ impl GameplayContext<'_> {
     pub(super) fn facts(
         &self,
         input_owned: bool,
+        operator_paste: bool,
         camera: Option<&GlobalTransform>,
         relayed: Option<[f32; 3]>,
         damage_shake: Option<client_presentation::camera::actor_effects::DamageShake>,
@@ -407,6 +408,7 @@ impl GameplayContext<'_> {
         });
         mod_host::GameplayFacts {
             local_world_key,
+            operator_paste,
             movement_input: self
                 .input
                 .as_ref()

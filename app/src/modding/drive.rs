@@ -365,6 +365,10 @@ pub(super) fn drive_mod(
             chat_events: &chat_events,
             gameplay_facts: gameplay.facts(
                 captured && !absorbed,
+                gameplay
+                    .player
+                    .as_deref()
+                    .is_some_and(|player| ui.allows_builder_paste(player)),
                 cameras.single().ok().map(|(camera, _)| camera),
                 world_observation
                     .as_ref()

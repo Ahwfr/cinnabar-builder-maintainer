@@ -191,6 +191,7 @@ pub(super) fn maintain_block_use(
             .as_ref()
             .and_then(|policy| policy.offer.as_ref())
         {
+            let strict = offer.strict_state;
             let native = observed.as_ref().filter(|hit| {
                 placement_cell(hit.target.position, hit.target.face) == offer.position
             });
@@ -218,6 +219,9 @@ pub(super) fn maintain_block_use(
                     trigger,
                 )
             {
+                break;
+            }
+            if strict {
                 break;
             }
         }

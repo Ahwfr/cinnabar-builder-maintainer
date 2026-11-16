@@ -26,7 +26,7 @@ fn placement_cell_survives_an_unannounced_hotbar_change() {
     }
     let cell = world
         .run_system_cached(|context: GameplayContext| {
-            context.facts(true, None, None, None).placement_cell
+            context.facts(true, false, None, None, None).placement_cell
         })
         .unwrap();
     assert_eq!(cell, Some([4, 2, 7]));
@@ -92,7 +92,7 @@ fn block_target_reads_selectable_cell_overlays() {
     bind_world_clock(&mut world);
     let point = world
         .run_system_cached(|context: GameplayContext| {
-            context.facts(true, None, None, None).block_target
+            context.facts(true, false, None, None, None).block_target
         })
         .unwrap();
     assert_eq!(

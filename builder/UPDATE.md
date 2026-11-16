@@ -4,7 +4,11 @@ On Windows, run the setup EXE from a versioned release, then open **Cinnabar Bui
 
 For the next release, close Builder and extract the new package into the same folder. Keep **profile/**. It contains your worlds, account data, settings, mods and library. The launcher checks that the template matches the package revision, upgrades the library code and backs up the previous component. Confirm the release version and guest hash in the Schematica header or Mods page.
 
-Choose **Import schematics** in the Schematica menu to open the Windows file picker. Select the schematic files to add to your library. The importer reads local files with bounded size and decoding limits. Original input files remain in place.
+Choose **Import schematics** in the Schematica menu to add local files to the current library. The library supports up to eight entries. The importer reads local files with bounded size and decoding limits. Original input files remain in place.
+
+In Schematica Settings, cycle **Fast Place** between **Off**, **V1 Classic**, and **V2 Strict**. V2 uses real support faces and sends a placement only when it can predict the planned orientation.
+
+To paste a guide into a cheats-enabled world, be a Creative operator and allow Schematica's `setblock` and `fill` permissions in Mods. In Schematica Settings, choose **Paste build** and **Confirm paste**. The server validates the resulting commands. Paste preserves occupied cells and reports any unsupported state encodings.
 
 Only the Windows package, exact source ZIP and documentation belong in a release. Profiles and compiler caches stay on your computer. The archive ZIP can be removed from your computer after extraction if you keep another backup.
 

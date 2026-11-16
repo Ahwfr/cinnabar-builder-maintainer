@@ -11,6 +11,19 @@ use ui::{
 use super::UiRuntime;
 
 impl UiRuntime {
+    pub fn allows_builder_paste(&self, player: &player_state::PlayerState) -> bool {
+        player.facts.player_game_mode() == Some(protocol::PlayerGameMode::Creative)
+            && player.facts.local_abilities().is_some_and(|abilities| {
+                let permission = abilities.command_permission;
+                (1..=5).contains(&permission)
+                    && ["setblock", "fill"].into_iter().all(|command| {
+                        self.session
+                            .chat_autocomplete_catalog
+                            .advertises(command, permission)
+                    })
+            })
+    }
+
     /// Completes `request` against the catalog snapshot; false when it was stale or invalid.
     pub fn complete_chat_autocomplete(
         &mut self,

@@ -150,8 +150,17 @@ impl Viewer {
                 return;
             }
             "fast-place" => {
-                self.options.fast_place = !self.options.fast_place;
+                (self.options.fast_place, self.options.strict_place) =
+                    match (self.options.fast_place, self.options.strict_place) {
+                        (false, _) => (true, false),
+                        (true, false) => (true, true),
+                        (true, true) => (false, false),
+                    };
                 self.options.save();
+                return;
+            }
+            "paste" => {
+                self.paste_button();
                 return;
             }
             "correct-aim" => {

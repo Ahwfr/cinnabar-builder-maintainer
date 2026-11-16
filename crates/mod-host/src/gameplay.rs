@@ -610,6 +610,14 @@ impl cinnabar::extension::gameplay::Host for State {
         Ok(Ok(()))
     }
 
+    fn can_paste_blocks(&mut self) -> Result<bool> {
+        self.controls.budget(false)?;
+        Ok(self.snapshot.is_some()
+            && self.gameplay_facts.operator_paste
+            && self.grants.commands.iter().any(|name| name == "setblock")
+            && self.grants.commands.iter().any(|name| name == "fill"))
+    }
+
     fn request_command(&mut self, command: String) -> Result<Result<(), String>> {
         if self.world.pending_commands.len() >= MAX_COMMANDS_PER_FRAME {
             bail!("command budget exhausted");

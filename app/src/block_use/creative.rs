@@ -225,13 +225,7 @@ pub(super) fn try_start(
             &context.collisions,
             stream,
             stack.block_runtime_id,
-            || {
-                stream
-                    .authority()
-                    .item_identifier(stack.network_id)
-                    .as_deref()
-                    == Some("minecraft:cauldron")
-            },
+            || stream.authority().item_identifier(stack.network_id),
         )?;
         (context.collisions.block_identifier(mode, block)? == offer.name.as_str()).then(|| {
             context.collisions.block_canonical_state(mode, block) == Some(offer.states.as_str())

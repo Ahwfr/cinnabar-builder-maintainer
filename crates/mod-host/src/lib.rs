@@ -113,6 +113,8 @@ pub struct GameplayFacts {
     pub placement_cell: Option<[i32; 3]>,
     /// Opaque identity of a launcher-selected local world, stable across reconnects.
     pub local_world_key: Option<u64>,
+    /// Creative operator with the block editing commands advertised by the current server.
+    pub operator_paste: bool,
 }
 
 /// A component's offered destination and expected block state for a Creative use press.
@@ -122,6 +124,7 @@ pub struct CreativePlacementOffer {
     pub name: String,
     pub states: String,
     pub correct_aim: bool,
+    pub strict_state: bool,
 }
 
 /// Successfully committed local interaction requests, consumed once per frame.

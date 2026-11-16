@@ -51,7 +51,10 @@ pub(super) fn correction(
 ) -> Option<PlacementAim> {
     if expected.states == "{}"
         || expected.name.ends_with("_wall")
-        || expected.name == "minecraft:cauldron"
+        || matches!(
+            expected.name.as_str(),
+            "minecraft:cauldron" | "minecraft:trip_wire"
+        )
         || context.input.movement() != [0.0; 2]
         || state.displacement[0].abs() > 0.01
         || state.displacement[2].abs() > 0.01
@@ -293,6 +296,27 @@ fn matches_planned_state(
     planned
         .iter()
         .all(|(name, value)| name == "minecraft:corner" || actual.get(name) == Some(value))
+}
+
+pub(super) fn strict_state_matches(offer: &CreativePlacementOffer, actual: &str) -> bool {
+    let Ok(mut planned) =
+        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&offer.states)
+    else {
+        return false;
+    };
+    let wall = offer.name.ends_with("_wall");
+    let pane = offer.name.ends_with("glass_pane") || offer.name == "minecraft:iron_bars";
+    let wire = offer.name == "minecraft:trip_wire";
+    planned.retain(|key, _| {
+        !((wall && (key == "wall_post_bit" || key.starts_with("wall_connection_type_")))
+            || ((pane || wire) && key.starts_with("minecraft:connection_"))
+            || (wire
+                && matches!(
+                    key.as_str(),
+                    "attached_bit" | "powered_bit" | "suspended_bit"
+                )))
+    });
+    matches_planned_state(&planned, actual)
 }
 
 /// Recasts the saved support ray from the current eye before submitting the click.
