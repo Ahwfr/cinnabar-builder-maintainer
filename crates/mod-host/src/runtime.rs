@@ -236,6 +236,28 @@ impl cinnabar::extension::hud::Host for State {
         Ok(hud::surface::elements(self))
     }
 
+    fn set_item_highlights(&mut self, identifiers: Vec<String>) -> Result<Result<(), String>> {
+        if let Err(error) = hud::admit(self)? {
+            return Ok(Err(error));
+        }
+        if identifiers.len() > 1024
+            || identifiers.iter().any(|id| {
+                id.len() > 128
+                    || !id.contains(':')
+                    || !id.bytes().all(|byte| {
+                        byte.is_ascii_lowercase()
+                            || byte.is_ascii_digit()
+                            || b"_:.-/".contains(&byte)
+                    })
+            })
+        {
+            return Ok(Err("invalid item highlights".into()));
+        }
+        self.hud.pending_item_highlights =
+            Some((!identifiers.is_empty()).then(|| Arc::new(identifiers.into_iter().collect())));
+        Ok(Ok(()))
+    }
+
     /// Stages bounded plain text; nothing is published until the guest returns.
     fn set_label(&mut self, text: String) -> Result<Result<(), String>> {
         self.writes += 1;
@@ -806,6 +828,10 @@ impl Instance {
     /// Reads retained UI without entering the component.
     pub(super) fn label(&self) -> Option<&str> {
         self.store.data().label.as_deref()
+    }
+
+    pub(super) fn item_highlights(&self) -> Option<&Arc<std::collections::BTreeSet<String>>> {
+        self.store.data().hud.item_highlights.as_ref()
     }
 
     /// The committed HUD surface and its process-unique revision.

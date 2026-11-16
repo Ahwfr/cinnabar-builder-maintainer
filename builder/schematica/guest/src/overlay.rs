@@ -260,6 +260,12 @@ impl Tile {
         self.tally = Tally::default();
     }
 
+    pub(super) fn subtract_placed_materials(&self, remaining: &mut [u64]) {
+        for (count, material) in remaining.iter_mut().zip(&self.materials) {
+            *count = count.saturating_sub(u64::from(material[1]));
+        }
+    }
+
     pub fn material_counts(&self, indices: &[usize]) -> [u32; 3] {
         indices
             .iter()
@@ -517,8 +523,15 @@ fn preview_states_match(name: &str, expected: &str, actual: &str) -> bool {
     }
     let wall = name.ends_with("_wall");
     let wire = name == "minecraft:trip_wire";
+    let fence = name.ends_with("_fence");
     let stair = name.ends_with("_stairs");
-    if !stair && !wall && !wire && !name.ends_with("glass_pane") && name != "minecraft:iron_bars" {
+    if !stair
+        && !wall
+        && !fence
+        && !wire
+        && !name.ends_with("glass_pane")
+        && name != "minecraft:iron_bars"
+    {
         return false;
     }
     let without_connections = |state| {
@@ -677,5 +690,16 @@ fn stair_layers_compare_half_and_facing_independently_of_derived_corner() {
         "minecraft:oak_stairs",
         planned,
         &joined.replace("value\":0", "value\":1")
+    ));
+}
+
+#[cfg(test)]
+#[test]
+fn a_fence_is_correct_before_its_neighbors_connect() {
+    let connected = r#"{"minecraft:connection_east":{"type":"byte","value":1}}"#;
+    assert!(preview_states_match(
+        "minecraft:pale_oak_fence",
+        connected,
+        "{}"
     ));
 }

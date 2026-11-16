@@ -164,7 +164,7 @@ pub(crate) fn press(
             );
             return false;
         }
-        if strict_offer {
+        if strict_offer || (on_planned_face && creative::requires_exact_log(&context)) {
             return false;
         }
         let mut build = build::BuildInput::new(

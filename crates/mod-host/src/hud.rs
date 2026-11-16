@@ -28,6 +28,8 @@ pub(super) struct HudState {
     /// revalidate only what the patch changes.
     index: ui::mod_panel::HudIndex,
     pub hidden: HiddenElements,
+    pub item_highlights: Option<Arc<std::collections::BTreeSet<String>>>,
+    pub(super) pending_item_highlights: Option<Option<Arc<std::collections::BTreeSet<String>>>>,
     pending_hidden: Option<HiddenElements>,
     pub local_messages: Vec<String>,
     pending_messages: Vec<String>,
@@ -49,6 +51,8 @@ impl HudState {
             pending_surface: None,
             index: self.index.clone(),
             hidden: self.hidden,
+            item_highlights: self.item_highlights.clone(),
+            pending_item_highlights: None,
             pending_hidden: None,
             local_messages: self.local_messages.clone(),
             pending_messages: Vec::new(),
@@ -66,11 +70,14 @@ impl HudState {
             self.index = transaction.index;
         }
         self.pending_hidden = transaction.pending_hidden;
+        self.pending_item_highlights = transaction.pending_item_highlights;
         self.pending_messages = transaction.pending_messages;
     }
 
     /// Invalidates world projections without rebuilding unaffected retained HUD surfaces.
     pub(super) fn clear_world_projections(&mut self) {
+        self.item_highlights = None;
+        self.pending_item_highlights = None;
         let mut changed = false;
         for surface in self
             .surface
@@ -99,6 +106,8 @@ impl HudState {
             pending_surface,
             index,
             hidden: _,
+            item_highlights: _,
+            pending_item_highlights,
             pending_hidden,
             local_messages: _,
             pending_messages,
@@ -109,6 +118,7 @@ impl HudState {
         } = self;
         *pending_surface = None;
         *pending_hidden = None;
+        *pending_item_highlights = None;
         pending_messages.clear();
         *measures = 0;
         *index = surface
@@ -153,6 +163,9 @@ impl HudState {
         if let Some(surface) = self.pending_surface.take() {
             self.surface = surface;
             self.surface_revision = Self::next_revision();
+        }
+        if let Some(items) = self.pending_item_highlights.take() {
+            self.item_highlights = items;
         }
         if let Some(hidden) = self.pending_hidden.take() {
             self.hidden = hidden;

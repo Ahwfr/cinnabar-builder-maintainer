@@ -104,6 +104,8 @@ pub struct WindowText {
     /// Beacon effect names by effect id.
     pub effect_names: Vec<(i32, String)>,
     pub book_title: Option<String>,
+    /// Item cells with a material match. A true flag means a shulker contains a match.
+    pub material_marks: Vec<(InventoryCellHit, bool)>,
 }
 
 fn stack_of<'a>(
@@ -271,7 +273,7 @@ impl HudLayout<'_> {
             }
             self.stack_decorations(&output.stack, cell, output.durability)?;
         }
-        Ok(())
+        self.material_mark(frame, slot.hit, [cell[0] - 1., cell[1] - 1.])
     }
 
     /// An empty-slot silhouette at half strength.

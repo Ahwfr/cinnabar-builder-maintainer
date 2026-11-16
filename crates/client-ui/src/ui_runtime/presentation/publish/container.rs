@@ -45,8 +45,63 @@ pub(super) fn capture(
             window_icons,
         );
         capture_tooltip(player_runtime, items, &mut window_text);
+        window_text.material_marks = material_marks(player_runtime, items);
     }
     window_text
+}
+
+/// Marks actual player and window items using the admitted item registry.
+fn material_marks(
+    player: &player_state::PlayerState,
+    items: &ItemResolver<'_>,
+) -> Vec<(ui_screens::container_actions::InventoryCellHit, bool)> {
+    use inventory::inventory_ledger::InventoryTarget;
+    use ui_screens::container_actions::InventoryCellHit as Hit;
+    let Some(names) = items
+        .presentation
+        .hud_frame()
+        .inventory_highlights
+        .as_deref()
+    else {
+        return Vec::new();
+    };
+    let ledger = items.runtime.inventory_ledger(player);
+    let in_window = ledger.window_position().is_some() || ledger.window_kind().is_some();
+    if !in_window {
+        return Vec::new();
+    }
+    let needed = |name: &str| {
+        names.contains(name)
+            || (name == "minecraft:string" && names.contains("minecraft:trip_wire"))
+    };
+    let mut marks = Vec::new();
+    let mut check = |hit, stack: Option<&protocol::NetworkItemStack>| {
+        let Some(stack) = stack.filter(|stack| !stack.is_empty()) else {
+            return;
+        };
+        let Some(name) = items.identifier(stack) else {
+            return;
+        };
+        let boxed =
+            name.ends_with("shulker_box") && protocol::shulker_contents_match(stack, needed);
+        if boxed || needed(&name) {
+            marks.push((hit, boxed));
+        }
+    };
+    for slot in 0..36 {
+        check(Hit::Player(slot), ledger.displayed_stack(slot));
+    }
+    for slot in 0..ledger.storage_slot_count().unwrap_or(0) as u16 {
+        check(Hit::Storage(slot), ledger.furnace_visual_stack(slot));
+    }
+    for slot in 0..64 {
+        check(
+            Hit::Craft(slot),
+            ledger.target_stack(InventoryTarget::Craft(slot)),
+        );
+    }
+    check(Hit::CraftOutput, ledger.created_output_stack());
+    marks
 }
 
 /// Captures untranslated custom titles and the screen's localized labels.

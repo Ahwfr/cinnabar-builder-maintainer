@@ -87,6 +87,25 @@ impl Schematic {
         counts
     }
 
+    /// Number of cells for each palette entry within the selected local layers.
+    pub fn layer_palette_counts(&self, layers: crate::LayerMode) -> Vec<u64> {
+        if layers == crate::LayerMode::All {
+            return self.palette_counts();
+        }
+        let mut counts = vec![0; self.palette.len()];
+        let area = (self.size[0] * self.size[2]) as usize;
+        if area != 0 {
+            for (layer, cells) in self.blocks.chunks_exact(area).enumerate() {
+                if layers.includes(layer as i32) {
+                    for &index in cells {
+                        counts[index as usize] += 1;
+                    }
+                }
+            }
+        }
+        counts
+    }
+
     pub fn is_air_index(&self, idx: u32) -> bool {
         self.palette_air[idx as usize]
     }

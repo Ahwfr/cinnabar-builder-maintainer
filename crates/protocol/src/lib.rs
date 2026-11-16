@@ -190,7 +190,7 @@ pub use item::{
     item_has_enchantment_list, item_has_trim, item_id_aux, item_map_id, item_repair_cost,
     item_shield_pattern, item_stack_damage, item_trim, item_use_progress_packet,
     item_user_data_equal, offhand_equipment_packet, select_hotbar_slot_packet,
-    vanilla_item_registry,
+    shulker_contents_match, vanilla_item_registry,
 };
 pub use item_capacity::{ITEM_DEFAULT_MAX_STACK_SIZE, vanilla_item_capacity};
 pub use respawn::{respawn_ready_packet, respawn_request_packet};

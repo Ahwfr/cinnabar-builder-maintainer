@@ -185,6 +185,7 @@ impl Guest for Schematica {
                 Runtime::Ready(viewer) => {
                     if let Some(index) = viewer.request {
                         if viewer.release_for_switch() {
+                            let _ = hud::set_item_highlights(&[]);
                             viewer.remember_placement();
                             *options = viewer.options.clone();
                             *active_entry = Some(index);
@@ -313,6 +314,8 @@ fn label(message: &str) {
 struct Viewer {
     schematic: Schematic,
     materials: Vec<schematica_core::MaterialLine>,
+    last_item_highlights: Vec<String>,
+    highlight_dirty: bool,
     placement: Option<Placement>,
     world: Option<(u64, i32)>,
     placement_key: Option<String>,
@@ -389,6 +392,8 @@ impl Viewer {
             screen: Screen::Main,
             library,
             selected: None,
+            last_item_highlights: Vec::new(),
+            highlight_dirty: true,
             active_entry: None,
             request: None,
             loaded,
@@ -430,6 +435,8 @@ impl Viewer {
                     .map(|key| format!("{key:016x}/{}", scope.1));
                 self.restore_placement(entering_from_world);
                 self.last_label.clear();
+                self.last_item_highlights.clear();
+                self.highlight_dirty = true;
             }
             self.pose = Some(world);
         }
@@ -552,7 +559,7 @@ impl Viewer {
                 self.dirty |= self.control(key);
             }
         }
-        if alt && keys.keys_pressed.iter().any(|key| key == "KeyU") {
+        if self.options.assist && alt && keys.keys_pressed.iter().any(|key| key == "KeyU") {
             let message = self.aimed_block().map_or_else(
                 || "Schematica | Aim at a planned block".into(),
                 |(block, pos)| format!("Schematica | {} at {pos:?}", block.name),
@@ -571,6 +578,9 @@ impl Viewer {
             return;
         }
         self.update_preview_window();
+        if self.highlight_dirty && budget::remaining_fuel() >= 2_000_000 {
+            self.publish_item_highlights();
+        }
         if std::mem::take(&mut self.verifier_marker_changed) {
             self.clear_verifier_marker();
             if let Some(cell) = self.verifier_target {
@@ -657,6 +667,7 @@ impl Viewer {
                 textured.then_some(f32::from(self.options.opacity) / 100.),
             ) {
                 self.cursor = (self.cursor + 1) % self.tiles.len();
+                self.highlight_dirty |= self.cursor == 0;
                 let [width, height, depth] = self.schematic.size();
                 if self.options.auto_layer
                     && self.layer_mode == 1
@@ -928,6 +939,7 @@ impl Viewer {
     }
 
     fn rebuild(&mut self) {
+        self.highlight_dirty = true;
         self.clear_verifier_marker();
         self.verifier_target = None;
         self.verifier_marker_changed = false;
@@ -939,6 +951,31 @@ impl Viewer {
             self.tile_focus = self.preview_focus();
             self.tiles = self.preview.tiles(self.schematic.size(), self.tile_focus);
         }
+    }
+
+    /// Publishes required item names for the selected layers, less verified placed cells.
+    fn publish_item_highlights(&mut self) {
+        let mut names = Vec::new();
+        if self.loaded && self.placement.is_some() {
+            let mut needed = self.schematic.layer_palette_counts(self.layers());
+            for tile in &self.tiles {
+                tile.subtract_placed_materials(&mut needed);
+            }
+            names.extend(needed.into_iter().enumerate().filter_map(|(index, count)| {
+                let block = &self.schematic.palette()[index];
+                (count > 0 && !block.is_air() && block.name != "minecraft:structure_void")
+                    .then(|| block.name.clone())
+            }));
+            names.sort_unstable();
+            names.dedup();
+        }
+        if names != self.last_item_highlights {
+            if hud::set_item_highlights(&names).is_err() {
+                return;
+            }
+            self.last_item_highlights = names;
+        }
+        self.highlight_dirty = false;
     }
 
     fn preview_focus(&self) -> Option<[i32; 3]> {

@@ -275,6 +275,47 @@ pub fn item_charged_projectile(extra_data: &[u8]) -> Option<std::sync::Arc<str>>
     }
 }
 
+/// Checks names in a shulker item’s server-provided contents, without decoding unrelated tags.
+pub fn shulker_contents_match(
+    stack: &NetworkItemStack,
+    mut matches: impl FnMut(&str) -> bool,
+) -> bool {
+    let Some(nbt) = decode_extra_nbt(&stack.extra_data) else {
+        return false;
+    };
+    let Some(mut list) = root_tag(&mut &*nbt, 9, b"Items").or_else(|| {
+        let mut block = root_tag(&mut &*nbt, 10, b"BlockEntityTag")?;
+        compound_field(&mut block, 9, b"Items")
+    }) else {
+        return false;
+    };
+    if read_u8(&mut list) != Some(10) {
+        return false;
+    }
+    let Some(count @ 1..=27) = read_i32_le(&mut list) else {
+        return false;
+    };
+    let mut matched = false;
+    for _ in 0..count {
+        let mut entry = list;
+        if let Some(mut value) = compound_field(&mut entry, 8, b"Name")
+            && let Some(len) = read_u16_le(&mut value)
+            && let Some(name) = value
+                .get(..usize::from(len))
+                .and_then(|data| std::str::from_utf8(data).ok())
+            && compound_field(&mut list.clone(), 1, b"Count")
+                .and_then(|mut value| read_u8(&mut value))
+                != Some(0)
+        {
+            matched |= matches(name);
+        }
+        if skip_le_payload(&mut list, 10, 0).is_none() {
+            return false;
+        }
+    }
+    matched
+}
+
 /// Positions `cursor` at the payload of the named root tag of type `tag`.
 fn root_tag<'a>(cursor: &mut &'a [u8], tag: u8, wanted: &[u8]) -> Option<&'a [u8]> {
     if read_u8(cursor)? != 10 {

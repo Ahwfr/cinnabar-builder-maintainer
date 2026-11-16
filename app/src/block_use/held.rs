@@ -224,7 +224,7 @@ pub(super) fn maintain_block_use(
             {
                 break;
             }
-            if strict {
+            if strict || (native.is_some() && creative::requires_exact_log(&context)) {
                 break;
             }
         }

@@ -179,6 +179,20 @@ fn support(observed: &FrozenBlockObservation) -> ([i32; 3], u8, u32) {
     )
 }
 
+/// Stops fallback vanilla placement from substituting a different log while Fast Place is on.
+pub(super) fn requires_exact_log(context: &BlockUseContext) -> bool {
+    context
+        .creative
+        .as_ref()
+        .and_then(|policy| policy.offer.as_ref())
+        .is_some_and(|offer| {
+            offer.name.ends_with("_log")
+                || offer.name.ends_with("_wood")
+                || offer.name.ends_with("_stem")
+                || offer.name.ends_with("_hyphae")
+        })
+}
+
 /// Starts an assisted item selection, leaving ordinary placement available otherwise.
 pub(super) fn try_start(
     player: &mut client_state::PlayerRuntime,

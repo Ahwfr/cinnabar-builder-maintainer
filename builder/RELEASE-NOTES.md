@@ -1,4 +1,10 @@
-# Cinnabar Builder 0.3.12
+# Cinnabar Builder 0.3.13
+
+- Highlight needed materials in open containers. Green outlines mark matching stacks and cyan marks shulker boxes whose item data lists a needed block.
+- Target Info Off clears the schematic HUD readout. Fast Place ignores auto-connected fence arms, places trapdoors closed before they are opened by hand, and stops substituting different logs for planned logs.
+- The import picker identifies Bedrock structure-block exports alongside Java schematic files.
+
+## 0.3.12
 
 - Added Hold to Place and remappable camera-relative numpad movement and rotation. The Controls panel remains available.
 - Added Destroy Overlaps on Paste, separate per-schematic local-world positions, and an Auto Next Layer switch.

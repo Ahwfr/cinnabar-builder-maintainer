@@ -4,7 +4,9 @@ Choose the [Windows](windows/README.md) or [Linux](linux/README.md) instructions
 
 ## Use a schematic
 
-Press **M**, choose **Import schematic…**, then select a file. Builder supports .schematic, .schem, .litematic, and .mcstructure. Imports add to the library. Choose an entry to load it, then use the Controls panel or numpad to move it.
+Press **M**, choose **Import schematic…**, then select a file. Builder supports .schematic, .schem, .litematic, and .mcstructure. Imports add to the library. Choose an entry to load it, then use the Controls panel or numpad to move it. A Bedrock Structure Block export (.mcstructure) opens in the same picker.
+
+Open a container while building to see green outlines around stacks needed in the current layer or full guide. A cyan outline marks a shulker whose item data lists a needed block.
 
 **Fast Place V1 Classic** uses real support. **V2 Strict** checks the planned block state and can use direct air placement where Bedrock permits it. Upper slabs and upside-down stairs need a support face. **Nearby Placement Assist** helps find a reachable face when the crosshair misses. **Hold to Place** repeats Fast Place while you hold the use control.
 

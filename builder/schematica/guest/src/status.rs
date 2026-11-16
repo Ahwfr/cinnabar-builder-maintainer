@@ -25,8 +25,11 @@ impl Viewer {
     }
 
     pub(super) fn publish_label(&mut self, placement_cell: Option<[i32; 3]>) {
-        if self.options.assist
-            && let Some(pos) = placement_cell
+        if !self.options.assist {
+            self.show_label("");
+            return;
+        }
+        if let Some(pos) = placement_cell
             && let Some(block) = self.planned_block(pos)
             && self.tiles.iter().any(|tile| tile.is_missing(pos))
         {
@@ -42,9 +45,7 @@ impl Viewer {
             self.show_label(&message);
             return;
         }
-        if self.options.assist
-            && let Some((block, pos)) = self.aimed_block()
-        {
+        if let Some((block, pos)) = self.aimed_block() {
             let message = format!("Target | {} at {pos:?}", block.name);
             self.show_label(&message);
             return;

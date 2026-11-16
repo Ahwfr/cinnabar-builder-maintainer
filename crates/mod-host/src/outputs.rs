@@ -83,6 +83,12 @@ impl ModHost {
     }
 
     /// Returns only the last successfully committed plain-text label.
+    pub fn item_highlights(&self) -> Option<&std::sync::Arc<std::collections::BTreeSet<String>>> {
+        self.is_active()
+            .then(|| self.instance.item_highlights())
+            .flatten()
+    }
+
     pub fn label(&self) -> Option<&str> {
         self.instance.label()
     }

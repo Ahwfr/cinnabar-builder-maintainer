@@ -73,6 +73,7 @@ pub(super) fn clear_presentation(world: &mut World) {
             .mod_ui_mut()
             .set_hidden_hud_elements(Default::default());
         let _ = presentation.mod_ui_mut().set_mod_label(None);
+        presentation.hud_frame_mut().inventory_highlights = None;
         presentation.set_mod_presentation(Default::default());
         if let Err(error) = presentation.set_mod_panel_font(None) {
             bevy::log::warn!("Personal-panel font could not be released: {error}");

@@ -87,9 +87,7 @@ pub(super) fn correction(
     if !world.is_air(expected.position).ok()? {
         return None;
     }
-    let planned =
-        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&expected.states)
-            .ok()?;
+    let planned = placement_properties(expected)?;
     let stair = planned.contains_key("weirdo_direction");
     let planned_upper = planned_upper(&planned);
     let matches = |candidate: &FrozenBlockObservation, view: LocalViewPose| {
@@ -309,7 +307,8 @@ pub(super) fn air_place_preserves_state(offer: &CreativePlacementOffer) -> bool 
     else {
         return false;
     };
-    planned_upper(&planned) != Some(true)
+    !offer.name.ends_with("trapdoor")
+        && planned_upper(&planned) != Some(true)
         && !matches!(
             planned
                 .get("pillar_axis")
@@ -349,24 +348,31 @@ fn matches_planned_state(
 }
 
 pub(super) fn strict_state_matches(offer: &CreativePlacementOffer, actual: &str) -> bool {
-    let Ok(mut planned) =
-        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&offer.states)
-    else {
-        return false;
-    };
+    placement_properties(offer).is_some_and(|planned| matches_planned_state(&planned, actual))
+}
+
+/// Keeps placement-controlled properties, leaving connected geometry and trapdoor opening to gameplay.
+fn placement_properties(
+    offer: &CreativePlacementOffer,
+) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let mut planned: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(&offer.states).ok()?;
     let wall = offer.name.ends_with("_wall");
     let pane = offer.name.ends_with("glass_pane") || offer.name == "minecraft:iron_bars";
     let wire = offer.name == "minecraft:trip_wire";
+    let fence = offer.name.ends_with("_fence");
+    let trapdoor = offer.name.ends_with("trapdoor");
     planned.retain(|key, _| {
         !((wall && (key == "wall_post_bit" || key.starts_with("wall_connection_type_")))
-            || ((pane || wire) && key.starts_with("minecraft:connection_"))
+            || ((pane || wire || fence) && key.starts_with("minecraft:connection_"))
+            || (trapdoor && key == "open_bit")
             || (wire
                 && matches!(
                     key.as_str(),
                     "attached_bit" | "powered_bit" | "suspended_bit"
                 )))
     });
-    matches_planned_state(&planned, actual)
+    Some(planned)
 }
 
 /// Recasts the saved support ray from the current eye before submitting the click.

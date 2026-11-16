@@ -674,6 +674,10 @@ pub(super) fn drive_mod(
     {
         warn!("Cinnabar extension HUD rejected: {error}");
     }
+    presentation.hud_frame_mut().inventory_highlights = extension
+        .hosts
+        .iter_mut()
+        .find_map(|host| host.item_highlights().cloned());
     let hidden = extension.hosts.hidden_hud_elements();
     let mod_ui = presentation.mod_ui_mut();
     mod_ui.set_hud_surfaces(extension.hud_surfaces());

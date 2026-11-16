@@ -63,6 +63,8 @@ pub struct HudFrame {
     pub window_icons: WindowIcons,
     pub durability: Durability,
     pub window_text: WindowText,
+    /// Named item highlights committed by the active HUD extension.
+    pub inventory_highlights: Option<Arc<std::collections::BTreeSet<String>>>,
     pub cursor_icon: Option<IconRef>,
     /// Remaining durability of the presented cursor stack, including server corrections.
     pub cursor_durability: Option<f32>,

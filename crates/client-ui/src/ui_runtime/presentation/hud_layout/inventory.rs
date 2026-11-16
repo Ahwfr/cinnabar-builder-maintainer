@@ -6,6 +6,7 @@
 use std::sync::Arc;
 
 use ui::{TextLayoutRequest, TextStyle, UiNode, UiNodeId, UiScale, UiVisual};
+use ui_screens::container_actions::InventoryCellHit;
 
 use crate::ui_runtime::presentation::inventory_pointer::InventoryScreen;
 use {
@@ -338,6 +339,7 @@ impl HudLayout<'_> {
                     frame.durability.storage[index],
                 )?;
             }
+            self.material_mark(frame, InventoryCellHit::Storage(index as u16), slot)?;
             if runtime
                 .inventory_ledger(player_runtime)
                 .storage_slot_pending(index as u16)
@@ -409,6 +411,7 @@ impl HudLayout<'_> {
                 frame.durability.player[index],
             )?;
         }
+        self.material_mark(frame, InventoryCellHit::Player(index as u8), slot)?;
         if runtime
             .inventory_ledger(player_runtime)
             .slot_pending(index as u8)
@@ -418,6 +421,36 @@ impl HudLayout<'_> {
                 [16.0, 16.0],
                 [255, 255, 255, 48],
             )?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn material_mark(
+        &mut self,
+        frame: &HudFrame,
+        hit: InventoryCellHit,
+        [x, y]: [f32; 2],
+    ) -> Result<(), UiPresentationError> {
+        let Some((_, boxed)) = frame
+            .window_text
+            .material_marks
+            .iter()
+            .find(|(cell, _)| *cell == hit)
+        else {
+            return Ok(());
+        };
+        let color = if *boxed {
+            [91, 222, 255, 255]
+        } else {
+            [146, 245, 69, 255]
+        };
+        for (pos, size) in [
+            ([x + 1., y + 1.], [16., 1.]),
+            ([x + 1., y + 16.], [16., 1.]),
+            ([x + 1., y + 2.], [1., 14.]),
+            ([x + 16., y + 2.], [1., 14.]),
+        ] {
+            self.solid_gui(pos, size, color)?;
         }
         Ok(())
     }

@@ -543,6 +543,16 @@ impl UiPresentationRuntime {
                 .containers
                 .paint(renderer, &source, &items, input, &mut paint_frame)
         };
+        if let Some(drawn) = &drawn {
+            paint_material_marks(
+                layout,
+                drawn,
+                &window_text.material_marks,
+                paint_frame.nodes,
+                paint_frame.next,
+                self.solid_texture_page,
+            );
+        }
         if let Some(view) = preview_view.get() {
             self.player_preview_view = view;
         }
@@ -659,3 +669,58 @@ mod book_order_tests;
 
 #[cfg(test)]
 mod beacon_level_tests;
+
+/// Marks drawn inventory cells without changing their input targets or slot contents.
+fn paint_material_marks(
+    layout: ScreenLayout,
+    frame: &EngineFrame,
+    marks: &[(InventoryCellHit, bool)],
+    nodes: &mut Vec<UiNode>,
+    next: &mut u32,
+    page: u16,
+) {
+    if marks.is_empty() {
+        return;
+    }
+    for (hit, point) in layout.cells(frame) {
+        let Some((_, boxed)) = marks.iter().find(|(cell, _)| *cell == hit) else {
+            continue;
+        };
+        let [x, y] = std::array::from_fn(|i| frame.origin[i] + point[i] * frame.scale);
+        let radius = 8.0 * frame.scale;
+        let stroke = frame.scale;
+        for bounds in [
+            [x - radius, y - radius, x + radius, y - radius + stroke],
+            [x - radius, y + radius - stroke, x + radius, y + radius],
+            [
+                x - radius,
+                y - radius + stroke,
+                x - radius + stroke,
+                y + radius - stroke,
+            ],
+            [
+                x + radius - stroke,
+                y - radius + stroke,
+                x + radius,
+                y + radius - stroke,
+            ],
+        ] {
+            if let Ok(rect) = super::super::rect(bounds[0], bounds[1], bounds[2], bounds[3]) {
+                let rgba = if *boxed {
+                    [91, 222, 255, 255]
+                } else {
+                    [146, 245, 69, 255]
+                };
+                nodes.push(
+                    UiNode::new(ui::UiNodeId::new(*next), None, rect).with_visual(
+                        ui::UiVisual::Solid {
+                            texture_page: page,
+                            color: rgba,
+                        },
+                    ),
+                );
+                *next += 1;
+            }
+        }
+    }
+}
