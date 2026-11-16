@@ -3,6 +3,7 @@ use schematica_core::{BlockState, CellStatus, LayerMode, Placement, Schematic, S
 use serde_json::{Map, json};
 
 const TILE_EDGE: i32 = 4;
+const WINDOW_TILES: i32 = 4;
 const DEFAULT_LIGHT: u32 = 0xffff0000;
 
 #[derive(Default)]
@@ -48,7 +49,7 @@ impl Preview {
             .collect()
     }
 
-    pub fn tiles(&self, size: [i32; 3]) -> Vec<Tile> {
+    fn bounds(&self, size: [i32; 3]) -> ([i32; 3], [i32; 3]) {
         let p = self.placement.unwrap();
         let (mut min, mut max) = p.world_bounds(size);
         match self.layers.unwrap_or(LayerMode::All) {
@@ -65,12 +66,36 @@ impl Preview {
                 min[1] += bottom;
             }
         }
+        (min, max)
+    }
+
+    pub fn focus(&self, size: [i32; 3], eye: [f32; 3]) -> Option<[i32; 3]> {
+        let (min, max) = self.bounds(size);
+        let counts = [0, 1, 2].map(|i| (max[i] - min[i] + TILE_EDGE - 1) / TILE_EDGE);
+        (counts.iter().product::<i32>() > 128).then(|| {
+            [0, 1, 2].map(|i| {
+                let cell = (eye[i].floor() as i32).clamp(min[i], max[i] - 1);
+                let center = (cell - min[i]) / TILE_EDGE;
+                (center - WINDOW_TILES / 2 + 1).clamp(0, (counts[i] - WINDOW_TILES).max(0))
+            })
+        })
+    }
+
+    pub fn tiles(&self, size: [i32; 3], focus: Option<[i32; 3]>) -> Vec<Tile> {
+        let (min, bounds_max) = self.bounds(size);
+        let (start, end) = if let Some(focus) = focus {
+            let start = [0, 1, 2].map(|i| min[i] + focus[i] * TILE_EDGE);
+            let end = [0, 1, 2].map(|i| (start[i] + WINDOW_TILES * TILE_EDGE).min(bounds_max[i]));
+            (start, end)
+        } else {
+            (min, bounds_max)
+        };
         let mut tiles = Vec::new();
-        for x in (min[0]..max[0]).step_by(TILE_EDGE as usize) {
-            for z in (min[2]..max[2]).step_by(TILE_EDGE as usize) {
-                for y in (min[1]..max[1]).step_by(TILE_EDGE as usize) {
+        for x in (start[0]..end[0]).step_by(TILE_EDGE as usize) {
+            for z in (start[2]..end[2]).step_by(TILE_EDGE as usize) {
+                for y in (start[1]..end[1]).step_by(TILE_EDGE as usize) {
                     let lo = [x, y, z];
-                    let hi = [0, 1, 2].map(|i| (lo[i] + TILE_EDGE).min(max[i]));
+                    let hi = [0, 1, 2].map(|i| (lo[i] + TILE_EDGE).min(bounds_max[i]));
                     tiles.push(Tile {
                         lo,
                         hi,
@@ -129,6 +154,9 @@ pub(super) fn highlight(dimension: i32, cell: [i32; 3]) -> Result<DrawPair, draw
 }
 
 impl Tile {
+    pub fn origin(&self) -> [i32; 3] {
+        self.lo
+    }
     pub(crate) fn is_missing(&self, world: [i32; 3]) -> bool {
         if (0..3).any(|axis| world[axis] < self.lo[axis] || world[axis] >= self.hi[axis]) {
             return false;
@@ -407,18 +435,27 @@ fn compare(
     }
 }
 
-/// Pane arms are resolved by adjacent blocks when placed.
+/// Pane arms and wall geometry are resolved by adjacent blocks when placed.
 fn preview_states_match(name: &str, expected: &str, actual: &str) -> bool {
     if expected == actual {
         return true;
     }
-    if !name.ends_with("glass_pane") && name != "minecraft:iron_bars" {
+    let wall = name.ends_with("_wall");
+    if !wall && !name.ends_with("glass_pane") && name != "minecraft:iron_bars" {
         return false;
     }
     let without_connections = |state| {
         let mut values: Map<String, serde_json::Value> = serde_json::from_str(state).ok()?;
         for key in ["north", "east", "south", "west"] {
-            values.remove(&format!("minecraft:connection_{key}"));
+            let key = if wall {
+                format!("wall_connection_type_{key}")
+            } else {
+                format!("minecraft:connection_{key}")
+            };
+            values.remove(&key);
+        }
+        if wall {
+            values.remove("wall_post_bit");
         }
         Some(values)
     };
@@ -472,6 +509,9 @@ fn create(
     let mut params = vec![0.; 16];
     params[7] = 1.;
     params[9] = 1.;
+    if textured {
+        params[10] = 1.;
+    }
     let mut placement = draw::Instance {
         geometry,
         material: None,
@@ -484,7 +524,7 @@ fn create(
             scale: (1., 1., 1.),
         },
         tint: if textured {
-            (0.32, 0.62, 1., opacity)
+            (0.24, 0.74, 1., opacity)
         } else {
             (1., 1., 1., opacity)
         },

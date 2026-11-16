@@ -90,7 +90,6 @@ impl Options {
 enum Runtime {
     Start,
     Loading(blueprint::Decoder<'static>),
-    Decoded(Schematic),
     Counting {
         schematic: Schematic,
         counts: Vec<u64>,
@@ -198,7 +197,14 @@ impl Guest for Schematica {
                                     unreachable!()
                                 };
                                 match decoder.finish() {
-                                    Ok(schematic) => *runtime = Runtime::Decoded(schematic),
+                                    Ok((schematic, counts)) => {
+                                        *runtime = Runtime::Counting {
+                                            schematic,
+                                            counts,
+                                            totals: BTreeMap::new(),
+                                            cursor: 0,
+                                        };
+                                    }
                                     Err(_) => invalidate(runtime),
                                 }
                                 break;
@@ -209,20 +215,6 @@ impl Guest for Schematica {
                             }
                         }
                     }
-                }
-                Runtime::Decoded(_) => {
-                    let Runtime::Decoded(schematic) =
-                        std::mem::replace(&mut *runtime, Runtime::Invalid)
-                    else {
-                        unreachable!()
-                    };
-                    let counts = schematic.palette_counts();
-                    *runtime = Runtime::Counting {
-                        schematic,
-                        counts,
-                        totals: BTreeMap::new(),
-                        cursor: 0,
-                    };
                 }
                 Runtime::Counting {
                     schematic,
@@ -311,6 +303,7 @@ struct Viewer {
     world: Option<(u64, i32)>,
     placement_key: Option<String>,
     pose: Option<gameplay::Snapshot>,
+    tile_focus: Option<[i32; 3]>,
     preview: Preview,
     tiles: Vec<Tile>,
     retired: Vec<Tile>,
@@ -358,6 +351,7 @@ impl Viewer {
             world: None,
             placement_key: None,
             pose: None,
+            tile_focus: None,
             preview: Preview::default(),
             tiles: Vec::new(),
             retired: Vec::new(),
@@ -547,6 +541,7 @@ impl Viewer {
             self.dirty = false;
             return;
         }
+        self.update_preview_window();
         if std::mem::take(&mut self.verifier_marker_changed) {
             self.clear_verifier_marker();
             if let Some(cell) = self.verifier_target {
@@ -601,9 +596,8 @@ impl Viewer {
         if budget::remaining_fuel() < 650_000 {
             return;
         }
-        let textured = self.options.textured
-            && self.tiles.len() <= 128
-            && caps.contains(drawing::Permissions::RENDER_MATERIAL);
+        let textured =
+            self.options.textured && caps.contains(drawing::Permissions::RENDER_MATERIAL);
         if self.shown && !self.tiles.is_empty() {
             let tile = &mut self.tiles[self.cursor];
             if tile.step(
@@ -616,9 +610,7 @@ impl Viewer {
             }
         }
         if self.options.textured && !textured && self.placement.is_some() {
-            self.show_label(
-                "Schematica | Textures need render_material and at most 128 visible tiles",
-            );
+            self.show_label("Schematica | Textures need render_material");
         } else {
             self.publish_label(placement_cell);
         }
@@ -864,8 +856,42 @@ impl Viewer {
         self.cursor = 0;
         if let Some(p) = self.placement.filter(|_| self.shown && self.render_all) {
             self.preview = Preview::new(p, self.layers());
-            self.tiles = self.preview.tiles(self.schematic.size());
+            self.tile_focus = self.preview_focus();
+            self.tiles = self.preview.tiles(self.schematic.size(), self.tile_focus);
         }
+    }
+
+    fn preview_focus(&self) -> Option<[i32; 3]> {
+        let eye = self.pose.as_ref().map_or_else(
+            || self.placement.unwrap().origin.map(|axis| axis as f32),
+            |pose| [pose.eye.x, pose.eye.y, pose.eye.z],
+        );
+        self.preview.focus(self.schematic.size(), eye)
+    }
+
+    fn update_preview_window(&mut self) {
+        if self.placement.is_none() || !self.shown || !self.render_all {
+            return;
+        }
+        let focus = self.preview_focus();
+        if focus == self.tile_focus {
+            return;
+        }
+        self.tile_focus = focus;
+        let mut previous: BTreeMap<_, _> = self
+            .tiles
+            .drain(..)
+            .map(|tile| (tile.origin(), tile))
+            .collect();
+        self.tiles = self
+            .preview
+            .tiles(self.schematic.size(), focus)
+            .into_iter()
+            .map(|tile| previous.remove(&tile.origin()).unwrap_or(tile))
+            .collect();
+        self.retired
+            .extend(previous.into_values().filter(Tile::has_draws));
+        self.cursor = 0;
     }
 
     fn clear_retired(&mut self) {

@@ -33,6 +33,7 @@ struct Pending {
     key: StackKey,
     request: Option<i32>,
     catalog: Option<Catalog>,
+    replacement: Option<StackKey>,
     selecting: bool,
     aim: Option<TemporaryAim>,
     bridge: bool,
@@ -68,6 +69,7 @@ enum Catalog {
     CarriedOpening(u8),
     Taking(i32),
     Moving(i32),
+    ClearingCursor(i32),
     Closing,
 }
 
@@ -101,12 +103,14 @@ fn advance_catalog(player: &mut client_state::PlayerRuntime, pending: &mut Pendi
             .begin_creative_take(id, CreativeDestination::Cursor, None)
             .map(Catalog::Taking),
         Catalog::Taking(request) if !ledger.has_pending_request(request) => {
-            if ledger.cursor_stack().map(key) != Some(pending.key)
-                || !matches!(
+            let slot_unchanged = match pending.replacement {
+                Some(previous) => ledger.backing_stack(pending.slot).map(key) == Some(previous),
+                None => matches!(
                     ledger.slot_state(pending.slot),
                     Some(PlayerInventorySlot::Empty)
-                )
-            {
+                ),
+            };
+            if ledger.cursor_stack().map(key) != Some(pending.key) || !slot_unchanged {
                 ledger.request_background_personal_close();
                 return CatalogStep::Failed;
             }
@@ -116,10 +120,31 @@ fn advance_catalog(player: &mut client_state::PlayerRuntime, pending: &mut Pendi
         }
         Catalog::Moving(request) if !ledger.has_pending_request(request) => {
             let confirmed = ledger.backing_stack(pending.slot).map(key) == Some(pending.key);
-            ledger.request_background_personal_close();
             if !confirmed {
+                ledger.request_background_personal_close();
                 return CatalogStep::Failed;
             }
+            if pending.game_mode == PlayerGameMode::Creative
+                && let Some(replaced) = pending.replacement
+                && ledger.cursor_stack().map(key) == Some(replaced)
+            {
+                let spare =
+                    (protocol::HOTBAR_SLOT_COUNT..PLAYER_INVENTORY_SLOT_COUNT as u8).find(|slot| {
+                        matches!(ledger.slot_state(*slot), Some(PlayerInventorySlot::Empty))
+                    });
+                let request = match spare {
+                    Some(slot) => ledger
+                        .begin_target_gesture(InventoryTarget::Player(slot), CellGesture::Click),
+                    None => ledger.begin_destroy_cursor(None),
+                };
+                request.map(Catalog::ClearingCursor)
+            } else {
+                ledger.request_background_personal_close();
+                Ok(Catalog::Closing)
+            }
+        }
+        Catalog::ClearingCursor(request) if !ledger.has_pending_request(request) => {
+            ledger.request_background_personal_close();
             Ok(Catalog::Closing)
         }
         _ => return CatalogStep::Waiting,
@@ -196,7 +221,18 @@ pub(super) fn try_start(
     let ledger = player.inventory.ledger();
     let mode = stream.network_id_mode();
     let quality = |stack: &NetworkItemStack| {
-        let block = held_block_store_id(stream, stack.block_runtime_id)?;
+        let block = super::build::held_placement_block(
+            &context.collisions,
+            stream,
+            stack.block_runtime_id,
+            || {
+                stream
+                    .authority()
+                    .item_identifier(stack.network_id)
+                    .as_deref()
+                    == Some("minecraft:cauldron")
+            },
+        )?;
         (context.collisions.block_identifier(mode, block)? == offer.name.as_str()).then(|| {
             context.collisions.block_canonical_state(mode, block) == Some(offer.states.as_str())
         })
@@ -232,7 +268,7 @@ pub(super) fn try_start(
             Some((quality(stack)?, slot, key(stack)))
         })
         .max_by_key(|(exact, _, _)| *exact);
-    let catalog = empty.zip(ledger.creative_catalog().and_then(|catalog| {
+    let catalog = ledger.creative_catalog().and_then(|catalog| {
         catalog
             .items
             .iter()
@@ -244,7 +280,8 @@ pub(super) fn try_start(
                 ))
             })
             .max_by_key(|(exact, _, _)| *exact)
-    }));
+    });
+    let mut replacement = None;
     let (slot, key, request, catalog) = if let Some((_, slot, key)) = hotbar {
         (slot, key, None, None)
     } else if let Some((_, source, item)) = carried {
@@ -263,7 +300,7 @@ pub(super) fn try_start(
             bevy::log::info!(block = %offer.name, "Fast Place needs this block in the player's inventory");
             return false;
         }
-        let Some((slot, (_, id, item))) = catalog else {
+        let Some((_, id, item)) = catalog else {
             bevy::log::info!(
                 block = %offer.name,
                 empty_slot = empty.is_some(),
@@ -271,6 +308,13 @@ pub(super) fn try_start(
             );
             return false;
         };
+        let slot = empty.unwrap_or(selected);
+        if empty.is_none() {
+            let Some(previous) = ledger.backing_stack(slot) else {
+                return false;
+            };
+            replacement = Some(key(previous));
+        }
         if !player
             .inventory_commands()
             .request_background_personal_open(stream.local_player_runtime_id())
@@ -298,6 +342,7 @@ pub(super) fn try_start(
         key,
         request,
         catalog,
+        replacement,
         selecting: slot == selected && request.is_none() && catalog.is_none(),
         aim: None,
         bridge,

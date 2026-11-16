@@ -246,6 +246,28 @@ fn retained_block_opacity_shader_validates_with_its_uniform() {
 }
 
 #[test]
+fn retained_block_outline_shader_validates() {
+    for raw in [
+        include_str!("../../src/chunk.wesl"),
+        include_str!("../../src/model.wesl"),
+        include_str!("../../src/liquid.wesl"),
+        include_str!("../../src/transparent_terrain.wesl"),
+    ] {
+        let source = shader_source::composed(
+            raw,
+            &["MOD_BLOCKS", "MOD_BLOCK_TINT", "MOD_BLOCK_OUTLINE"],
+        );
+        let module = naga::front::wgsl::parse_str(&source).expect("outlined block shader parses");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .expect("outlined block shader validates");
+    }
+}
+
+#[test]
 fn every_shader_parses_and_validates() {
     let mut failures = Vec::new();
     let mut validated = 0;

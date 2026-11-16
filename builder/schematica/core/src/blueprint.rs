@@ -1,12 +1,13 @@
 use crate::{BlockState, Schematic, StateValue};
 
-pub const MAX_EDGE: i32 = 64;
-pub const MAX_CELLS: usize = 5120;
-const MAX_PALETTE: usize = 128;
+pub const MAX_EDGE: i32 = 128;
+pub const MAX_CELLS: usize = 100_000;
+const MAX_PALETTE: usize = 1024;
+const PALETTE_BYTES: usize = 32 * 1024;
 pub const SLOT_MARKER: &[u8] = b"schematica:embedded-library:v4\x00";
-const PAYLOAD_BYTES: usize = MAX_CELLS + 12 * 1024;
+const PAYLOAD_BYTES: usize = 2 * MAX_CELLS + PALETTE_BYTES;
 pub const MAX_LIBRARY: usize = 8;
-const LIBRARY_BYTES: usize = 5 + MAX_LIBRARY * (4 + PAYLOAD_BYTES);
+const LIBRARY_BYTES: usize = 13 + MAX_LIBRARY * (4 + PAYLOAD_BYTES);
 pub const SLOT_BYTES: usize = SLOT_MARKER.len() + 4 + LIBRARY_BYTES;
 
 pub const fn empty_slot() -> [u8; SLOT_BYTES] {
@@ -59,7 +60,7 @@ pub fn library(mut bytes: &[u8]) -> Result<Vec<&[u8]>, String> {
     if bytes.is_empty() {
         return Ok(Vec::new());
     }
-    if bytes.starts_with(b"SCB1") {
+    if bytes.starts_with(b"SCB1") || bytes.starts_with(b"SCB2") {
         return Ok(vec![bytes]);
     }
     match take(&mut bytes, 4)? {
@@ -130,13 +131,9 @@ pub fn encode(schematic: &Schematic) -> Result<Vec<u8>, String> {
             "palette exceeds {MAX_PALETTE} distinct block states"
         ));
     }
-    let mut out = b"SCB1".to_vec();
-    out.extend([
-        sx as u8,
-        sy as u8,
-        sz as u8,
-        schematic.palette().len() as u8,
-    ]);
+    let mut out = b"SCB2".to_vec();
+    out.extend([sx as u8, sy as u8, sz as u8]);
+    out.extend((schematic.palette().len() as u16).to_le_bytes());
     put_str(&mut out, &schematic.name)?;
     for block in schematic.palette() {
         put_str(&mut out, &block.name)?;
@@ -157,13 +154,14 @@ pub fn encode(schematic: &Schematic) -> Result<Vec<u8>, String> {
             }
         }
     }
-    if out.len() > 12 * 1024 {
-        return Err("encoded palette exceeds 12 KiB".into());
+    if out.len() > PALETTE_BYTES {
+        return Err("encoded palette exceeds 32 KiB".into());
     }
     for y in 0..sy {
         for z in 0..sz {
             for x in 0..sx {
-                out.push(schematic.palette_index([x, y, z]).unwrap() as u8);
+                let index = schematic.palette_index([x, y, z]).unwrap() as u16;
+                out.extend(index.to_le_bytes());
             }
         }
     }
@@ -179,7 +177,7 @@ fn put_str(out: &mut Vec<u8>, value: &str) -> Result<(), String> {
 pub fn decode(bytes: &[u8]) -> Result<Schematic, String> {
     let mut decoder = Decoder::new(bytes)?;
     while !decoder.step()? {}
-    decoder.finish()
+    decoder.finish().map(|(schematic, _)| schematic)
 }
 
 /// Incrementally decodes one palette entry at a time before copying the bounded cell array.
@@ -187,23 +185,35 @@ pub struct Decoder<'a> {
     bytes: &'a [u8],
     size: [i32; 3],
     count: usize,
+    volume: usize,
+    wide: bool,
     name: String,
     palette: Vec<BlockState>,
+    blocks: Vec<u32>,
+    counts: Vec<u64>,
 }
 
 impl<'a> Decoder<'a> {
     pub fn new(mut bytes: &'a [u8]) -> Result<Self, String> {
-        if take(&mut bytes, 4)? != b"SCB1" {
-            return Err("expected a SCB1 blueprint".into());
-        }
+        let wide = match take(&mut bytes, 4)? {
+            b"SCB1" => false,
+            b"SCB2" => true,
+            _ => return Err("invalid blueprint signature".into()),
+        };
         let size = [
             byte(&mut bytes)? as i32,
             byte(&mut bytes)? as i32,
             byte(&mut bytes)? as i32,
         ];
         let volume = validate_size(size)?;
-        let count = byte(&mut bytes)? as usize;
-        if !(1..=MAX_PALETTE).contains(&count) || bytes.len() > volume + 12 * 1024 {
+        let count = if wide {
+            u16::from_le_bytes(take(&mut bytes, 2)?.try_into().unwrap()) as usize
+        } else {
+            byte(&mut bytes)? as usize
+        };
+        if !(1..=MAX_PALETTE).contains(&count)
+            || bytes.len() > volume * (if wide { 2 } else { 1 }) + PALETTE_BYTES
+        {
             return Err("invalid palette size".into());
         }
         let name = string(&mut bytes)?;
@@ -211,14 +221,38 @@ impl<'a> Decoder<'a> {
             bytes,
             size,
             count,
+            volume,
+            wide,
             name,
             palette: Vec::with_capacity(count),
+            blocks: Vec::new(),
+            counts: vec![0; count],
         })
     }
 
     pub fn step(&mut self) -> Result<bool, String> {
         if self.palette.len() == self.count {
-            return Ok(true);
+            for _ in self.blocks.len()..(self.blocks.len() + 512).min(self.volume) {
+                let index = if self.wide {
+                    u16::from_le_bytes(take(&mut self.bytes, 2)?.try_into().unwrap()) as usize
+                } else {
+                    byte(&mut self.bytes)? as usize
+                };
+                let count = self
+                    .counts
+                    .get_mut(index)
+                    .ok_or("palette index out of range")?;
+                *count += 1;
+                self.blocks.push(index as u32);
+            }
+            if self.blocks.len() == self.volume {
+                return if self.bytes.is_empty() {
+                    Ok(true)
+                } else {
+                    Err("unexpected blueprint data".into())
+                };
+            }
+            return Ok(false);
         }
         let bytes = &mut self.bytes;
         let mut state = BlockState::new(string(bytes)?);
@@ -234,19 +268,20 @@ impl<'a> Decoder<'a> {
             state.states.insert(key, value);
         }
         self.palette.push(state);
-        Ok(self.palette.len() == self.count)
+        Ok(false)
     }
 
-    pub fn finish(self) -> Result<Schematic, String> {
-        if self.palette.len() != self.count {
-            return Err("blueprint palette has not finished decoding".into());
+    pub fn finish(self) -> Result<(Schematic, Vec<u64>), String> {
+        if self.palette.len() != self.count
+            || self.blocks.len() != self.volume
+            || !self.bytes.is_empty()
+        {
+            return Err("blueprint has not finished decoding".into());
         }
-        Schematic::from_raw(
-            self.name,
-            self.size,
-            self.palette,
-            self.bytes.iter().map(|&b| u32::from(b)).collect(),
-        )
+        Ok((
+            Schematic::from_validated(self.name, self.size, self.palette, self.blocks),
+            self.counts,
+        ))
     }
 }
 
@@ -263,4 +298,31 @@ fn byte(bytes: &mut &[u8]) -> Result<u8, String> {
 fn string(bytes: &mut &[u8]) -> Result<String, String> {
     let len = byte(bytes)? as usize;
     String::from_utf8(take(bytes, len)?.to_vec()).map_err(|_| "invalid UTF-8".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_legacy_blueprints() {
+        let legacy = b"SCB1\x01\x01\x01\x01\x01A\x0dminecraft:air\x00\x00";
+        assert_eq!(decode(legacy).unwrap().name, "A");
+    }
+
+    #[test]
+    fn wide_palette_and_cardiff_sized_volume_round_trip() {
+        let mut schematic = Schematic::new("large", [47, 45, 36]);
+        for index in 0..300 {
+            schematic.set(
+                [index % 47, 0, index / 47],
+                BlockState::new(format!("test:block_{index}")),
+            );
+        }
+        let bytes = encode(&schematic).unwrap();
+        let restored = decode(&bytes).unwrap();
+        assert_eq!(restored.palette().len(), 301);
+        assert_eq!(restored.palette_index([17, 0, 6]), Some(300));
+        assert!(decode(&bytes[..bytes.len() - 1]).is_err());
+    }
 }

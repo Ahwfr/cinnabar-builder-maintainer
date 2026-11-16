@@ -479,7 +479,7 @@ fn fragment_depth(in: VertexOutput, @builtin(front_facing) front_facing: bool) -
         in.surface_class,
     );
     @if(ENHANCED)
-    return apply_block_tint(vec4(apply_distance_fog(lit, in.world_position), 1.0));
+    return apply_block_tint(vec4(apply_distance_fog(lit, in.world_position), 1.0), in.world_position);
     @if(!ENHANCED)
-    return apply_block_tint(tint_to_linear(vec4(native_liquid_colour(sampled.rgb, vec3(1.0), in), 1.0)));
+    return apply_block_tint(tint_to_linear(vec4(native_liquid_colour(sampled.rgb, vec3(1.0), in), 1.0)), in.world_position);
 }

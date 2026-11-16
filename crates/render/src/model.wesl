@@ -861,11 +861,11 @@ fn fragment(
         in.surface_class,
     );
     @if(!OPAQUE_OVERDRAW && ENHANCED)
-    return apply_block_tint(vec4(apply_distance_fog(shaded, in.world_position), output_alpha));
+    return apply_block_tint(vec4(apply_distance_fog(shaded, in.world_position), output_alpha), in.world_position);
     @if(!OPAQUE_OVERDRAW && !ENHANCED)
     let colour = ordinary_world_model_colour(in, sampled);
     @if(!OPAQUE_OVERDRAW && !ENHANCED)
-    return apply_block_tint(vec4(colour.rgb, output_alpha));
+    return apply_block_tint(vec4(colour.rgb, output_alpha), in.world_position);
 }
 
 @fragment

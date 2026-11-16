@@ -6,6 +6,9 @@ and [maintainer setup](CONTRIBUTING.md). The [platform guide](docs/PORTING.md) d
 what has been verified and the Linux work. The [distribution review](docs/DISTRIBUTION.md)
 records licensing and release requirements.
 
+Get the Windows setup EXE or portable ZIP from [Builder releases](https://github.com/Ahwfr/cinnabar-builder/releases).
+Builder welcomes fixes and platform ports under the inherited noncommercial terms.
+
 The upstream Cinnabar description below provides context. Its downloads are upstream
 builds. The Builder work is maintained separately.
 

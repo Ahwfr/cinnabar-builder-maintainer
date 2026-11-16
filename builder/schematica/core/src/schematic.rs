@@ -51,15 +51,24 @@ impl Schematic {
                 palette.len()
             ));
         }
+        Ok(Self::from_validated(name, size, palette, blocks))
+    }
+
+    pub(crate) fn from_validated(
+        name: impl Into<String>,
+        size: [i32; 3],
+        palette: Vec<BlockState>,
+        blocks: Vec<u32>,
+    ) -> Self {
         let palette_air = palette.iter().map(BlockState::is_air).collect();
-        Ok(Self {
+        Self {
             name: name.into(),
             size,
             palette,
             palette_air,
             lookup: None,
             blocks,
-        })
+        }
     }
 
     pub fn size(&self) -> [i32; 3] {

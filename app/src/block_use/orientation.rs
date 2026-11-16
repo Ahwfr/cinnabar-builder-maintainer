@@ -50,6 +50,8 @@ pub(super) fn correction(
     bridge: bool,
 ) -> Option<PlacementAim> {
     if expected.states == "{}"
+        || expected.name.ends_with("_wall")
+        || expected.name == "minecraft:cauldron"
         || context.input.movement() != [0.0; 2]
         || state.displacement[0].abs() > 0.01
         || state.displacement[2].abs() > 0.01

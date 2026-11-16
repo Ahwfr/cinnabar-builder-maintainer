@@ -671,9 +671,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
     @if(!OPAQUE_OVERDRAW)
     let shaded = shade_cube(in, sampled);
     @if(!OPAQUE_OVERDRAW && ALPHA_TO_COVERAGE)
-    return apply_block_tint(vec4(shaded.rgb, coverage));
+    return apply_block_tint(vec4(shaded.rgb, coverage), in.world_position);
     @if(!OPAQUE_OVERDRAW && !ALPHA_TO_COVERAGE)
-    return apply_block_tint(shaded);
+    return apply_block_tint(shaded, in.world_position);
 }
 
 // Coverage shares color addressing and gradients for the source image on the selected page.
@@ -751,7 +751,7 @@ fn fragment_solid(in: VertexOutput) -> @location(0) vec4<f32> {
     @if(OPAQUE_OVERDRAW)
     return vec4(1.0);
     @if(!OPAQUE_OVERDRAW)
-    return apply_block_tint(shade_cube(in, sample_cube_texture(in, dpdx(in.uv), dpdy(in.uv))));
+    return apply_block_tint(shade_cube(in, sample_cube_texture(in, dpdx(in.uv), dpdy(in.uv))), in.world_position);
 }
 
 // Sealed quad edges extend past the face, so their pixels clamp to its edge texels.

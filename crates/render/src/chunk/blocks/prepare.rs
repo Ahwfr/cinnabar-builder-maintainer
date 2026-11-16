@@ -295,6 +295,7 @@ pub(super) fn prepare(
                     mirrored: determinant < 0.,
                     translucent: instance.tint[3] < 1.,
                     tinted: instance.tint[..3] != [1.; 3],
+                    outlined: instance.params[mod_api::drawing::BLOCK_GRID_OUTLINE_PARAM] >= 0.5,
                 };
                 let ids: Option<Vec<_>> = pipelines
                     .variants

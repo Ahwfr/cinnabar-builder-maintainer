@@ -1,4 +1,10 @@
-# Cinnabar Builder 0.3.7
+# Cinnabar Builder 0.3.8
+
+- Import larger schematics through the in-game picker. Blueprints can contain up to 100,000 cells, with the original file and decompression limits still in effect.
+- Show cyan outlines on textured ghosts. Large builds show the nearby part of the guide as you move around it.
+- Let Fast Place place walls and empty cauldrons. With a full hotbar, swap the selected stack into the needed item's inventory slot. In Creative, catalog placement can replace the selected stack and stores the displaced stack when inventory space is available.
+
+## 0.3.7
 
 - Update the WebAssembly runtime to Wasmtime 36.0.20. This includes fixes for [a Cranelift sandbox escape](https://github.com/bytecodealliance/wasmtime/security/advisories/GHSA-897f-g5gm-fmxm) and [unbounded host allocation](https://github.com/bytecodealliance/wasmtime/security/advisories/GHSA-6fr9-xmw9-5352).
 - Update Rustls, WebPKI and its certificate roots, Tokio, event-listener and rustix to patched versions.

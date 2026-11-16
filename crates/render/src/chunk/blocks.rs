@@ -30,6 +30,7 @@ struct Key {
     mirrored: bool,
     translucent: bool,
     tinted: bool,
+    outlined: bool,
 }
 struct Specialization;
 impl Specializer<RenderPipeline> for Specialization {
@@ -63,12 +64,11 @@ impl Specializer<RenderPipeline> for Specialization {
             depth.depth_compare = Some(CompareFunction::Always);
         }
         if key.tinted {
-            descriptor
-                .fragment
-                .as_mut()
-                .unwrap()
-                .shader_defs
-                .push("MOD_BLOCK_TINT".into());
+            let fragment = descriptor.fragment.as_mut().unwrap();
+            fragment.shader_defs.push("MOD_BLOCK_TINT".into());
+            if key.outlined {
+                fragment.shader_defs.push("MOD_BLOCK_OUTLINE".into());
+            }
             descriptor.layout.push(opacity_layout());
         }
         if key.translucent {
@@ -355,6 +355,7 @@ impl crate::pipeline_warmup::PrewarmPipelines for Pipelines {
                             mirrored,
                             translucent: false,
                             tinted: false,
+                            outlined: false,
                         };
                         for variants in &mut self.variants {
                             ids.push(variants.specialize(cache, key)?);

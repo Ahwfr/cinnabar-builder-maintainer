@@ -47,7 +47,7 @@ fn import_bytes(data: &[u8], name: String, ext: &str) -> Result<Schematic> {
         max_block_entities: blueprint::MAX_CELLS,
         max_nbt_depth: 32,
         max_nbt_string_bytes: 32 * 1024,
-        max_nbt_collection_items: 65_536,
+        max_nbt_collection_items: blueprint::MAX_CELLS * 2,
         max_nbt_nodes: 262_144,
     };
     let java = match ext {
@@ -123,7 +123,7 @@ fn import_bedrock(mut bytes: &[u8], name: String) -> Result<Schematic> {
         NbtReadLimits {
             max_depth: 32,
             max_string_bytes: 32 * 1024,
-            max_collection_items: 65_536,
+            max_collection_items: blueprint::MAX_CELLS,
             max_nodes: 262_144,
         },
     )

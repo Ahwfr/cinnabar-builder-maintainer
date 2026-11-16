@@ -20,8 +20,17 @@ fn camera_offset_clip(clip_from_world: mat4x4<f32>, camera: vec3<f32>, offset: v
 @if(MOD_BLOCK_TINT || MOD_BLOCK_OPACITY)
 @group(2) @binding(0) var<uniform> block_tint: vec4<f32>;
 
-fn apply_block_tint(colour: vec4<f32>) -> vec4<f32> {
-    @if(MOD_BLOCK_TINT)
+fn apply_block_tint(colour: vec4<f32>, world_position: vec3<f32>) -> vec4<f32> {
+    @if(MOD_BLOCK_TINT && MOD_BLOCK_OUTLINE) {
+        let fraction = fract(world_position);
+        let edge = min(fraction, vec3(1.0) - fraction);
+        // Two close boundaries form an edge. One close boundary is a face interior.
+        let distance_to_edge = min(max(edge.x, edge.y), min(max(edge.y, edge.z), max(edge.z, edge.x)));
+        let line = 1.0 - smoothstep(0.016, 0.035, distance_to_edge);
+        let shaded = mix(colour.rgb * block_tint.rgb, vec3(0.10, 0.67, 0.91), line);
+        return vec4(shaded, colour.a);
+    }
+    @if(MOD_BLOCK_TINT && !MOD_BLOCK_OUTLINE)
     return vec4(colour.rgb * block_tint.rgb, colour.a);
     @if(!MOD_BLOCK_TINT)
     return colour;

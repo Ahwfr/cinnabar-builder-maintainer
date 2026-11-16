@@ -559,7 +559,10 @@ impl cinnabar::extension::panel::Host for State {
             ));
         }
         self.controls.pending_interaction.client_settings = Some(section);
-        self.controls.pending_open = Some(false);
+        if self.controls.pending_interaction.client_settings.as_deref() != Some("schematic_import")
+        {
+            self.controls.pending_open = Some(false);
+        }
         Ok(Ok(()))
     }
     fn open(&mut self) -> Result<Result<(), String>> {

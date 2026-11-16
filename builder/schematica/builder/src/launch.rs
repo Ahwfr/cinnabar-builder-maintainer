@@ -44,7 +44,13 @@ fn library_payload(component: &[u8]) -> Result<Vec<u8>> {
         if let wasmparser::Payload::DataSection(data) = section? {
             for segment in data {
                 let segment = segment?;
-                for slot in segment.data.windows(blueprint::SLOT_BYTES) {
+                for (index, _) in segment
+                    .data
+                    .windows(blueprint::SLOT_MARKER.len())
+                    .enumerate()
+                    .filter(|(_, bytes)| *bytes == blueprint::SLOT_MARKER)
+                {
+                    let slot = &segment.data[index..];
                     if let Some(payload) = blueprint::embedded_payload(slot) {
                         blueprint::library(payload).map_err(anyhow::Error::msg)?;
                         ensure!(

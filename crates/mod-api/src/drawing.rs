@@ -19,6 +19,8 @@ pub const MAX_BLOCK_MUTATION_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_BLOCK_TRIANGLES: usize = 2 * 1024 * 1024;
 /// Submitted block triangles across an owner's placements.
 pub const MAX_BLOCK_DRAW_TRIANGLES: usize = MAX_BLOCK_TRIANGLES * 2;
+/// Optional voxel edge lines for tinted native block grids. Values of 0.5 or more enable them.
+pub const BLOCK_GRID_OUTLINE_PARAM: usize = 10;
 /// Packed terrain mesh bytes in one generation.
 pub const MAX_BLOCK_MESH_BYTES: usize = 128 * 1024 * 1024;
 /// GPU bytes for an owner's block arenas, orders and placement uniforms.

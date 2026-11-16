@@ -58,6 +58,22 @@ impl BuildInput {
     }
 }
 
+/// Resolves the cauldron's item-form stack even when Bedrock advertises no block runtime ID.
+pub(super) fn held_placement_block(
+    collisions: &PhysicsCollisionRegistries,
+    stream: &chunk_pipeline::WorldStream,
+    block_id: i32,
+    is_cauldron: impl FnOnce() -> bool,
+) -> Option<u32> {
+    held_block_store_id(stream, block_id).or_else(|| {
+        if is_cauldron() {
+            collisions.block_default_runtime_id(stream.network_id_mode(), "minecraft:cauldron")
+        } else {
+            None
+        }
+    })
+}
+
 /// Computes a proposal without sending packets, committing inventory or changing the world.
 fn prepare(
     player_runtime: &client_state::PlayerRuntime,
@@ -128,8 +144,14 @@ fn prepare(
         // Door and bed items are not block items; native `DoorItem` and `BedItem` place through
         // the item's own use and report the same success, which starts the repeat delay.
         let paired = paired_item_block(&context.collisions, stream, &observed.selection.item);
-        let placed_block = paired
-            .or_else(|| held_block_store_id(stream, observed.selection.item.block_runtime_id()));
+        let placed_block = paired.or_else(|| {
+            held_placement_block(
+                &context.collisions,
+                stream,
+                observed.selection.item.block_runtime_id(),
+                || identifier.as_deref() == Some("minecraft:cauldron"),
+            )
+        });
         let placement = (ready && caps.can_build && local_use != LocalUse::Interact)
             .then_some(placed_block)
             .flatten()

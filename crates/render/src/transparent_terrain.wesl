@@ -193,7 +193,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front_facing: bool) -> @loc
     let model_dy = dpdy(in.model_uv);
     if (in.routing.x != 0u) {
         // Packed liquid corners wind clockwise; this pipeline's front face is counter-clockwise.
-        return apply_block_tint(apply_block_opacity(shade_liquid(liquid_output(in), !front_facing, liquid_dx, liquid_dy)));
+        return apply_block_tint(apply_block_opacity(shade_liquid(liquid_output(in), !front_facing, liquid_dx, liquid_dy)), in.world_position);
     }
-    return apply_block_tint(apply_block_opacity(shade_blend(model_output(in), front_facing, model_dx, model_dy)));
+    return apply_block_tint(apply_block_opacity(shade_blend(model_output(in), front_facing, model_dx, model_dy)), in.world_position);
 }

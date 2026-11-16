@@ -86,6 +86,7 @@ fn portal_resources_preserve_outward_faces_under_a_mirrored_transform() {
         mirrored: true,
         translucent: false,
         tinted: false,
+        outlined: false,
     };
     for mut descriptor in pipeline::layouts::descriptors::build(false) {
         let original = descriptor.primitive.front_face;
@@ -114,6 +115,7 @@ fn block_opacity_blends_without_writing_world_depth() {
         mirrored: false,
         translucent: true,
         tinted: true,
+        outlined: true,
     };
     for mut descriptor in pipeline::layouts::descriptors::build(false) {
         Specialization.specialize(key, &mut descriptor).unwrap();
@@ -252,6 +254,7 @@ fn retained_additive_terrain_weights_straight_alpha_only_for_blended_variants() 
                 mirrored: false,
                 translucent: false,
                 tinted: false,
+                outlined: false,
             };
             for mut descriptor in pipeline::layouts::descriptors::build(false) {
                 let transparent = descriptor.fragment.as_ref().unwrap().targets[0]

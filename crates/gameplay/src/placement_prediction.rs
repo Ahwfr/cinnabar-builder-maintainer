@@ -6,7 +6,7 @@ use std::ops::Range;
 use assets::{
     NetworkIdMode,
     facts::{BlockStateIdentity as I, PlacementRule as R},
-    registry::BlockTraits as T,
+    registry::{BlockTraits as T, ModelFamily},
 };
 use sim::PaletteWorld;
 
@@ -158,6 +158,12 @@ pub fn predicted_placement(
             crate::placement_signs::sign_states(fact, canonical, context.input)
         {
             (name, states, false)
+        } else if fact.family == ModelFamily::Wall
+            || collisions.block_identifier(mode, held) == Some("minecraft:cauldron")
+        {
+            // The held state supplies the wall material or empty cauldron. Bedrock
+            // reconciles changes to wall arms and posts as neighboring blocks arrive.
+            (identity, original, false)
         } else {
             let states = attachment_states(fact, &original, context.input, support)
                 .or_else(|| {
