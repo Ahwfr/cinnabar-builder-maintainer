@@ -227,13 +227,19 @@ impl Tile {
         self.lo
     }
     pub(crate) fn is_missing(&self, world: [i32; 3]) -> bool {
+        self.status_at(world) == Some(CellStatus::Missing)
+    }
+
+    pub(crate) fn status_at(&self, world: [i32; 3]) -> Option<CellStatus> {
         if (0..3).any(|axis| world[axis] < self.lo[axis] || world[axis] >= self.hi[axis]) {
-            return false;
+            return None;
         }
         let [x, y, z] = [0, 1, 2].map(|axis| world[axis] - self.lo[axis]);
         let height = self.hi[1] - self.lo[1];
         let depth = self.hi[2] - self.lo[2];
-        self.statuses.get(((x * depth + z) * height + y) as usize) == Some(&CellStatus::Missing)
+        self.statuses
+            .get(((x * depth + z) * height + y) as usize)
+            .copied()
     }
 
     pub fn has_draws(&self) -> bool {

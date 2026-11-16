@@ -8,7 +8,7 @@ Choose **Import schematics** in the Schematica menu to add local files to the cu
 
 In Schematica Settings, cycle **Fast Place** between **Off**, **V1 Classic**, and **V2 Strict**. V2 uses real support faces and sends a placement only when it can predict the planned orientation.
 
-To paste a guide into a cheats-enabled world, be a Creative operator and allow Schematica's `setblock` and `fill` permissions in Mods. In Schematica Settings, choose **Paste build** and **Confirm paste**. The server validates the resulting commands. Paste preserves occupied cells and reports any unsupported state encodings.
+To paste a guide into a cheats-enabled world, be a Creative operator and allow Schematica's `setblock` and `fill` permissions in Mods. Open Schematica, choose **Paste build**, then **Confirm paste**. The server validates the resulting commands. Paste preserves occupied cells and reports any unsupported state encodings.
 
 Only the Windows package, exact source ZIP and documentation belong in a release. Profiles and compiler caches stay on your computer. The archive ZIP can be removed from your computer after extraction if you keep another backup.
 

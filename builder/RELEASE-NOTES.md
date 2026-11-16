@@ -1,4 +1,10 @@
-# Cinnabar Builder 0.3.9
+# Cinnabar Builder 0.3.10
+
+- Put Paste build on the main schematic screen and in Settings.
+- Both Fast Place modes look past the ghost enclosing the camera. Direct targeting can start before the preview finishes scanning.
+- Auto Orientation checks the planned stair or slab half first, tries a yaw-only correction before searching for another face, and can use an alternate valid support after inventory selection.
+
+## 0.3.9
 
 - In-game imports add files to the current library and preserve its existing entries and placement settings.
 - Fast Place cycles through Off, V1 Classic and V2 Strict. V2 aims beyond the ghost containing the eye and requires the predicted stair or slab half and orientation to match.

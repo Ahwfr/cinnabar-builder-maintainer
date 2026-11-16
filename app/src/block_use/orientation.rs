@@ -91,13 +91,34 @@ pub(super) fn correction(
         serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&expected.states)
             .ok()?;
     let stair = planned.contains_key("weirdo_direction");
+    let planned_upper = planned
+        .get("upside_down_bit")
+        .and_then(|property| property["value"].as_u64())
+        .map(|value| value == 1)
+        .or_else(|| {
+            planned.get("minecraft:vertical_half").and_then(|property| {
+                match property["value"].as_str()? {
+                    "top" => Some(true),
+                    "bottom" => Some(false),
+                    _ => None,
+                }
+            })
+        });
     let matches = |candidate: &FrozenBlockObservation, view: LocalViewPose| {
-        if stair {
-            let on_half_boundary =
-                candidate.target.face >= 2 && (candidate.target.relative_hit[1] - 0.5).abs() < 0.01;
-            if on_half_boundary || !stable_stair_yaw(view.rotation()) {
+        if let Some(want_upper) = planned_upper {
+            let [_, y, _] = candidate.target.relative_hit;
+            let upper = match candidate.target.face {
+                0 => true,
+                1 => false,
+                _ if (y - 0.5).abs() > 0.01 => y > 0.5,
+                _ => return false,
+            };
+            if upper != want_upper {
                 return false;
             }
+        }
+        if stair && !stable_stair_yaw(view.rotation()) {
+            return false;
         }
         let surroundings =
             use_surroundings(context, &world, candidate, state.position, state.sneaking);
@@ -130,11 +151,37 @@ pub(super) fn correction(
                     .is_some_and(|actual| matches_planned_state(&planned, actual))
         })
     };
-    if !bridge && matches(observed, *context.view) {
-        return None;
-    }
     let eye = Vec3::from_array(observed.ray.origin);
     let forward = Vec3::from_array(observed.ray.direction).try_normalize()?;
+    let mut view = *context.view;
+    if matches(observed, view) {
+        return bridge.then(|| {
+            PlacementAim::observed(
+                view.rotation(),
+                (
+                    observed.target.position,
+                    observed.target.face,
+                    observed.target.runtime_id,
+                ),
+                forward,
+            )
+        });
+    }
+    // Changing yaw alone is cheaper and more stable than finding a different support ray.
+    if let Some(rotation) = separate_facing(view.rotation(), |rotation| {
+        view.set_rotation(rotation);
+        matches(observed, view)
+    }) {
+        return Some(PlacementAim::observed(
+            rotation,
+            (
+                observed.target.position,
+                observed.target.face,
+                observed.target.runtime_id,
+            ),
+            forward,
+        ));
+    }
     let mut best = None;
     let mut best_dot = f32::NEG_INFINITY;
     let mut separate = None;
@@ -209,7 +256,7 @@ pub(super) fn correction(
         }
     }
     best.or(separate).or_else(|| {
-        if bridge {
+        if bridge || expected.strict_state {
             for face in 0..6 {
                 for height in [0.25, 0.75, 0.5] {
                     let Some(hit) = hidden_support_hit_at(&world, expected.position, face, height)
@@ -246,24 +293,7 @@ pub(super) fn correction(
                 }
             }
         }
-        let mut view = *context.view;
-        let rotation = if matches(observed, view) {
-            view.rotation()
-        } else {
-            separate_facing(view.rotation(), |rotation| {
-                view.set_rotation(rotation);
-                matches(observed, view)
-            })?
-        };
-        Some(PlacementAim::observed(
-            rotation,
-            (
-                observed.target.position,
-                observed.target.face,
-                observed.target.runtime_id,
-            ),
-            forward,
-        ))
+        None
     })
 }
 

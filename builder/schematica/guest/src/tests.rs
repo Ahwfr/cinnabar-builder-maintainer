@@ -1,5 +1,16 @@
 use super::*;
 
+#[test]
+fn looking_from_inside_a_ghost_starts_at_the_next_voxel() {
+    let mut crossed = Vec::new();
+    let chosen = next_guide_cell([0.1, 0.5, 0.5], [1.0, 0.0, 0.0], 6., |cell| {
+        crossed.push(cell);
+        cell == [2, 0, 0]
+    });
+    assert_eq!(chosen, Some([2, 0, 0]));
+    assert_eq!(crossed, [[1, 0, 0], [2, 0, 0]]);
+}
+
 pub(super) fn reference_viewer() -> Viewer {
     let entries = [
         ("minecraft:oak_planks", 104),

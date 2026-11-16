@@ -521,7 +521,12 @@ pub(super) fn resume(
         );
         return true;
     };
-    if pending.aim.is_none() && support(&observed) != pending.support {
+    if pending.aim.is_none()
+        && support(&observed) != pending.support
+        && (!pending.offer.correct_aim
+            || placement_cell(observed.target.position, observed.target.face)
+                != pending.offer.position)
+    {
         movement.end_placement_facing();
         bevy::log::info!(block = %pending.offer.name, "Fast Place support changed before placement");
         return true;

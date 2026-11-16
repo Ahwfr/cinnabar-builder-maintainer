@@ -571,13 +571,17 @@ impl Viewer {
             None
         };
         let native_cell = placement_cell.filter(|pos| self.planned_block(*pos).is_some());
-        let placement_cell = if self.options.fast_place && self.options.strict_place {
-            let eye_cell = self
-                .aim_ray()
-                .map(|(eye, _)| eye.map(|axis| axis.floor() as i32));
-            self.aimed_missing()
+        let eye_cell = self
+            .aim_ray()
+            .map(|(eye, _)| eye.map(|axis| axis.floor() as i32));
+        let inside_ghost = eye_cell
+            .is_some_and(|cell| self.planned_block(cell).is_some() && self.may_need_block(cell));
+        let placement_cell = if self.options.fast_place
+            && (self.options.strict_place || inside_ghost)
+        {
+            self.aimed_next_ghost()
                 .or_else(|| {
-                    native_cell.filter(|pos| Some(*pos) != eye_cell && self.is_missing(*pos))
+                    native_cell.filter(|pos| Some(*pos) != eye_cell && self.may_need_block(*pos))
                 })
                 .or_else(|| {
                     self.options
@@ -602,7 +606,7 @@ impl Viewer {
             let states = overlay::canonical(&block);
             let offer = if self.options.strict_place {
                 item_use::offer_strict_placement((x, y, z), &block.name, &states)
-            } else if self.options.correct_aim {
+            } else if self.options.correct_aim || inside_ghost {
                 item_use::offer_oriented_placement((x, y, z), &block.name, &states)
             } else {
                 item_use::offer_creative_placement((x, y, z), &block.name, &states)
@@ -849,21 +853,19 @@ impl Viewer {
         self.tiles.iter().any(|tile| tile.is_missing(pos))
     }
 
-    /// Start after the ghost containing the eye, and skip cells already built.
-    fn aimed_missing(&self) -> Option<[i32; 3]> {
+    fn may_need_block(&self, pos: [i32; 3]) -> bool {
+        use schematica_core::CellStatus;
+        matches!(
+            self.tiles.iter().find_map(|tile| tile.status_at(pos)),
+            None | Some(CellStatus::Missing | CellStatus::Unloaded)
+        )
+    }
+
+    fn aimed_next_ghost(&self) -> Option<[i32; 3]> {
         let (eye, forward) = self.aim_ray()?;
-        let mut previous = eye.map(|axis| axis.floor() as i32);
-        for step in 1..=96 {
-            let cell =
-                std::array::from_fn(|i| (eye[i] + forward[i] * (step as f32 / 16.)).floor() as i32);
-            if cell != previous {
-                previous = cell;
-                if self.planned_block(cell).is_some() && self.is_missing(cell) {
-                    return Some(cell);
-                }
-            }
-        }
-        None
+        next_guide_cell(eye, forward, 6., |cell| {
+            self.planned_block(cell).is_some() && self.may_need_block(cell)
+        })
     }
 
     /// Finds the nearest missing guide cell within the crosshair's placement area.
@@ -964,6 +966,52 @@ impl Viewer {
             .extend(self.tiles.drain(..).filter(Tile::has_draws));
         self.clear_retired();
         self.retired.is_empty()
+    }
+}
+
+/// Walk voxel crossings after the camera cell. The host validates current terrain and reach.
+fn next_guide_cell(
+    eye: [f32; 3],
+    ray: [f32; 3],
+    reach: f32,
+    mut accepts: impl FnMut([i32; 3]) -> bool,
+) -> Option<[i32; 3]> {
+    let mut cell = eye.map(|value| value.floor() as i32);
+    let steps = ray.map(|value| {
+        if value > 0. {
+            1
+        } else if value < 0. {
+            -1
+        } else {
+            0
+        }
+    });
+    let delta = ray.map(|value| {
+        if value == 0. {
+            f32::INFINITY
+        } else {
+            1. / value.abs()
+        }
+    });
+    let mut next: [f32; 3] = std::array::from_fn(|axis| match steps[axis] {
+        1 => (cell[axis] as f32 + 1. - eye[axis]) * delta[axis],
+        -1 => (eye[axis] - cell[axis] as f32) * delta[axis],
+        _ => f32::INFINITY,
+    });
+    loop {
+        let crossing = next[0].min(next[1]).min(next[2]);
+        if !crossing.is_finite() || crossing > reach {
+            return None;
+        }
+        for axis in 0..3 {
+            if next[axis] == crossing {
+                cell[axis] += steps[axis];
+                next[axis] += delta[axis];
+            }
+        }
+        if accepts(cell) {
+            return Some(cell);
+        }
     }
 }
 

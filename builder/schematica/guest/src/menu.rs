@@ -65,6 +65,21 @@ fn update(viewer: &Viewer) -> Result<(), String> {
         "No blueprint loaded".into()
     };
     out.insert("#blueprint".into(), json!(blueprint));
+    if matches!(
+        viewer.screen,
+        Screen::Main | Screen::Load | Screen::Settings
+    ) {
+        out.insert(
+            "#paste".into(),
+            json!(if viewer.paste.is_some() {
+                "Cancel paste"
+            } else if viewer.paste_confirm {
+                "Confirm paste"
+            } else {
+                "Paste build"
+            }),
+        );
+    }
     let revision = option_env!("SCHEMATICA_BUILD_REVISION").unwrap_or("local");
     out.insert(
         "#build".into(),
@@ -163,16 +178,6 @@ fn update(viewer: &Viewer) -> Result<(), String> {
                     }
                 } else {
                     "Off"
-                }),
-            );
-            out.insert(
-                "#paste".into(),
-                json!(if viewer.paste.is_some() {
-                    "Cancel paste"
-                } else if viewer.paste_confirm {
-                    "Confirm paste"
-                } else {
-                    "Paste build"
                 }),
             );
             out.insert(
