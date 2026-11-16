@@ -9,7 +9,7 @@ use {
     gameplay::mining::{creative_reach, survival_reach},
 };
 
-/// Finds a real support face within reach, including a hidden face adjoining the ghost.
+/// Finds a real support face within reach, or a verified empty target for V2.
 pub(super) fn observe_bridge_target(
     player: &client_state::PlayerRuntime,
     context: &BlockUseContext,
@@ -121,6 +121,47 @@ pub(super) fn observe_bridge_target(
                     best = Some(hit);
                     direction = Some(aim.to_array());
                 }
+            }
+            if best.is_none() && offer.strict_state {
+                let face = super::orientation::air_place_face(offer);
+                let mut point = offer.position.map(|coordinate| f64::from(coordinate) + 0.5);
+                let normal = placement_cell([0; 3], face);
+                for (axis, offset) in normal.into_iter().enumerate() {
+                    point[axis] += 0.5 * f64::from(offset);
+                }
+                if !gameplay::interaction_authority::pick_point_in_range(
+                    point.map(|axis| axis as f32),
+                    state.position,
+                    reach,
+                ) {
+                    return Ok(None);
+                }
+                let Some(primary) = world.primary_is_air(offer.position)? else {
+                    return Ok(None);
+                };
+                if !primary.value {
+                    return Ok(None);
+                }
+                let hit_world = sim::Vec3::new(point[0], point[1], point[2]);
+                let local = std::array::from_fn::<_, 3, _>(|axis| {
+                    point[axis] - f64::from(offer.position[axis])
+                });
+                let Some(aim) =
+                    (Vec3::from_array(point.map(|axis| axis as f32)) - eye_f32).try_normalize()
+                else {
+                    return Ok(None);
+                };
+                direction = Some(aim.to_array());
+                best = Some(sim::BlockHit {
+                    block_pos: offer.position,
+                    face,
+                    hit_local: sim::Vec3::new(local[0], local[1], local[2]),
+                    hit_world,
+                    runtime_id: stream.air_block_id(),
+                    distance: (hit_world - eye).length_squared().sqrt(),
+                    identity: primary.identity,
+                    overlay: None,
+                });
             }
             Ok(best)
         },

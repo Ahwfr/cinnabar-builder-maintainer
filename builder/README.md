@@ -24,8 +24,9 @@ Experimental bridging uses **Fast Place**, **Auto Orientation** and **Bridge
 assist** in Survival or Creative. Stand still, aim at a missing ghost adjoining
 a real block, and right-click once. Builder searches for a reachable support face
 and can use the block underfoot when the normal downward support pick allows it.
-An isolated ghost needs a support first. If no reachable face produces the
-planned orientation, move to another side. Server acceptance is unverified.
+V2 Strict can also place into an isolated air cell within normal reach, even
+without cheats. The server confirms the placement and inventory change. Some
+block types still need support because of their normal placement rules.
 
 Open **Schematica → Import schematics**. On the native Mods page, press **Import schematics…** and choose up to eight .schematic, .schem, .litematic or .mcstructure files. Conversion runs off the render thread. Successful imports replace the selection, back up the old component and reload enabled mods. Original input files remain in place. The checkout's **Import Schematics.cmd** also remains available.
 

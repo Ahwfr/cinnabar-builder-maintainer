@@ -232,8 +232,13 @@ pub(super) fn try_start(
         })
     };
     let selected = observed.selection.slot;
+    let use_air = offer.strict_state
+        && bridge
+        && observed.target.runtime_id == stream.air_block_id()
+        && observed.target.position == offer.position;
     if observed.target.face > 5
-        || placement_cell(observed.target.position, observed.target.face) != offer.position
+        || (!use_air
+            && placement_cell(observed.target.position, observed.target.face) != offer.position)
     {
         bevy::log::info!(
             ghost = ?offer.position,
@@ -591,11 +596,14 @@ pub(super) fn resume(
     } else {
         observed
     };
+    let use_air = observed.target.position == pending.offer.position
+        && observed.target.runtime_id == stream.air_block_id();
     runtime.forget_press_resolution();
     runtime.selection_changed(&observed.selection);
     let clock = RepeatClock::for_state(context.time.elapsed(), &state, Some(pending.game_mode));
     let mut build =
         build::BuildInput::new(observed, state, pending.trigger, clock.now, clock, view);
+    build.air_place = pending.bridge && pending.offer.strict_state && use_air;
     build.expected = Some(pending.offer);
     bevy::log::debug!(
         slot = pending.slot,

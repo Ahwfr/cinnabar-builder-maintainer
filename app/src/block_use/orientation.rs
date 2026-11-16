@@ -91,19 +91,7 @@ pub(super) fn correction(
         serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&expected.states)
             .ok()?;
     let stair = planned.contains_key("weirdo_direction");
-    let planned_upper = planned
-        .get("upside_down_bit")
-        .and_then(|property| property["value"].as_u64())
-        .map(|value| value == 1)
-        .or_else(|| {
-            planned.get("minecraft:vertical_half").and_then(|property| {
-                match property["value"].as_str()? {
-                    "top" => Some(true),
-                    "bottom" => Some(false),
-                    _ => None,
-                }
-            })
-        });
+    let planned_upper = planned_upper(&planned);
     let matches = |candidate: &FrozenBlockObservation, view: LocalViewPose| {
         if let Some(want_upper) = planned_upper {
             let [_, y, _] = candidate.target.relative_hit;
@@ -312,6 +300,40 @@ fn separate_facing(rotation: Quat, mut matches: impl FnMut(Quat) -> bool) -> Opt
         .into_iter()
         .map(|offset| Quat::from_euler(EulerRot::YXZ, cardinal + offset, pitch, 0.0))
         .find(|&candidate| matches(candidate))
+}
+
+/// Chooses a click face for Bedrock's replace-in-place transaction against air.
+pub(super) fn air_place_face(offer: &CreativePlacementOffer) -> u8 {
+    let Ok(planned) =
+        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&offer.states)
+    else {
+        return 1;
+    };
+    match planned
+        .get("pillar_axis")
+        .and_then(|state| state["value"].as_str())
+    {
+        Some("x") => 5,
+        Some("z") => 3,
+        _ if planned_upper(&planned) == Some(true) => 0,
+        _ => 1,
+    }
+}
+
+fn planned_upper(planned: &serde_json::Map<String, serde_json::Value>) -> Option<bool> {
+    planned
+        .get("upside_down_bit")
+        .and_then(|property| property["value"].as_u64())
+        .map(|value| value == 1)
+        .or_else(|| {
+            planned.get("minecraft:vertical_half").and_then(|property| {
+                match property["value"].as_str()? {
+                    "top" => Some(true),
+                    "bottom" => Some(false),
+                    _ => None,
+                }
+            })
+        })
 }
 
 /// Imported schematics can omit properties which Bedrock derives from neighbors.

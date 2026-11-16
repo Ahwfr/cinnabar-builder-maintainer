@@ -15,6 +15,7 @@ pub(crate) struct BuildInput {
     pub clock: RepeatClock,
     view: LocalViewPose,
     pub(super) expected: Option<mod_host::CreativePlacementOffer>,
+    pub(super) air_place: bool,
 }
 
 /// A proposal freezes selection, placement and inventory effects before its first send.
@@ -54,6 +55,7 @@ impl BuildInput {
             clock,
             view,
             expected: None,
+            air_place: false,
         }
     }
 }
@@ -323,12 +325,15 @@ fn prepare(
         .0;
     let block_network_id = stream.block_network_id(observed.target.runtime_id)?;
     let legacy_request_id = protocol::next_legacy_request_id()?;
-    let change = (local_use == LocalUse::Place && game_mode != Some(PlayerGameMode::Creative))
-        .then(|| {
-            runtime
-                .inventory
-                .prepare_change(&observed.selection, legacy_request_id)
-        });
+    // For an air click the server owns both the block and the Survival inventory update.
+    let change = (!attempt.air_place
+        && local_use == LocalUse::Place
+        && game_mode != Some(PlayerGameMode::Creative))
+    .then(|| {
+        runtime
+            .inventory
+            .prepare_change(&observed.selection, legacy_request_id)
+    });
     attempt.observed = observed;
     Some(sim::CollisionQuery {
         identity,
@@ -407,9 +412,7 @@ pub(crate) fn advance(
     if !runtime.may_attempt(tick, plan.local_use, target, swings) {
         return false;
     }
-    let start_destination = runtime
-        .last_success_destination()
-        .is_none()
+    let start_destination = (!attempt.air_place && runtime.last_success_destination().is_none())
         .then_some(plan.destination);
     let mut before_swing = swings.clone();
     let packets = use_packets(
@@ -540,7 +543,7 @@ pub(crate) fn advance(
     }
     // Vanilla places locally as it sends; a correction replaces the prediction.
     if let (true, Some(cells), Some(stream)) = (
-        sent,
+        sent && !attempt.air_place,
         plan.predicted.as_ref(),
         context.client_world.stream.as_mut(),
     ) {

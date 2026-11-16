@@ -6,7 +6,7 @@ For the next release, close Builder and extract the new package into the same fo
 
 Choose **Import schematics** in the Schematica menu to add local files to the current library. The library supports up to eight entries. The importer reads local files with bounded size and decoding limits. Original input files remain in place.
 
-In Schematica Settings, cycle **Fast Place** between **Off**, **V1 Classic**, and **V2 Strict**. V2 uses real support faces and sends a placement only when it can predict the planned orientation.
+In Schematica Settings, cycle **Fast Place** between **Off**, **V1 Classic**, and **V2 Strict**. V2 can fill an empty cell within reach using normal Bedrock placement packets, including when there is no usable support face. It only sends a placement it predicts will match the plan.
 
 To paste a guide into a cheats-enabled world, be a Creative operator and allow Schematica's `setblock` and `fill` permissions in Mods. Open Schematica, choose **Paste build**, then **Confirm paste**. The server validates the resulting commands. Paste preserves occupied cells and reports any unsupported state encodings.
 
