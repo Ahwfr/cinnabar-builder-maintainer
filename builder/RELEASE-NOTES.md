@@ -2,7 +2,7 @@
 
 - Count the visible Materials rows across frames so opening the tab stays within the mod callback budget.
 - Resolve door items for Fast Place and let either ghost half select the lower placement cell.
-- Try direct V2 air clicks for gates and bottom trapdoors when the surrounding support cannot produce the planned state. Upper slabs, upside-down stairs, and upper trapdoors use a real support face because stock Bedrock places their lower variant on an air click.
+- Correct the predicted facing of fence gates. Try direct V2 air clicks for gates and bottom trapdoors when the surrounding support cannot produce the planned state. Upper slabs, upside-down stairs, and upper trapdoors use a real support face because stock Bedrock places their lower variant on an air click.
 
 ## 0.3.20
 

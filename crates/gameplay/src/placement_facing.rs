@@ -83,7 +83,7 @@ pub(crate) fn named_states(
             )?;
         }
         name if name.starts_with("minecraft:") && name.ends_with("fence_gate") => {
-            let direction = ["south", "west", "north", "east"][yaw_quadrant(yaw)?];
+            let direction = ["north", "east", "south", "west"][yaw_quadrant(yaw)?];
             set_value(
                 &mut states,
                 "minecraft:cardinal_direction",
