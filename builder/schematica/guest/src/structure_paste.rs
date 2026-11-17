@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 const EDGE: i32 = 8;
 // Stock BDS accepts 440-byte script commands and disconnects on larger payloads.
-const FRAGMENT: usize = 400;
+const FRAGMENT: usize = 399;
 const PREFIX: &str = "/scriptevent cinnamatica:structure";
 
 pub(super) struct StructurePaste {
