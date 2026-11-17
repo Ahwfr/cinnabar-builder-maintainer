@@ -65,6 +65,13 @@ pub struct BlockEdit {
     pub cell: BlockCell,
 }
 
+#[derive(Debug)]
+struct MeshPalette {
+    air: u32,
+    ids: Vec<u32>,
+    pane_links: Vec<(u32, u8)>,
+}
+
 /// One immutable section's original terrain streams and grid-local origin.
 #[derive(Debug, PartialEq, Eq)]
 pub struct BlockSection {
@@ -104,6 +111,7 @@ pub struct BlockGeometry {
     render_ready: AtomicBool,
     remote: OnceLock<Result<(), ErrorCode>>,
     context: OnceLock<MeshContext>,
+    palette: OnceLock<Arc<MeshPalette>>,
     previous: Option<Arc<BlockMesh>>,
     dirty: Option<BTreeSet<[i32; 3]>>,
 }
@@ -176,10 +184,14 @@ impl BlockGeometry {
         named: impl Fn(&str, &str) -> Option<u32>,
         settings: meshing::MeshRenderSettings,
     ) -> Result<BlockMesh, DrawError> {
+        if self.palette.get().is_none() {
+            let palette = self.grid.resolve_palette(assets, mode, named)?;
+            let _ = self.palette.set(Arc::new(palette));
+        }
         self.grid.mesh_changed(
             assets,
             mode,
-            named,
+            self.palette.get().expect("resolved palette"),
             settings,
             self.previous.as_deref(),
             self.dirty.as_ref(),
@@ -282,6 +294,7 @@ impl BlockGrid {
                 render_ready: AtomicBool::new(false),
                 remote: OnceLock::new(),
                 context: OnceLock::new(),
+                palette: OnceLock::new(),
                 previous: None,
                 dirty: None,
             })),
@@ -304,19 +317,16 @@ impl BlockGrid {
         named: impl Fn(&str, &str) -> Option<u32>,
         settings: meshing::MeshRenderSettings,
     ) -> Result<BlockMesh, DrawError> {
-        self.mesh_changed(assets, mode, named, settings, None, None)
+        let palette = self.resolve_palette(assets, mode, named)?;
+        self.mesh_changed(assets, mode, &palette, settings, None, None)
     }
 
-    /// Reuses immutable section streams outside the complete edit dependency set.
-    fn mesh_changed(
+    fn resolve_palette(
         &self,
         assets: &RuntimeAssets,
         mode: NetworkIdMode,
         named: impl Fn(&str, &str) -> Option<u32>,
-        settings: meshing::MeshRenderSettings,
-        previous: Option<&BlockMesh>,
-        dirty: Option<&BTreeSet<[i32; 3]>>,
-    ) -> Result<BlockMesh, DrawError> {
+    ) -> Result<MeshPalette, DrawError> {
         let air = assets
             .air_network_id(mode)
             .ok_or(error(ErrorCode::Unsupported, "terrain registry"))?;
@@ -346,14 +356,34 @@ impl BlockGrid {
                     .map(|mask| (id, mask))
             })
             .collect();
-        let mut sections = BTreeMap::new();
+        Ok(MeshPalette {
+            air,
+            ids: palette,
+            pane_links,
+        })
+    }
+
+    /// Reuses immutable section streams outside the complete edit dependency set.
+    fn mesh_changed(
+        &self,
+        assets: &RuntimeAssets,
+        mode: NetworkIdMode,
+        palette: &MeshPalette,
+        settings: meshing::MeshRenderSettings,
+        previous: Option<&BlockMesh>,
+        dirty: Option<&BTreeSet<[i32; 3]>>,
+    ) -> Result<BlockMesh, DrawError> {
         let counts = self
             .size
             .map(|v| v.div_ceil(world::SUB_CHUNK_SIDE as u32) as i32);
-        for x in 0..counts[0] {
-            for z in 0..counts[2] {
-                for y in 0..counts[1] {
-                    let origin = [x, y, z].map(|v| v * world::SUB_CHUNK_SIDE as i32);
+        let keys = (0..counts[0])
+            .flat_map(|x| (0..counts[2]).flat_map(move |z| (0..counts[1]).map(move |y| [x, y, z])));
+        let section_origin = |key: [i32; 3]| key.map(|v| v * world::SUB_CHUNK_SIDE as i32);
+        let mut sections = BTreeMap::new();
+        let prepare = |sections: &mut BTreeMap<_, _>, key: [i32; 3]| {
+            if (0..3).all(|axis| (0..counts[axis]).contains(&key[axis])) {
+                sections.entry(key).or_insert_with(|| {
+                    let origin = section_origin(key);
                     let ids = std::array::from_fn(|index| {
                         let local = [
                             (index >> 8) as i32,
@@ -361,27 +391,28 @@ impl BlockGrid {
                             ((index >> 4) & 15) as i32,
                         ];
                         self.cell(std::array::from_fn(|axis| origin[axis] + local[axis]))
-                            .map_or(air, |cell| palette[cell.palette as usize])
+                            .map_or(palette.air, |cell| palette.ids[cell.palette as usize])
                     });
-                    sections.insert([x, y, z], world::SubChunk::from_runtime_ids(&ids));
-                }
+                    world::SubChunk::from_runtime_ids(&ids)
+                });
             }
-        }
+        };
+        let previous: BTreeMap<_, _> = previous
+            .into_iter()
+            .flat_map(|mesh| &mesh.sections)
+            .map(|section| (section.origin, section))
+            .collect();
+        let classifier = meshing::BlockClassifier::new(palette.air);
         let mut result = BlockMesh {
             sections: Vec::new(),
             triangles: 0,
             bytes: 0,
         };
         let bounds = meshing::MeshOutputBounds::new(assets);
-        for (&key, section) in &sections {
-            if bounds.for_sub_chunk(section, assets, mode) > MAX_BLOCK_MESH_BYTES as u64 {
-                return Err(error(ErrorCode::BudgetExceeded, "block section mesh"));
-            }
-            let origin = key.map(|v| v * world::SUB_CHUNK_SIDE as i32);
+        for key in keys {
+            let origin = section_origin(key);
             if dirty.is_some_and(|dirty| !dirty.contains(&key)) {
-                if let Some(old) = previous
-                    .and_then(|old| old.sections.iter().find(|section| section.origin == origin))
-                {
+                if let Some(old) = previous.get(&origin) {
                     result.triangles += triangles(&old.mesh);
                     result.bytes += meshing::chunk_publication_byte_len(
                         &old.mesh,
@@ -391,10 +422,38 @@ impl BlockGrid {
                 }
                 continue;
             }
-            let mut neighbours = world::MeshNeighbourhood::new(section).with_block_origin(origin);
-            for above in key[1] + 2..counts[1] {
-                if let Some(upper) = sections.get(&[key[0], above, key[2]]) {
-                    neighbours.insert_column_above(above - key[1], upper);
+
+            // Decode source voxels only for changed sections and their dependencies.
+            // Unchanged sections retain their compiled terrain streams.
+            prepare(&mut sections, key);
+            let section = &sections[&key];
+            if bounds.for_sub_chunk(section, assets, mode) > MAX_BLOCK_MESH_BYTES as u64 {
+                return Err(error(ErrorCode::BudgetExceeded, "block section mesh"));
+            }
+            if section.storages()[0].palette().values() == [palette.air] {
+                continue;
+            }
+            let seasonal =
+                meshing::lighting::mesh_dependency_mask(&classifier, assets, mode, section)
+                    .seasonal_foliage;
+            for x in -1..=1 {
+                for y in -1..=1 {
+                    for z in -1..=1 {
+                        prepare(&mut sections, [key[0] + x, key[1] + y, key[2] + z]);
+                    }
+                }
+            }
+            if seasonal {
+                for above in key[1] + 2..counts[1] {
+                    prepare(&mut sections, [key[0], above, key[2]]);
+                }
+            }
+            let mut neighbours =
+                world::MeshNeighbourhood::new(&sections[&key]).with_block_origin(origin);
+            if seasonal {
+                for above in key[1] + 2..counts[1] {
+                    neighbours
+                        .insert_column_above(above - key[1], &sections[&[key[0], above, key[2]]]);
                 }
             }
             for x in -1..=1 {
@@ -418,14 +477,14 @@ impl BlockGrid {
                 .expect("admitted light")
             };
             let mesh = meshing::mesh_sub_chunk_in_neighbourhood_with_options(
-                &meshing::BlockClassifier::new(air),
+                &classifier,
                 assets,
                 mode,
                 &neighbours,
                 &light,
                 meshing::MeshOptions {
                     rendering: settings,
-                    pane_links: &pane_links,
+                    pane_links: &palette.pane_links,
                     ..Default::default()
                 },
             );
@@ -534,6 +593,9 @@ impl super::Store {
             && let Some(context) = block.context.get()
         {
             let _ = request.context.set(context.clone());
+            if let Some(palette) = block.palette.get() {
+                let _ = request.palette.set(Arc::clone(palette));
+            }
             request.dirty = previous.as_ref().map(|_| dirty);
             request.previous = previous;
         }

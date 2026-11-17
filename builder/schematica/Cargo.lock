@@ -934,7 +934,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "schematica-builder"
-version = "0.3.23"
+version = "0.3.24"
 dependencies = [
  "anyhow",
  "nucleation",
@@ -952,7 +952,7 @@ version = "0.1.0"
 
 [[package]]
 name = "schematica-guest"
-version = "0.3.23"
+version = "0.3.24"
 dependencies = [
  "schematica-core",
  "serde_json",
@@ -1175,7 +1175,7 @@ dependencies = [
 
 [[package]]
 name = "tracing-subscriber"
-version = "0.3.23"
+version = "0.3.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb7f578e5945fb242538965c2d0b04418d38ec25c79d160cd279bf0731c8d319"
 dependencies = [

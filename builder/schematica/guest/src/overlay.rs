@@ -10,7 +10,6 @@ const WINDOW_TILES: i32 = 5;
 const DEFAULT_LIGHT: u32 = 0xffff0000;
 // Lowering triangle vertices to WASM host calls dominates dense mismatch tiles.
 // The verifier and material counts still track every cell.
-const MAX_TILE_MARKERS: usize = 12;
 
 #[derive(Default)]
 pub struct Preview {
@@ -219,6 +218,7 @@ pub struct Tile {
     markers: Option<DrawPair>,
     blocks: Option<DrawPair>,
     pending_frames: u8,
+    pub(super) ghost_dirty: bool,
     grid_palette: Vec<u32>,
     grid_cells: Vec<u32>,
 }
@@ -231,6 +231,7 @@ pub struct WholeGhost {
     hidden: Vec<bool>,
     changes: BTreeMap<[u32; 3], u32>,
     pair: Option<DrawPair>,
+    retiring: Option<DrawPair>,
     pub failed: bool,
     pub error: Option<String>,
 }
@@ -240,7 +241,20 @@ impl WholeGhost {
         if let Some(pair) = self.pair.take() {
             pair.remove();
         }
+        if let Some(pair) = self.retiring.take() {
+            pair.remove();
+        }
         *self = Self::default();
+    }
+
+    pub(super) fn restart(&mut self, retain: bool) {
+        if !retain {
+            self.clear();
+            return;
+        }
+        let previous = self.retiring.take().or_else(|| self.pair.take());
+        self.clear();
+        self.retiring = previous;
     }
 
     pub fn active(&self) -> bool {
@@ -255,7 +269,15 @@ impl WholeGhost {
         opacity: f32,
     ) -> bool {
         if let Some(pair) = &mut self.pair {
-            pair.set_opacity(opacity);
+            if self.retiring.is_none() {
+                pair.set_opacity(opacity);
+            } else if matches!(
+                draw::geometry_status(pair.geometry),
+                Ok(draw::GeometryState::Ready)
+            ) && pair.set_opacity(opacity)
+            {
+                self.retiring.take().unwrap().remove();
+            }
             return true;
         }
         if self.failed {
@@ -267,8 +289,11 @@ impl WholeGhost {
         let volume = sx * sy * sz;
         if self.packed.len() < volume {
             self.packed.reserve_exact(volume - self.packed.len());
-            let end = (self.packed.len() + 1024).min(volume);
+            let end = (self.packed.len() + 4096).min(volume);
             for index in self.packed.len()..end {
+                if index % 128 == 0 && budget::remaining_fuel() < 450_000 {
+                    break;
+                }
                 let [x, y, z] = [index / (sy * sz), index % sy, index / sy % sz];
                 let world = [lo[0] + x as i32, lo[1] + y as i32, lo[2] + z as i32];
                 let local = placement.world_to_local(schematic.size(), world).unwrap();
@@ -304,13 +329,16 @@ impl WholeGhost {
                 dimension,
                 position: lo.into(),
             },
-            opacity,
+            if self.retiring.is_some() { 0. } else { opacity },
         ) {
             Ok(pair) => {
                 self.hidden = vec![false; volume];
                 self.pair = Some(pair);
             }
             Err(error) => {
+                if let Some(previous) = self.retiring.take() {
+                    previous.remove();
+                }
                 self.failed = true;
                 self.error = Some(error.detail);
             }
@@ -395,14 +423,17 @@ pub(super) struct DrawPair {
 }
 
 impl DrawPair {
-    fn set_opacity(&mut self, opacity: f32) {
-        if self.placement.tint.3 != opacity {
-            let mut changed = self.placement.clone();
-            changed.tint.3 = opacity;
-            if draw::update(self.instance, &changed).is_ok() {
-                self.placement = changed;
-            }
+    fn set_opacity(&mut self, opacity: f32) -> bool {
+        if self.placement.tint.3 == opacity {
+            return true;
         }
+        let mut changed = self.placement.clone();
+        changed.tint.3 = opacity;
+        if draw::update(self.instance, &changed).is_err() {
+            return false;
+        }
+        self.placement = changed;
+        true
     }
 
     pub(super) fn remove(self) {
@@ -606,16 +637,13 @@ impl Tile {
         self.grid_palette = used_palette;
         self.error = None;
         self.mismatches.clear();
-        if let Some(pair) = self.markers.take() {
-            pair.remove();
-        }
+        self.ghost_dirty = true;
         let mut cells = Vec::with_capacity(volume);
         let mut highlights = draw::Mesh {
             vertices: Vec::new(),
             indices: Vec::new(),
         };
         let mut used_texture = false;
-        let mut marker_count = 0;
         let mut materials = vec![[0; 3]; preview.palette.len()];
         let mut tally = Tally::default();
         for x in 0..sx {
@@ -648,11 +676,15 @@ impl Tile {
                                 Some((0.16, 0.60, 0.94, 0.30))
                             }
                         }
-                        CellStatus::Wrong | CellStatus::WrongState => {
+                        CellStatus::Wrong => {
                             materials[id][0] += 1;
-                            Some((1., 0.7, 0.08, 0.52))
+                            Some((1., 0.22, 0.42, 0.44))
                         }
-                        CellStatus::Extra => Some((1., 0.15, 0.12, 0.48)),
+                        CellStatus::WrongState => {
+                            materials[id][0] += 1;
+                            Some((1., 0.69, 0.08, 0.42))
+                        }
+                        CellStatus::Extra => Some((0.98, 0.14, 0.17, 0.40)),
                         CellStatus::Correct if !air && !ignored => {
                             materials[id][1] += 1;
                             None
@@ -660,12 +692,10 @@ impl Tile {
                         _ => None,
                     };
                     cells.push(word);
-                    if let Some(color) = color
-                        && marker_count < MAX_TILE_MARKERS
-                        && budget::remaining_fuel() >= 350_000
-                    {
-                        add_box(&mut highlights, [x, y, z], color);
-                        marker_count += 1;
+                    if let Some(color) = color {
+                        let exposed =
+                            exposed_marker_faces([x, y, z], [sx, sy, sz], &statuses, status);
+                        add_box(&mut highlights, [x, y, z], color, exposed);
                     }
                 }
             }
@@ -677,9 +707,15 @@ impl Tile {
         };
         if !highlights.vertices.is_empty() {
             match create(draw::GeometrySpec::Triangles(highlights), anchor, 1.) {
-                Ok(pair) => self.markers = Some(pair),
+                Ok(pair) => {
+                    if let Some(previous) = self.markers.replace(pair) {
+                        previous.remove();
+                    }
+                }
                 Err(e) => self.error = Some(format!("Overlay: {}", e.detail)),
             }
+        } else if let Some(previous) = self.markers.take() {
+            previous.remove();
         }
         if let Some(opacity) = opacity.filter(|_| used_texture) {
             if let Some(pair) = &self.blocks {
@@ -948,7 +984,7 @@ fn create(
             scale: (1., 1., 1.),
         },
         tint: if textured {
-            (0.24, 0.74, 1., opacity)
+            (0.58, 0.82, 1., opacity)
         } else {
             (1., 1., 1., opacity)
         },
@@ -988,7 +1024,39 @@ fn create(
     }
 }
 
-fn add_box(mesh: &mut draw::Mesh, [x, y, z]: [i32; 3], color: (f32, f32, f32, f32)) {
+// Same-status neighbors share no inner overlay surface.
+const MARKER_NEIGHBORS: [[i32; 3]; 6] = [
+    [0, 0, -1],
+    [0, 0, 1],
+    [-1, 0, 0],
+    [1, 0, 0],
+    [0, -1, 0],
+    [0, 1, 0],
+];
+
+fn exposed_marker_faces(
+    position: [i32; 3],
+    size: [i32; 3],
+    statuses: &[CellStatus],
+    status: CellStatus,
+) -> u8 {
+    let [_, sy, sz] = size;
+    MARKER_NEIGHBORS
+        .iter()
+        .enumerate()
+        .fold(0, |faces, (face, delta)| {
+            let neighbor: [i32; 3] = std::array::from_fn(|i| position[i] + delta[i]);
+            let covered = (0..3).all(|i| (0..size[i]).contains(&neighbor[i]))
+                && statuses[((neighbor[0] * sz + neighbor[2]) * sy + neighbor[1]) as usize]
+                    == status;
+            if covered { faces } else { faces | (1 << face) }
+        })
+}
+
+fn add_box(mesh: &mut draw::Mesh, [x, y, z]: [i32; 3], color: (f32, f32, f32, f32), faces: u8) {
+    if faces == 0 {
+        return;
+    }
     let base = mesh.vertices.len() as u32;
     let extent = [-0.015, 1.015];
     for dz in extent {
@@ -1007,7 +1075,11 @@ fn add_box(mesh: &mut draw::Mesh, [x, y, z]: [i32; 3], color: (f32, f32, f32, f3
         0, 2, 1, 1, 2, 3, 4, 5, 6, 5, 7, 6, 0, 4, 2, 2, 4, 6, 1, 3, 5, 3, 7, 5, 0, 1, 4, 1, 5, 4,
         2, 6, 3, 3, 6, 7,
     ];
-    mesh.indices.extend(triangles.map(|i| base + i));
+    for (face, indices) in triangles.chunks_exact(6).enumerate() {
+        if faces & (1 << face) != 0 {
+            mesh.indices.extend(indices.iter().map(|i| base + i));
+        }
+    }
 }
 
 #[cfg(test)]

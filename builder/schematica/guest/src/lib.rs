@@ -774,9 +774,10 @@ impl Viewer {
                     whole,
                 );
                 changed = updated;
-                if updated && whole && budget::remaining_fuel() >= 225_000 {
+                if self.tiles[index].ghost_dirty && whole && budget::remaining_fuel() >= 225_000 {
                     self.whole
                         .compare_tile(&self.preview, &self.schematic, &self.tiles[index]);
+                    self.tiles[index].ghost_dirty = false;
                 }
                 if advance && index == self.cursor {
                     self.cursor = (self.cursor + 1) % self.tiles.len();
@@ -1083,7 +1084,9 @@ impl Viewer {
     }
 
     fn rebuild(&mut self) {
-        self.whole.clear();
+        self.whole.restart(
+            self.placement.is_some() && self.shown && self.render_all && self.options.textured,
+        );
         self.nearby_aim = None;
         self.layer_counts.clear();
         self.layer_count_cursor = 0;

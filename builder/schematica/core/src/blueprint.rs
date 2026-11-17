@@ -1,13 +1,14 @@
 use crate::{BlockState, Schematic, StateValue};
 
 pub const MAX_EDGE: i32 = 128;
-pub const MAX_CELLS: usize = 100_000;
+pub const MAX_CELLS: usize = 400_000;
 const MAX_PALETTE: usize = 1024;
 const PALETTE_BYTES: usize = 32 * 1024;
 pub const SLOT_MARKER: &[u8] = b"schematica:embedded-library:v4\x00";
 const PAYLOAD_BYTES: usize = 2 * MAX_CELLS + PALETTE_BYTES;
 pub const MAX_LIBRARY: usize = 8;
-const LIBRARY_BYTES: usize = 13 + MAX_LIBRARY * (4 + PAYLOAD_BYTES);
+// Keep the component slot and aggregate memory budget compatible with existing libraries.
+const LIBRARY_BYTES: usize = 13 + MAX_LIBRARY * (4 + 200_000 + PALETTE_BYTES);
 pub const SLOT_BYTES: usize = SLOT_MARKER.len() + 4 + LIBRARY_BYTES;
 
 pub const fn empty_slot() -> [u8; SLOT_BYTES] {
@@ -33,6 +34,9 @@ pub fn encode_library(blueprints: &[Vec<u8>]) -> Result<Vec<u8>, String> {
         }
         bytes.extend((payload.len() as u32).to_le_bytes());
         bytes.extend(payload);
+    }
+    if bytes.len() + 8 > LIBRARY_BYTES {
+        return Err("schematic library is full by size; remove an entry before importing".into());
     }
     Ok(bytes)
 }
