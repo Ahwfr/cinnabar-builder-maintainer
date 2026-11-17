@@ -1,4 +1,9 @@
-# Cinnamatica 0.3.18
+# Cinnamatica 0.3.19
+
+- Add a Placement lock toggle under Cinnamatica Settings. With Fast Place enabled and the guide visible, it prevents ordinary block placement from falling through to an unrelated cell. V1 and V2 retain their separate placement behavior.
+- Keep the previous ghost mesh on screen until the replacement is ready to draw after a block edit.
+
+## 0.3.18
 
 - Publish the entire textured guide in a single retained native mesh. Local world comparisons still update individual cells.
 - Retry opening menus in fresh callbacks when the frame that prepares a panel is time-sliced.

@@ -178,6 +178,11 @@ impl Viewer {
                 menu::prepare(self);
                 return;
             }
+            "placement-lock" => {
+                self.options.placement_lock = !self.options.placement_lock;
+                self.options.save();
+                return;
+            }
             "hold-place" => {
                 self.options.hold_place = !self.options.hold_place;
                 self.options.save();

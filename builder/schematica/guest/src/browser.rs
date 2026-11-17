@@ -54,8 +54,9 @@ impl Tab {
 }
 
 /// The Settings tab's switches: option key and title. Controls are named `bw-set-<key>`.
-const SETTINGS: [(&str, &str); 9] = [
+const SETTINGS: [(&str, &str); 10] = [
     ("hold-place", "Hold to place"),
+    ("placement-lock", "Placement lock"),
     ("look", "Textured ghost blocks"),
     ("assist", "Target info"),
     ("remember-placement", "Remember positions"),
@@ -892,6 +893,7 @@ impl Viewer {
             "paste-destroy" => options.paste_destroy,
             "fast-place" => options.fast_place,
             "hold-place" => options.hold_place,
+            "placement-lock" => options.placement_lock,
             "correct-aim" => options.correct_aim,
             "bridge-place" => options.bridge_place,
             "auto-layer" => options.auto_layer,

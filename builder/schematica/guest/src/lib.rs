@@ -58,12 +58,13 @@ mod saved_placements;
 thread_local! {
     static OPEN_AFTER_LOAD: Cell<bool> = const { Cell::new(false) };
     static RUNTIME: RefCell<(Runtime, Vec<&'static [u8]>, Options, Option<usize>)> =
-        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, auto_layer: true, paste_destroy: false, textured: true, assist: false, fast_place: false, strict_place: false, correct_aim: false, fullscreen_ui: true, bridge_place: true, opacity: 65, hotkeys: BTreeMap::new(), library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new() }, None)) };
+        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, textured: true, assist: false, fast_place: false, strict_place: false, correct_aim: false, fullscreen_ui: true, bridge_place: true, opacity: 65, hotkeys: BTreeMap::new(), library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new() }, None)) };
 }
 
 #[derive(Clone)]
 struct Options {
     hold_place: bool,
+    placement_lock: bool,
     auto_layer: bool,
     paste_destroy: bool,
     textured: bool,
@@ -92,6 +93,7 @@ impl Options {
                 "textured":self.textured, "assist":self.assist, "fast_place": self.fast_place,
                 "correct_aim": self.correct_aim,
                 "strict_place": self.strict_place,
+                "placement_lock": self.placement_lock,
                 "fullscreen_ui": self.fullscreen_ui, "bridge_place": self.bridge_place,
                 "remember_placement": self.remember_placement, "saved_placements": self.saved_placements,
                 "opacity": self.opacity, "hotkeys": self.hotkeys,
@@ -133,6 +135,7 @@ impl Guest for Schematica {
                 options.assist = value["assist"].as_bool().unwrap_or(options.assist);
                 options.fast_place = value["fast_place"].as_bool().unwrap_or(options.fast_place);
                 options.strict_place = value["strict_place"].as_bool().unwrap_or(false);
+                options.placement_lock = value["placement_lock"].as_bool().unwrap_or(false);
                 options.correct_aim = value["correct_aim"]
                     .as_bool()
                     .unwrap_or(options.correct_aim);
@@ -648,6 +651,14 @@ impl Viewer {
             }
             self.menu_armed = false;
             return;
+        }
+        if self.options.placement_lock
+            && self.options.fast_place
+            && self.shown
+            && self.render_all
+            && self.placement.is_some()
+        {
+            let _ = item_use::set_placement_lock(true);
         }
         self.paste_confirm = false;
         if self.paste_step() {
