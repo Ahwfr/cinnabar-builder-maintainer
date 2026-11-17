@@ -15,6 +15,7 @@ use std::time::Duration;
 #[derive(Resource, Default)]
 pub(crate) struct CreativePlacement {
     pub offer: Option<CreativePlacementOffer>,
+    pub locked: bool,
     pending: Option<Pending>,
 }
 

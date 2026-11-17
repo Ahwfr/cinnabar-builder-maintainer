@@ -6,6 +6,8 @@ use anyhow::{Result, bail};
 pub(super) struct ItemUsePolicy {
     pending_pulse: bool,
     pending_placement: Option<crate::CreativePlacementOffer>,
+    pending_lock: bool,
+    pub locked: bool,
     writes: u32,
     /// The current frame's committed pulse, read before the action filter runs.
     pub pulse: bool,
@@ -17,6 +19,7 @@ impl ItemUsePolicy {
     pub fn commit(&mut self, gameplay: bool) {
         self.pulse = std::mem::take(&mut self.pending_pulse) && gameplay;
         self.placement = self.pending_placement.take().filter(|_| gameplay);
+        self.locked = std::mem::take(&mut self.pending_lock) && gameplay;
     }
 }
 
@@ -73,6 +76,17 @@ impl cinnabar::extension::item_use::Host for State {
             return Ok(Err("No admitted placement offer in this frame".into()));
         };
         offer.repeat_while_held = enabled;
+        Ok(Ok(()))
+    }
+
+    fn set_placement_lock(&mut self, enabled: bool) -> Result<Result<(), String>> {
+        self.controls.budget(false)?;
+        if !self.grants.item_use || !self.grants.inventory || self.snapshot.is_none() {
+            return Ok(Err(
+                "Placement lock requires gameplay, item use and inventory".into(),
+            ));
+        }
+        self.item_use_policy.pending_lock = enabled;
         Ok(Ok(()))
     }
 

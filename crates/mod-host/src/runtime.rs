@@ -711,6 +711,10 @@ impl Instance {
         self.is_active() && self.store.data().item_use_policy.pulse
     }
 
+    pub(super) fn placement_locked(&self) -> bool {
+        self.store.data().item_use_policy.locked
+    }
+
     pub(super) fn creative_placement_offer(&self) -> Option<&crate::CreativePlacementOffer> {
         self.is_active()
             .then(|| self.store.data().item_use_policy.placement.as_ref())

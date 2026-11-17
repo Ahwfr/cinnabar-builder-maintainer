@@ -115,10 +115,7 @@ pub(super) fn prepare(
     let removed: Vec<_> = blocks
         .native
         .keys()
-        .filter(|id| {
-            live.get(id)
-                .is_none_or(|g| !Arc::ptr_eq(g, &blocks.native[id].geometry))
-        })
+        .filter(|id| !live.contains_key(id))
         .copied()
         .collect();
     let mut retired = Vec::new();
@@ -144,7 +141,9 @@ pub(super) fn prepare(
                 if let Some(request) = native.geometry.blocks() {
                     request.complete_render();
                 }
-                blocks.native.insert(id, Arc::new(native));
+                if let Some(old) = blocks.native.insert(id, Arc::new(native)) {
+                    retired.push(old);
+                }
             } else {
                 retired.push(Arc::new(native));
             }
@@ -154,7 +153,10 @@ pub(super) fn prepare(
     }
     if blocks.pending.is_empty() {
         for (&id, geometry) in &live {
-            if blocks.native.contains_key(&id)
+            if blocks
+                .native
+                .get(&id)
+                .is_some_and(|native| Arc::ptr_eq(geometry, &native.geometry))
                 || geometry.blocks().unwrap().render_error().is_some()
             {
                 continue;
@@ -227,11 +229,23 @@ pub(super) fn prepare(
     for placement in placements.values_mut() {
         placement.active = false;
     }
+    // Keep drawing the last admitted generation while the replacement is meshed
+    // and uploaded. Replace it only after the new generation is GPU-ready.
+    let resident: BTreeMap<_, _> = blocks
+        .native
+        .iter()
+        .map(|(&id, native)| (id, Arc::clone(&native.geometry)))
+        .collect();
     let removed: Vec<_> = placements
         .iter()
         .filter(|((view, id), placement)| {
             views.get(*view).is_err()
-                || !placement_is_current(&scene.retained, &live, *id, &placement.native.geometry)
+                || !placement_is_current(
+                    &scene.retained,
+                    &resident,
+                    *id,
+                    &placement.native.geometry,
+                )
         })
         .map(|(key, _)| *key)
         .collect();

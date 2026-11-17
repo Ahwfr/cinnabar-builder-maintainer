@@ -94,6 +94,7 @@ pub(super) fn drive_mod(
     }
     if let Some(placement) = creative_placement.as_deref_mut() {
         placement.offer = None;
+        placement.locked = false;
     }
     let user_freelook = gameplay
         .input
@@ -479,6 +480,10 @@ pub(super) fn drive_mod(
         && !use_pulse
         && let Some(placement) = creative_placement.as_deref_mut()
     {
+        placement.locked = extension
+            .hosts
+            .iter_mut()
+            .any(|host| host.placement_locked());
         placement.offer = extension
             .hosts
             .iter_mut()

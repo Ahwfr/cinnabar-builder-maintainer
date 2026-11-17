@@ -209,6 +209,22 @@ fn prepare(
                     "Fast Place stair placement prediction");
             }
         }
+        if attempt.expected.is_none()
+            && context.creative.as_ref().is_some_and(|policy| policy.locked)
+            && local_use != LocalUse::Interact
+            && (placed_block.is_some() || local_use == LocalUse::Place)
+        {
+            // Keep ordinary use for matches that do not require auto-selection or
+            // orientation, but do not let a failed offer fall through at another cell.
+            let mode = stream.network_id_mode();
+            let admitted = context.creative.as_ref().and_then(|policy| policy.offer.as_ref());
+            if !placement.as_ref().zip(admitted).is_some_and(|(placed, offer)| {
+                placed.position == offer.position
+                    && context.collisions.block_identifier(mode, placed.block) == Some(offer.name.as_str())
+            }) {
+                return None;
+            }
+        }
         if placement.is_some() && observed.selection.item.count() > 0 {
             local_use = LocalUse::Place;
         }

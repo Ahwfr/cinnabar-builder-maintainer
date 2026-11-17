@@ -24,6 +24,10 @@ impl ModHost {
     }
 
     /// Reads this frame's Creative offer only while the component is active.
+    pub fn placement_locked(&self) -> bool {
+        self.is_active() && self.instance.placement_locked()
+    }
+
     pub fn creative_placement_offer(&self) -> Option<&crate::CreativePlacementOffer> {
         self.instance.creative_placement_offer()
     }
