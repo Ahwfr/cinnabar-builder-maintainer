@@ -10,6 +10,7 @@ mod add_server;
 mod artwork;
 pub mod bed_screen;
 mod bedtime;
+mod cinnamatica;
 #[cfg(test)]
 mod dark_mode_tests;
 pub mod data_driven_screen;
@@ -71,6 +72,9 @@ use ui::oreui_theme as theme;
 use ui::{UiPoint, UiRect};
 
 pub use bedtime::{BedHit, SleepStatus};
+pub use cinnamatica::{
+    CinnamaticaHit, CinnamaticaInput, CinnamaticaScreen, SEARCH_ID as CINNAMATICA_SEARCH_ID,
+};
 #[cfg(test)]
 use paint::Canvas;
 pub use paint::Originals;

@@ -8,22 +8,6 @@ impl Viewer {
         }
     }
 
-    pub(super) fn mismatch_count(&self) -> usize {
-        self.tiles.iter().map(Tile::mismatch_count).sum()
-    }
-
-    pub(super) fn mismatches(
-        &self,
-    ) -> impl Iterator<Item = &([i32; 3], schematica_core::CellStatus)> {
-        self.tiles.iter().flat_map(|tile| &tile.mismatches)
-    }
-
-    pub(super) fn clear_verifier_marker(&mut self) {
-        if let Some(marker) = self.verifier_marker.take() {
-            marker.remove();
-        }
-    }
-
     pub(super) fn publish_label(&mut self, placement_cell: Option<[i32; 3]>) {
         if !self.options.assist {
             self.show_label("");
@@ -77,8 +61,7 @@ impl Viewer {
 
 impl Options {
     pub(super) fn menu_hint(&self, title: &str) -> String {
-        let menu = native_bindings::caption(hotkeys::Action::Main);
-        let settings = native_bindings::caption(hotkeys::Action::Config);
-        format!("{title} | P / {menu} Menu | {settings} Settings")
+        let menu = native_bindings::caption(native_bindings::Action::Main);
+        format!("{title} | {menu} Menu")
     }
 }

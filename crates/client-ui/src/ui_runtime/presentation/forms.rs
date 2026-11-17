@@ -152,6 +152,8 @@ pub(super) struct ScreenStates {
     mob_effects: ui_screens::mob_effect_screen::MobEffectScreen,
     /// The bed screen's hits and pointer.
     bed: oreui::BedScreen,
+    /// The native Cinnamatica window's hits and pointer.
+    cinnamatica: oreui::CinnamaticaScreen,
     /// The data-driven form's hits, pointer and scroll, and the form instance they belong to.
     data_driven: oreui::data_driven_screen::DataDrivenScreen,
     data_driven_form: Option<u64>,

@@ -15,6 +15,7 @@ mod mod_hud;
 mod mod_hud_editor;
 pub use mod_hud_editor::HudEditor;
 mod mod_panel;
+pub use mod_panel::NATIVE_CINNAMATICA;
 pub use mod_panel::prepared::{PanelUiOwner, PreparedPanelUi};
 mod mod_presentation;
 pub mod mod_screens;

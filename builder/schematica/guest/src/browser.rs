@@ -1,4 +1,4 @@
-//! The tabbed window opened with P: a dimmed backdrop and one card whose top strip holds the
+//! The tabbed window opened with the menu key (M by default): a dimmed backdrop and one card whose top strip holds the
 //! tabs, centred, with an underline that slides to the open tab. Its layout is built here and
 //! precomputed into `ui/browser.json`, so opening it costs no callback fuel. Add a tab to
 //! [`Tab`] and `layout::TABS`, then give it a body in `layout`.
@@ -11,8 +11,6 @@ use serde_json::{Map, Value, json};
 
 /// The precomputed panel content. Regenerate with `SCHEMATICA_BROWSER_REGENERATE=1 cargo test`.
 pub const LAYOUT: &str = include_str!("../ui/browser.json");
-/// The physical key that opens and closes the window.
-pub const KEY: &str = "KeyP";
 /// Material rows in view; the mouse wheel moves through the list a view at a time.
 pub const ROWS: usize = 8;
 /// Library rows on the Import tab: every schematic one library can hold.
@@ -24,6 +22,10 @@ const MODE_ID: &str = "bw-fp-mode";
 /// Tab width and the gap between tabs; the underline moves by their sum.
 const TAB_WIDTH: f64 = 100.;
 const TAB_GAP: f64 = 4.;
+/// Tabs the Cinnamatica client draws natively with OreUI; the rest keep this JSON-UI layout.
+const NATIVE_TABS: [Tab; 4] = Tab::ALL;
+/// The binding that asks the client for its native window, named as the client reads it.
+const NATIVE_BINDING: &str = "#cinnamatica_native";
 
 /// The window's tabs, in display order.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -80,59 +82,172 @@ mod layout {
     const TABS: [&str; 4] = ["Materials", "Import", "Settings", "Controls"];
 
     const WINDOW: [f64; 2] = [460., 330.];
-    /// The tab strip across the top of the card.
-    const STRIP: f64 = 34.;
+    /// The line under the tab strip; tab bodies start below it.
+    const STRIP: f64 = 30.;
     const TAB_HEIGHT: f64 = 24.;
-    const PAD: f64 = 16.;
+    const PAD: f64 = 12.;
     const WIDTH: f64 = WINDOW[0] - PAD * 2.;
-    const RADIUS: f64 = 4.;
+    /// The heading row: the title, then the summary under it.
+    const TITLE_Y: f64 = 36.;
+    const SUMMARY_Y: f64 = 47.;
+    const FOOTER_Y: f64 = 314.;
     const FONT: &str = "mod_panel_sans";
 
-    const BACKDROP: [f64; 4] = [0., 0., 0., 0.35];
-    const CARD: [f64; 4] = [0.12, 0.12, 0.13, 0.97];
-    const BORDER: [f64; 4] = [1., 1., 1., 0.14];
-    const BUTTON: [f64; 4] = [0.19, 0.19, 0.21, 1.];
-    const FIELD: [f64; 4] = [0.09, 0.09, 0.10, 1.];
-    const ACCENT: [f64; 4] = [0.27, 0.45, 0.78, 1.];
-    const TEXT: [f64; 4] = [0.93, 0.93, 0.95, 1.];
-    const MUTED: [f64; 4] = [0.58, 0.58, 0.62, 1.];
-    const GREEN: [f64; 4] = [0.60, 0.92, 0.66, 1.];
-    const DANGER: [f64; 4] = [0.95, 0.47, 0.47, 1.];
-    const LINE: [f64; 4] = [1., 1., 1., 0.07];
-    const LOADED: [f64; 4] = [0.33, 0.72, 0.44, 0.16];
-    const SWITCH_OFF: [f64; 4] = [0.30, 0.30, 0.33, 1.];
-    const SWITCH_ON: [f64; 4] = [0.33, 0.72, 0.44, 1.];
+    /// An opaque colour from `0xRRGGBB`.
+    const fn hex(rgb: u32) -> [f64; 4] {
+        [
+            ((rgb >> 16) & 255) as f64 / 255.,
+            ((rgb >> 8) & 255) as f64 / 255.,
+            (rgb & 255) as f64 / 255.,
+            1.,
+        ]
+    }
+
+    const fn alpha(color: [f64; 4], alpha: f64) -> [f64; 4] {
+        [color[0], color[1], color[2], alpha]
+    }
+
+    const BG: [f64; 4] = alpha(hex(0x2B2E36), 0.6);
+    const CARD: [f64; 4] = hex(0x363A44);
+    const PANEL: [f64; 4] = hex(0x2E3139);
+    const BORDER: [f64; 4] = hex(0x5A5F6B);
+    const TAB_ACTIVE: [f64; 4] = hex(0x3D414B);
+    const INPUT: [f64; 4] = hex(0x3A3D45);
+    const INPUT_EDGE: [f64; 4] = hex(0x7A7F8A);
+    const TEXT: [f64; 4] = hex(0xF2F3F5);
+    const MUTED: [f64; 4] = hex(0xC4C7CE);
+    const FOOTER: [f64; 4] = hex(0xB9BCC3);
+    /// The active tab underline, ON, progress, Loaded and zero needed.
+    const ACCENT: [f64; 4] = hex(0x7FD88A);
+    const GREEN: [f64; 4] = ACCENT;
+    const OFF: [f64; 4] = hex(0xEE9A9A);
+    const NEEDED: [f64; 4] = hex(0xF0B0A0);
+    /// A light hover wash and a dark pressed shade over clickable areas.
+    const WASH: [f64; 4] = [1., 1., 1., 0.06];
+    const SHADE: [f64; 4] = [0., 0., 0., 0.25];
+    const SWITCH_OFF: [f64; 4] = BORDER;
     /// Switch track; the host slides the knob from x 2 to x 12 as a toggle eases on.
     const SWITCH: [f64; 2] = [26., 16.];
 
+    /// What each Settings row does, shown in the hint box while the row is hovered.
+    const HINTS: [(&str, &str); 12] = [
+        (
+            "fast-place",
+            "Places the targeted ghost block for you, picking the material from the hotbar, inventory or Creative catalog.",
+        ),
+        (
+            MODE_ID,
+            "V1 Classic places like a normal click. V2 Strict checks the block's state and can place in the air.",
+        ),
+        (
+            "hold-place",
+            "Keeps placing while right-click is held, following the crosshair.",
+        ),
+        (
+            "placement-lock",
+            "Blocks normal placement outside the targeted ghost or with the wrong block. Not the same as Lock guide position.",
+        ),
+        (
+            "correct-aim",
+            "Turns the facing sent with a placement to match the schematic, without moving your camera.",
+        ),
+        (
+            "bridge-place",
+            "Lets a single click use a nearby ghost and support face. Hold to place uses the direct aim.",
+        ),
+        (
+            "look",
+            "Textured ghosts look like the real blocks. Off shows simple coloured markers.",
+        ),
+        (
+            "assist",
+            "Shows the targeted material and its coordinates on screen.",
+        ),
+        ("opacity", "How see-through the ghost blocks are."),
+        (
+            "remember-placement",
+            "Restores where a schematic was placed when you come back to the same world.",
+        ),
+        (
+            "auto-layer",
+            "Moves to the next layer once the current single layer is complete.",
+        ),
+        (
+            "paste-destroy",
+            "Lets a confirmed paste replace blocks that are in the way.",
+        ),
+    ];
+
+    /// A bevelled button's face, light top edge, dark bottom edge and hover face.
+    struct Style {
+        face: [f64; 4],
+        hi: [f64; 4],
+        lo: [f64; 4],
+        hover: [f64; 4],
+    }
+
+    const PLAIN: Style = Style {
+        face: hex(0x74787F),
+        hi: hex(0xA6A9B0),
+        lo: hex(0x5A5F6B),
+        hover: hex(0x7D8FC9),
+    };
+    const DELETE: Style = Style {
+        face: hex(0x9A5656),
+        hi: hex(0xBF8282),
+        lo: hex(0x6A3A3A),
+        hover: hex(0xAA6262),
+    };
+    const BUTTON_EDGE: [f64; 4] = hex(0x3A3D45);
+
+    /// Rounds layout numbers so the precomputed document stays small.
+    fn round(values: &[f64]) -> Value {
+        json!(
+            values
+                .iter()
+                .map(|value| (value * 1000.).round() / 1000.)
+                .collect::<Vec<_>>()
+        )
+    }
+
     fn anchored(mut node: Value, size: [f64; 2], offset: [f64; 2]) -> Value {
-        node["size"] = json!(size);
-        node["offset"] = json!(offset);
+        node["size"] = round(&size);
+        node["offset"] = round(&offset);
         node["anchor_from"] = json!("top_left");
         node["anchor_to"] = json!("top_left");
         node
     }
 
+    fn panel(controls: Vec<Value>, size: [f64; 2], offset: [f64; 2]) -> Value {
+        anchored(json!({"type":"panel","controls":controls}), size, offset)
+    }
+
     fn rect(size: [f64; 2], offset: [f64; 2], color: [f64; 4], radius: f64) -> Value {
         anchored(
-            json!({"type":"custom","renderer":"cinnabar_rounded_rectangle","color":color,"radius":radius}),
+            json!({"type":"custom","renderer":"cinnabar_rounded_rectangle",
+                "color":round(&color),"radius":radius}),
             size,
             offset,
         )
     }
 
-    /// A rounded rectangle with the window's thin light border.
-    fn framed(size: [f64; 2], offset: [f64; 2], color: [f64; 4]) -> Value {
-        let mut node = rect(size, offset, color, RADIUS);
-        node["border_color"] = json!(BORDER);
+    /// A square box with a 1 px border.
+    fn outlined(size: [f64; 2], offset: [f64; 2], fill: [f64; 4], border: [f64; 4]) -> Value {
+        let mut node = rect(size, offset, fill, 0.);
+        node["border_color"] = round(&border);
         node["border_width"] = json!(1);
         node
+    }
+
+    /// A group box: the panel fill with the window's border colour.
+    fn framed(size: [f64; 2], offset: [f64; 2]) -> Value {
+        outlined(size, offset, PANEL, BORDER)
     }
 
     /// A label; a `#name` text is bound to that name.
     fn text(text: &str, size: [f64; 2], offset: [f64; 2], color: [f64; 4], align: &str) -> Value {
         let mut label = anchored(
-            json!({"type":"label","text":text,"color":color,"shadow":false,
+            json!({"type":"label","text":text,"color":round(&color),"shadow":false,
                 "font_type":FONT,"text_alignment":align,"localize":false}),
             size,
             offset,
@@ -182,112 +297,125 @@ mod layout {
         }
     }
 
-    /// Wraps per-state contents in a routed button: idle, hover (a light wash) and pressed
-    /// (a dark shade), each its own copy so every state draws.
-    fn routed(
-        index: usize,
-        route: &str,
-        size: [f64; 2],
-        offset: [f64; 2],
-        contents: impl Fn() -> Vec<Value>,
-    ) -> Value {
-        let state = |overlay: Option<Value>| {
-            let mut items = contents();
-            if let Some(overlay) = overlay {
-                items.insert(1.min(items.len()), named("overlay", overlay));
-            }
-            anchored(json!({"type":"panel","controls":items}), size, [0., 0.])
-        };
-        let hover = bind(
-            rect(size, [0., 0.], [1., 1., 1., 0.07], RADIUS),
-            &format!("#row_{index}_hover"),
-            "#alpha",
-        );
+    /// The click target routed to control `index`. Only its hover and pressed overlays live
+    /// in the button; what it sits on is drawn once beside it, which keeps the document small.
+    fn hit(index: usize, route: &str, size: [f64; 2], offset: [f64; 2], hover: Value) -> Value {
         anchored(
             json!({"type":"button","default_control":"idle","hover_control":"hover",
             "pressed_control":"pressed",
             "button_mappings":[{"from_button_id":"button.menu_select",
                 "to_button_id":format!("mod.{route}:{index}"),"mapping_type":"pressed"}],
             "controls":[
-                {"idle": state(None)},
-                {"hover": state(Some(hover))},
-                {"pressed": state(Some(rect(size, [0., 0.], [0., 0., 0., 0.25], RADIUS)))},
+                {"idle": panel(Vec::new(), size, [0., 0.])},
+                {"hover": hover},
+                {"pressed": rect(size, [0., 0.], SHADE, 0.)},
             ]}),
             size,
             offset,
         )
     }
 
-    /// A framed button with a centred caption. With `green`, a second caption in green shows
-    /// while `<green>_on` is true and the normal one while `<green>_off` is.
-    #[allow(clippy::too_many_arguments)]
+    /// The light hover wash, fading with the host's eased hover of control `index`.
+    fn wash(index: usize, size: [f64; 2]) -> Value {
+        bind(
+            rect(size, [0., 0.], WASH, 0.),
+            &format!("#row_{index}_hover"),
+            "#alpha",
+        )
+    }
+
+    /// A centred caption for a control of `size`.
+    fn caption(text_value: &str, size: [f64; 2], color: [f64; 4]) -> Value {
+        text(
+            text_value,
+            [size[0], 10.],
+            [0., (size[1] - 10.) / 2.],
+            color,
+            "center",
+        )
+    }
+
+    /// A square bevelled button: a face, a hover face, a light top and a dark bottom edge,
+    /// then `labels` on top.
     fn button(
         controls: &mut Controls,
         id: &str,
-        caption: &str,
         size: [f64; 2],
         offset: [f64; 2],
-        fill: [f64; 4],
-        ink: [f64; 4],
-        green: Option<&str>,
+        style: &Style,
+        labels: Vec<Value>,
     ) -> Value {
         let index = controls.button(id);
-        routed(index, "control", size, offset, || {
-            let label = |color| {
-                text(
-                    caption,
-                    [size[0], 10.],
-                    [0., (size[1] - 10.) / 2.],
-                    color,
-                    "center",
-                )
-            };
-            let mut items = vec![named("face", framed(size, [0., 0.], fill))];
-            match green {
-                Some(state) => {
-                    items.push(named(
-                        "caption",
-                        visible(label(ink), &format!("{state}_off")),
-                    ));
-                    items.push(named(
-                        "caption_on",
-                        visible(label(GREEN), &format!("{state}_on")),
-                    ));
-                }
-                None => items.push(named("caption", label(ink))),
-            }
-            items
-        })
+        let [width, height] = size;
+        let hover = rect([width - 2., height - 2.], [1., 1.], style.hover, 0.);
+        let mut items = vec![
+            named("face", outlined(size, [0., 0.], style.face, BUTTON_EDGE)),
+            named("hit", hit(index, "control", size, [0., 0.], hover)),
+            named("hi", rect([width - 2., 1.], [1., 1.], style.hi, 0.)),
+            named(
+                "lo",
+                rect([width - 2., 1.], [1., height - 2.], style.lo, 0.),
+            ),
+        ];
+        items.extend(
+            labels
+                .into_iter()
+                .enumerate()
+                .map(|(index, label)| named(format!("label{index}"), label)),
+        );
+        panel(items, size, offset)
     }
 
-    /// The tab strip: tabs centred for however many there are, and an underline whose
-    /// offset eases to the open tab.
+    /// A button with one caption.
+    fn plain(
+        controls: &mut Controls,
+        id: &str,
+        title: &str,
+        size: [f64; 2],
+        offset: [f64; 2],
+    ) -> Value {
+        button(
+            controls,
+            id,
+            size,
+            offset,
+            &PLAIN,
+            vec![caption(title, size, TEXT)],
+        )
+    }
+
+    /// The tab strip: tabs centred for however many there are, the open one shaded, and an
+    /// underline whose offset eases to the open tab.
     fn strip(controls: &mut Controls) -> Vec<Value> {
         let count = Tab::ALL.len() as f64;
         let group = count * TAB_WIDTH + (count - 1.) * TAB_GAP;
         let left = (WINDOW[0] - group) / 2.;
+        let top = STRIP - TAB_HEIGHT;
+        let size = [TAB_WIDTH, TAB_HEIGHT];
         let mut nodes: Vec<Value> = Tab::ALL
             .iter()
             .zip(TABS)
             .enumerate()
             .map(|(index, (tab, title))| {
                 let x = left + index as f64 * (TAB_WIDTH + TAB_GAP);
-                let routed_index = controls.button(tab.id());
-                let size = [TAB_WIDTH, TAB_HEIGHT];
-                let node = routed(routed_index, "control", size, [x, 5.], || {
-                    let label = |color| text(title, [TAB_WIDTH, 10.], [0., 7.], color, "center");
-                    vec![
-                        named(
-                            "open",
-                            visible(label(TEXT), &format!("#bw_tab{index}_open")),
-                        ),
-                        named(
-                            "closed",
-                            visible(label(MUTED), &format!("#bw_tab{index}_closed")),
-                        ),
-                    ]
-                });
-                named(tab.id(), node)
+                let routed = controls.button(tab.id());
+                let state = |name: &str| format!("#bw_tab{index}_{name}");
+                let items = vec![
+                    named(
+                        "shade",
+                        visible(rect(size, [0., 0.], TAB_ACTIVE, 0.), &state("open")),
+                    ),
+                    named(
+                        "hit",
+                        hit(routed, "control", size, [0., 0.], wash(routed, size)),
+                    ),
+                    named("open", visible(caption(title, size, TEXT), &state("open"))),
+                    named(
+                        "closed",
+                        visible(caption(title, size, MUTED), &state("closed")),
+                    ),
+                ];
+                named(tab.id(), panel(items, size, [x, top]))
             })
             .collect();
         let spacer = bind(
@@ -295,293 +423,309 @@ mod layout {
             "#bw_tab_x",
             "#size_binding_x_absolute",
         );
-        let underline = rect([TAB_WIDTH, 2.], [0., 0.], ACCENT, 1.);
+        let underline = rect([TAB_WIDTH, 2.], [0., 0.], ACCENT, 0.);
         nodes.push(named(
             "underline",
             anchored(
                 json!({"type":"stack_panel","orientation":"horizontal",
                     "controls":[{"spacer":spacer},{"bar":underline}]}),
                 [group, 2.],
-                [left, STRIP - 3.],
+                [left, STRIP - 2.],
             ),
         ));
         nodes.push(named(
             "divider",
-            rect([WINDOW[0], 1.], [0., STRIP - 1.], LINE, 0.),
+            rect([WINDOW[0] - 20., 1.], [10., STRIP], BORDER, 0.),
         ));
         nodes
     }
 
     /// A tab body shown only while its tab is open.
     fn body(tab: usize, nodes: Vec<Value>) -> Value {
-        visible(
-            anchored(json!({"type":"panel","controls":nodes}), WINDOW, [0., 0.]),
-            &format!("#bw_body{tab}"),
-        )
+        visible(panel(nodes, WINDOW, [0., 0.]), &format!("#bw_body{tab}"))
     }
 
-    /// A centred title and summary below the tab strip.
-    fn heading(prefix: &str) -> Vec<Value> {
+    /// The tab's title and its summary under it, on the left of the heading row; `width`
+    /// leaves room for a control on the right.
+    fn heading(prefix: &str, width: f64) -> Vec<Value> {
         vec![
             named(
                 "title",
                 text(
                     &format!("#{prefix}_title"),
-                    [WIDTH, 10.],
-                    [PAD, STRIP + 8.],
+                    [width, 10.],
+                    [PAD, TITLE_Y],
                     TEXT,
-                    "center",
+                    "left",
                 ),
             ),
             named(
                 "summary",
                 text(
                     &format!("#{prefix}_summary"),
-                    [WIDTH, 10.],
-                    [PAD, STRIP + 22.],
+                    [width, 10.],
+                    [PAD, SUMMARY_Y],
                     MUTED,
-                    "center",
+                    "left",
                 ),
             ),
         ]
     }
 
+    /// The footer: context on the left, how to close on the right.
     fn footer(hint: &str) -> Value {
         named(
-            "hint",
-            text(hint, [WIDTH, 10.], [PAD, WINDOW[1] - 22.], MUTED, "center"),
+            "footer",
+            panel(
+                vec![
+                    named("hint", text(hint, [300., 10.], [0., 0.], FOOTER, "left")),
+                    named(
+                        "close",
+                        text(
+                            "M or Esc to close",
+                            [130., 10.],
+                            [WIDTH - 130., 0.],
+                            FOOTER,
+                            "right",
+                        ),
+                    ),
+                ],
+                [WIDTH, 10.],
+                [PAD, FOOTER_Y],
+            ),
         )
     }
 
-    /// Materials: progress, a search field and an alphabetical list.
+    /// A routed text field: a dark box, a placeholder while empty and the typed value.
+    fn field(
+        controls: &mut Controls,
+        id: &str,
+        placeholder: &str,
+        size: [f64; 2],
+        offset: [f64; 2],
+    ) -> Value {
+        let index = controls.text(id, placeholder);
+        let line = [size[0] - 12., 10.];
+        let top = (size[1] - 10.) / 2.;
+        panel(
+            vec![
+                named("face", outlined(size, [0., 0.], INPUT, INPUT_EDGE)),
+                named("hit", hit(index, "edit", size, [0., 0.], wash(index, size))),
+                named(
+                    "placeholder",
+                    visible(
+                        text(placeholder, line, [6., top], MUTED, "left"),
+                        "#bw_search_empty",
+                    ),
+                ),
+                named(
+                    "value",
+                    visible(
+                        text(
+                            &format!("#row_{index}_value"),
+                            line,
+                            [6., top],
+                            TEXT,
+                            "left",
+                        ),
+                        "#bw_search_full",
+                    ),
+                ),
+            ],
+            size,
+            offset,
+        )
+    }
+
+    /// Materials: search, progress and a paged, alphabetical list with icons.
     fn materials(controls: &mut Controls) -> Vec<Value> {
-        let mut nodes = heading("bw");
+        let mut nodes = heading("bw", 280.);
+        nodes.push(named(
+            "search",
+            field(controls, SEARCH_ID, "Filter...", [148., 18.], [300., 36.]),
+        ));
         // The green bar fills its bound-width parent.
+        let track = [288., 8.];
         let green = json!({"type":"custom","renderer":"cinnabar_rounded_rectangle",
-            "color":SWITCH_ON,"radius":3,"size":["100%","100%"],"offset":[0,0],
+            "color":round(&ACCENT),"radius":0,"size":["100%","100%"],"offset":[0,0],
             "anchor_from":"top_left","anchor_to":"top_left"});
         let fill = bind(
-            anchored(
-                json!({"type":"panel","controls":[{"green":green}]}),
-                [WIDTH, 6.],
-                [0., 0.],
-            ),
+            panel(vec![named("green", green)], track, [0., 0.]),
             "#bw_progress",
             "#size_binding_x",
         );
         nodes.push(named(
             "progress",
-            anchored(
-                json!({"type":"panel","controls":[
-                    {"track": rect([WIDTH, 6.], [0., 0.], [1., 1., 1., 0.08], 3.)},
-                    {"fill": fill},
-                ]}),
-                [WIDTH, 6.],
-                [PAD, STRIP + 40.],
+            panel(
+                vec![
+                    named("track", rect(track, [0., 0.], INPUT, 0.)),
+                    named("fill", fill),
+                ],
+                track,
+                [PAD, 62.],
             ),
         ));
         nodes.push(named(
             "progress_label",
             text(
                 "#bw_progress_label",
-                [WIDTH, 10.],
-                [PAD, STRIP + 50.],
+                [140., 10.],
+                [308., 61.],
                 MUTED,
-                "center",
+                "left",
             ),
         ));
-        let search = controls.text(SEARCH_ID, "Search");
-        let field = [WIDTH, 20.];
-        nodes.push(named(
-            "search",
-            routed(search, "edit", field, [PAD, STRIP + 66.], || {
-                vec![
-                    named("face", framed(field, [0., 0.], FIELD)),
-                    named(
-                        "placeholder",
-                        visible(
-                            text(
-                                "Search blocks...",
-                                [WIDTH - 16., 10.],
-                                [8., 5.],
-                                MUTED,
-                                "left",
-                            ),
-                            "#bw_search_empty",
-                        ),
-                    ),
-                    named(
-                        "value",
-                        visible(
-                            text(
-                                &format!("#row_{search}_value"),
-                                [WIDTH - 16., 10.],
-                                [8., 5.],
-                                TEXT,
-                                "left",
-                            ),
-                            "#bw_search_full",
-                        ),
-                    ),
-                ]
-            }),
-        ));
-        let head = STRIP + 94.;
+        nodes.push(named("list", framed([WIDTH, 228.], [PAD, 76.])));
         nodes.extend([
             named(
-                "head_block",
-                text("Block", [200., 10.], [PAD + 18., head], MUTED, "left"),
+                "head_name",
+                text("Material", [200., 10.], [42., 82.], MUTED, "left"),
             ),
             named(
                 "head_needed",
-                text(
-                    "Needed",
-                    [70., 10.],
-                    [WINDOW[0] - PAD - 150., head],
-                    MUTED,
-                    "right",
-                ),
+                text("Needed", [80., 10.], [280., 82.], MUTED, "right"),
             ),
             named(
                 "head_total",
-                text(
-                    "Total",
-                    [70., 10.],
-                    [WINDOW[0] - PAD - 70., head],
-                    MUTED,
-                    "right",
-                ),
+                text("Total", [70., 10.], [370., 82.], MUTED, "right"),
             ),
+            named("head_rule", rect([WIDTH - 8., 1.], [16., 96.], BORDER, 0.)),
         ]);
         for row in 0..ROWS {
-            let y = head + 16. + 16. * row as f64;
             let field = |name: &str| format!("#bw_row{row}_{name}");
             let icon = bind(
                 anchored(
                     json!({"type":"custom","renderer":"inventory_item_renderer"}),
-                    [12., 12.],
-                    [0., 1.],
+                    [16., 16.],
+                    [8., 4.],
                 ),
                 &field("icon"),
                 "#item_renderer_data",
             );
-            let mut items = vec![
+            let needed = |color, flag: &str| {
+                visible(
+                    text(&field("needed"), [80., 10.], [268., 7.], color, "right"),
+                    &field(flag),
+                )
+            };
+            let items = vec![
                 named("icon", icon),
                 named(
                     "name",
-                    text(&field("name"), [240., 10.], [18., 2.], TEXT, "left"),
+                    text(&field("name"), [220., 10.], [30., 7.], TEXT, "left"),
                 ),
-                named(
-                    "needed",
-                    text(
-                        &field("needed"),
-                        [70., 10.],
-                        [WIDTH - 150., 2.],
-                        TEXT,
-                        "right",
-                    ),
-                ),
+                named("needed", needed(NEEDED, "need")),
+                named("done", needed(GREEN, "done")),
                 named(
                     "total",
-                    text(
-                        &field("total"),
-                        [70., 10.],
-                        [WIDTH - 70., 2.],
-                        MUTED,
-                        "right",
-                    ),
+                    text(&field("total"), [70., 10.], [358., 7.], MUTED, "right"),
                 ),
             ];
-            if row > 0 {
-                items.push(named("rule", rect([WIDTH, 1.], [0., -1.], LINE, 0.)));
-            }
-            let line = anchored(
-                json!({"type":"panel","controls":items}),
-                [WIDTH, 14.],
-                [PAD, y],
-            );
+            let line = panel(items, [WIDTH, 24.], [PAD, 98. + 24. * row as f64]);
             nodes.push(named(format!("row{row}"), visible(line, &field("visible"))));
         }
-        nodes.push(named(
-            "empty",
-            visible(
-                text(
-                    "#bw_empty",
-                    [WIDTH, 10.],
-                    [PAD, head + 40.],
-                    MUTED,
-                    "center",
-                ),
-                "#bw_empty_visible",
+        nodes.extend([
+            named(
+                "page",
+                text("#bw_page", [140., 10.], [300., 292.], MUTED, "right"),
             ),
-        ));
-        nodes.push(footer("Scroll for more  ·  P to close"));
+            named(
+                "empty",
+                visible(
+                    text("#bw_empty", [WIDTH, 10.], [PAD, 180.], MUTED, "center"),
+                    "#bw_empty_visible",
+                ),
+            ),
+            footer("Needed counts update as terrain is compared"),
+        ]);
         nodes
     }
 
-    /// Import: the import button and every library entry; the loaded one is tinted green.
+    /// Import: the import button, an active banner and a 2×4 grid of library cards.
     fn import(controls: &mut Controls) -> Vec<Value> {
-        let mut nodes = heading("bw_lib");
-        let size = [180., 22.];
+        let mut nodes = heading("bw_lib", 300.);
         nodes.push(named(
             "import",
-            button(
+            plain(
                 controls,
                 "import",
-                "Import schematics...",
-                size,
-                [(WINDOW[0] - size[0]) / 2., STRIP + 40.],
-                ACCENT,
-                TEXT,
-                None,
+                "Import schematic",
+                [108., 20.],
+                [340., 34.],
             ),
         ));
+        let banner = [WIDTH, 18.];
+        nodes.push(named(
+            "banner",
+            visible(
+                panel(
+                    vec![
+                        named(
+                            "box",
+                            outlined(banner, [0., 0.], alpha(ACCENT, 0.12), ACCENT),
+                        ),
+                        named("tag", text("ACTIVE", [50., 10.], [8., 4.], ACCENT, "left")),
+                        named(
+                            "text",
+                            text("#bw_lib_banner", [370., 10.], [58., 4.], TEXT, "left"),
+                        ),
+                    ],
+                    banner,
+                    [PAD, 58.],
+                ),
+                "#bw_lib_banner_visible",
+            ),
+        ));
+        let card = [214., 50.];
+        let small = [52., 16.];
         for row in 0..LIBRARY_ROWS {
-            let y = STRIP + 72. + 24. * row as f64;
+            let offset = [PAD + (row % 2) as f64 * 222., 82. + (row / 2) as f64 * 56.];
             let state = |name: &str| format!("#bw_lib{row}_{name}");
-            let name = |color, flag: &str| {
+            let status = |color, flag: &str| {
                 visible(
-                    text(
-                        &format!("#bw_lib_name{row}"),
-                        [220., 10.],
-                        [0., 5.],
-                        color,
-                        "left",
-                    ),
+                    caption(&format!("#entryStatus{row}"), small, color),
                     &state(flag),
                 )
             };
-            let mut items = vec![
+            let items = vec![
+                named("box", framed(card, [0., 0.])),
                 named(
-                    "highlight",
+                    "ring",
                     visible(
-                        rect([WIDTH + 12., 22.], [-6., -1.], LOADED, RADIUS),
+                        outlined(card, [0., 0.], [0., 0., 0., 0.], ACCENT),
                         &state("loaded"),
                     ),
                 ),
-                named("name", name(TEXT, "plain")),
-                named("name_loaded", name(GREEN, "loaded")),
                 named(
-                    "state",
+                    "name",
                     text(
-                        &format!("#entryMeta{row}"),
-                        [120., 10.],
-                        [WIDTH - 250., 5.],
-                        MUTED,
-                        "right",
+                        &format!("#bw_lib_name{row}"),
+                        [150., 10.],
+                        [8., 5.],
+                        TEXT,
+                        "left",
                     ),
+                ),
+                named(
+                    "loaded",
+                    visible(
+                        text("Loaded", [50., 10.], [156., 5.], GREEN, "right"),
+                        &state("loaded"),
+                    ),
+                ),
+                named(
+                    "meta",
+                    text(&state("meta"), [198., 10.], [8., 18.], MUTED, "left"),
                 ),
                 named(
                     "load",
                     button(
                         controls,
                         &format!("toggle-{row}"),
-                        &format!("#entryStatus{row}"),
-                        [60., 20.],
-                        [WIDTH - 124., 0.],
-                        BUTTON,
-                        TEXT,
-                        Some(&state("active")),
+                        small,
+                        [8., 30.],
+                        &PLAIN,
+                        vec![status(TEXT, "active_off"), status(GREEN, "active_on")],
                     ),
                 ),
                 named(
@@ -589,195 +733,327 @@ mod layout {
                     button(
                         controls,
                         &format!("delete-{row}"),
-                        "Delete",
-                        [60., 20.],
-                        [WIDTH - 60., 0.],
-                        BUTTON,
-                        DANGER,
-                        None,
+                        small,
+                        [64., 30.],
+                        &DELETE,
+                        vec![caption(&state("delete"), small, TEXT)],
                     ),
                 ),
             ];
-            if row > 0 {
-                items.push(named("rule", rect([WIDTH, 1.], [0., -2.], LINE, 0.)));
-            }
-            let line = anchored(
-                json!({"type":"panel","controls":items}),
-                [WIDTH, 20.],
-                [PAD, y],
-            );
             nodes.push(named(
                 format!("entry{row}"),
-                visible(line, &format!("#visible{row}")),
+                visible(panel(items, card, offset), &format!("#visible{row}")),
+            ));
+            nodes.push(named(
+                format!("slot{row}"),
+                visible(
+                    panel(
+                        vec![
+                            named("box", outlined(card, [0., 0.], [0., 0., 0., 0.], BORDER)),
+                            named("empty", caption("Empty slot", card, MUTED)),
+                        ],
+                        card,
+                        offset,
+                    ),
+                    &state("empty"),
+                ),
             ));
         }
-        nodes.push(footer("Up to 8 schematics  ·  P to close"));
+        nodes.push(footer("Loading closes this window"));
         nodes
     }
 
-    /// One settings row: its title and a pill switch, all one click target. The green fill
-    /// fades and the knob slides with the host's eased toggle progress.
+    /// One settings row: its caption and a pill switch, all one click target. The green fill
+    /// fades and the knob slides with the host's eased toggle progress. An empty `caption`
+    /// leaves the title to the surrounding group. Returns the row and its control index,
+    /// whose hover shows the row's hint.
     fn switch_row(
         controls: &mut Controls,
         key: &str,
         title: &str,
+        caption_text: &str,
         offset: [f64; 2],
         width: f64,
-    ) -> Value {
+    ) -> (Value, usize) {
         let index = controls.toggle(&format!("{SETTING_PREFIX}{key}"), title);
         let row = |field: &str| format!("#row_{index}_{field}");
-        routed(index, "control", [width, 22.], offset, || {
-            let track = rect(SWITCH, [0., 0.], SWITCH_OFF, SWITCH[1] / 2.);
-            let fill = bind(
-                rect(SWITCH, [0., 0.], SWITCH_ON, SWITCH[1] / 2.),
-                &row("toggle_progress"),
-                "#alpha",
-            );
-            let knob = bind(
-                rect([12., 12.], [2., 2.], TEXT, 6.),
-                &row("knob_offset"),
-                "#offset",
-            );
-            let switch = anchored(
-                json!({"type":"panel","controls":[{"track":track},{"fill":fill},{"knob":knob}]}),
-                SWITCH,
-                [width - SWITCH[0], 3.],
-            );
-            vec![
-                named(
-                    "title",
-                    text(title, [width - 40., 10.], [0., 6.], TEXT, "left"),
+        let size = [width, 22.];
+        let track = rect(SWITCH, [0., 0.], SWITCH_OFF, SWITCH[1] / 2.);
+        let fill = bind(
+            rect(SWITCH, [0., 0.], ACCENT, SWITCH[1] / 2.),
+            &row("toggle_progress"),
+            "#alpha",
+        );
+        let knob = bind(
+            rect([12., 12.], [2., 2.], TEXT, 6.),
+            &row("knob_offset"),
+            "#offset",
+        );
+        let items = vec![
+            named(
+                "hit",
+                hit(index, "control", size, [0., 0.], wash(index, size)),
+            ),
+            named(
+                "title",
+                text(caption_text, [width - 40., 10.], [4., 6.], TEXT, "left"),
+            ),
+            named(
+                "switch",
+                panel(
+                    vec![
+                        named("track", track),
+                        named("fill", fill),
+                        named("knob", knob),
+                    ],
+                    SWITCH,
+                    [width - SWITCH[0] - 2., 3.],
                 ),
-                named("switch", switch),
-            ]
-        })
+            ),
+        ];
+        (panel(items, size, offset), index)
     }
 
-    /// Settings: two columns of switches and the Fast Place mode button.
+    /// A settings row whose button cycles a value: the title, then the bound caption.
+    fn cycle_row(
+        controls: &mut Controls,
+        id: &str,
+        title: &str,
+        caption_binding: &str,
+        offset: [f64; 2],
+        width: f64,
+    ) -> (Value, usize) {
+        let size = [84., 18.];
+        let index = controls.0.len();
+        let items = vec![
+            named(
+                "title",
+                text(title, [width - 90., 10.], [4., 6.], TEXT, "left"),
+            ),
+            named(
+                "button",
+                button(
+                    controls,
+                    id,
+                    size,
+                    [width - size[0] - 2., 2.],
+                    &PLAIN,
+                    vec![caption(caption_binding, size, TEXT)],
+                ),
+            ),
+        ];
+        (panel(items, [width, 22.], offset), index)
+    }
+
+    /// A group box with its title in the top left.
+    fn group(name: &str, title: &str, size: [f64; 2], offset: [f64; 2]) -> [Value; 2] {
+        [
+            named(format!("{name}_box"), framed(size, offset)),
+            named(
+                format!("{name}_title"),
+                text(
+                    title,
+                    [120., 10.],
+                    [offset[0] + 8., offset[1] + 6.],
+                    MUTED,
+                    "left",
+                ),
+            ),
+        ]
+    }
+
+    /// Settings: Fast Place, Display and Behavior groups, and a box explaining the hovered
+    /// setting.
     fn settings(controls: &mut Controls) -> Vec<Value> {
-        let mut nodes = heading("bw_set");
-        let column = (WIDTH - 24.) / 2.;
-        let rows = SETTINGS.len().div_ceil(2);
-        for (index, (key, title)) in SETTINGS.iter().enumerate() {
-            let x = PAD + (index / rows) as f64 * (column + 24.);
-            let y = STRIP + 40. + 30. * (index % rows) as f64;
-            nodes.push(named(
-                format!("set_{key}"),
-                switch_row(controls, key, title, [x, y], column),
-            ));
-            if index % rows > 0 {
-                nodes.push(named(
-                    format!("rule_{key}"),
-                    rect([column, 1.], [x, y - 4.], LINE, 0.),
-                ));
-            }
+        let mut nodes = heading("bw_set", 300.);
+        let width = 198.;
+        // Each row and the control index whose hover shows its hint.
+        let mut rows: Vec<(String, Value, usize)> = Vec::new();
+        let switch = |controls: &mut Controls, key: &str, offset| {
+            let title = SETTINGS
+                .iter()
+                .find(|(setting, _)| *setting == key)
+                .map_or(key, |(_, title)| title);
+            // The Fast Place group's title names its master switch.
+            let caption_text = if key == "fast-place" { "" } else { title };
+            let (row, index) = switch_row(controls, key, title, caption_text, offset, width);
+            (key.to_owned(), row, index)
+        };
+
+        nodes.extend(group("fast", "Fast Place", [214., 172.], [PAD, 60.]));
+        rows.push(switch(controls, "fast-place", [20., 62.]));
+        let (row, index) = cycle_row(
+            controls,
+            MODE_ID,
+            "Fast Place mode",
+            "#bw_fp_mode",
+            [20., 86.],
+            width,
+        );
+        rows.push((MODE_ID.into(), row, index));
+        for (line, key) in [
+            "hold-place",
+            "placement-lock",
+            "correct-aim",
+            "bridge-place",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            rows.push(switch(controls, key, [20., 114. + 28. * line as f64]));
         }
-        let y = STRIP + 40. + 30. * rows as f64 + 8.;
+
+        nodes.extend(group("display", "Display", [214., 128.], [234., 60.]));
+        for (line, key) in ["look", "assist"].into_iter().enumerate() {
+            rows.push(switch(controls, key, [242., 78. + 26. * line as f64]));
+        }
+        for (line, (id, title, binding)) in [("opacity", "Ghost opacity", "#bw_opacity")]
+            .into_iter()
+            .enumerate()
+        {
+            let (row, index) = cycle_row(
+                controls,
+                id,
+                title,
+                binding,
+                [242., 130. + 26. * line as f64],
+                width,
+            );
+            rows.push((id.into(), row, index));
+        }
+
+        nodes.extend(group("behavior", "Behavior", [214., 110.], [234., 194.]));
+        for (line, key) in ["remember-placement", "auto-layer", "paste-destroy"]
+            .into_iter()
+            .enumerate()
+        {
+            rows.push(switch(controls, key, [242., 214. + 28. * line as f64]));
+        }
+
+        let hint_box = [214., 66.];
+        let hint_offset = [PAD, 238.];
+        nodes.push(named("hint_box", framed(hint_box, hint_offset)));
         nodes.push(named(
-            "mode_rule",
-            rect([WIDTH, 1.], [PAD, y - 6.], LINE, 0.),
-        ));
-        nodes.push(named(
-            "mode_title",
-            text("Fast Place mode", [200., 10.], [PAD, y + 6.], TEXT, "left"),
-        ));
-        nodes.push(named(
-            "mode_hint",
+            "hint_idle",
             text(
-                "V1 places like normal  ·  V2 adds air placement",
-                [WIDTH, 10.],
-                [PAD, y + 26.],
+                "Hover a setting to see what it does",
+                [198., 10.],
+                [20., 266.],
+                MUTED,
+                "center",
+            ),
+        ));
+        for (key, row, index) in rows {
+            let hint = HINTS
+                .iter()
+                .find(|(hint_key, _)| *hint_key == key)
+                .map_or("", |(_, hint)| hint);
+            let hover = format!("#row_{index}_hover");
+            nodes.push(named(format!("set_{key}"), row));
+            nodes.push(named(
+                format!("hint_{key}"),
+                panel(
+                    vec![
+                        named(
+                            "cover",
+                            bind(rect([212., 64.], [1., 1.], PANEL, 0.), &hover, "#alpha"),
+                        ),
+                        named(
+                            "text",
+                            bind(
+                                text(hint, [198., 56.], [8., 6.], TEXT, "left"),
+                                &hover,
+                                "#alpha",
+                            ),
+                        ),
+                    ],
+                    hint_box,
+                    hint_offset,
+                ),
+            ));
+        }
+        nodes.push(footer("Changes save immediately"));
+        nodes
+    }
+
+    /// Controls: Position, Rotate & Mirror and Guide groups, and Paste with its confirmation.
+    fn keys(controls: &mut Controls) -> Vec<Value> {
+        let mut nodes = heading("bw_keys", WIDTH);
+        let wide = [130., 20.];
+        let half = [63., 20.];
+        let left = |x: f64| x + 5.;
+        let right = |x: f64| x + 72.;
+        let columns = [
+            ("position", "Position", 12.),
+            ("rotate", "Rotate & Mirror", 160.),
+            ("guide", "Guide", 308.),
+        ];
+        for (name, title, x) in columns {
+            nodes.extend(group(name, title, [140., 196.], [x, 70.]));
+        }
+        let [(_, _, a), (_, _, b), (_, _, c)] = columns;
+        let buttons = [
+            ("place", "Place here", wide, [left(a), 90.]),
+            ("ccw", "Rotate left", half, [left(b), 90.]),
+            ("cw", "Rotate right", half, [right(b), 90.]),
+            ("mirror", "Mirror", wide, [left(b), 114.]),
+            ("previous-layer", "Prev", half, [left(b), 154.]),
+            ("next-layer", "Next", half, [right(b), 154.]),
+            ("mode", "#bw_layer_mode", wide, [left(b), 178.]),
+            ("visibility", "#bw_visibility", wide, [left(c), 142.]),
+        ];
+        for (id, title, size, offset) in buttons {
+            nodes.push(named(id, plain(controls, id, title, size, offset)));
+        }
+        nodes.push(named(
+            "layers",
+            text("Layers", [120., 10.], [left(b) + 3., 140.], MUTED, "left"),
+        ));
+        let lock = |title, color, flag: &str| visible(caption(title, wide, color), flag);
+        nodes.push(named(
+            "lock",
+            button(
+                controls,
+                "lock",
+                wide,
+                [left(c), 90.],
+                &PLAIN,
+                vec![
+                    lock("Lock guide: OFF", OFF, "#bw_lock_off"),
+                    lock("Lock guide: ON", GREEN, "#bw_lock_on"),
+                ],
+            ),
+        ));
+        nodes.push(named(
+            "lock_hint",
+            text(
+                "Stops moves and rotation. Not Placement lock.",
+                [126., 24.],
+                [left(c) + 2., 114.],
                 MUTED,
                 "left",
             ),
         ));
+        nodes.push(named("paste_box", framed([WIDTH, 30.], [PAD, 272.])));
         nodes.push(named(
-            "mode",
-            button(
-                controls,
-                MODE_ID,
-                "#bw_fp_mode",
-                [120., 22.],
-                [WINDOW[0] - PAD - 120., y],
-                BUTTON,
-                TEXT,
-                None,
-            ),
+            "paste",
+            plain(controls, "paste", "#bw_paste", [90., 20.], [20., 277.]),
         ));
-        nodes.push(footer("Changes save right away  ·  P to close"));
-        nodes
-    }
-
-    /// One Controls row: the action and its key in a small chip.
-    fn keys(controls: &mut Controls) -> Vec<Value> {
-        let mut nodes = heading("bw_keys");
-        let rows = [
-            [
-                ("place", "Place here"),
-                ("ccw", "Rotate left"),
-                ("cw", "Rotate right"),
-            ],
-            [("x-minus", "X −"), ("y-minus", "Y −"), ("z-minus", "Z −")],
-            [("x-plus", "X +"), ("y-plus", "Y +"), ("z-plus", "Z +")],
-            [
-                ("previous-layer", "Previous layer"),
-                ("mode", "Layer mode"),
-                ("next-layer", "Next layer"),
-            ],
-            [
-                ("mirror", "Mirror"),
-                ("lock", "#bw_lock"),
-                ("visibility", "#bw_visibility"),
-            ],
-            [
-                ("verifier", "Verifier"),
-                ("paste", "#bw_paste"),
-                ("hotkeys", "Hotkeys"),
-            ],
-        ];
-        let width = (WIDTH - 16.) / 3.;
-        for (row, commands) in rows.into_iter().enumerate() {
-            for (col, (id, title)) in commands.into_iter().enumerate() {
-                let size = [width, 24.];
-                let offset = [
-                    PAD + col as f64 * (width + 8.),
-                    STRIP + 40. + row as f64 * 30.,
-                ];
-                let index = controls.button(id);
-                let click = json!({
-                    "type": "button", "size": size,
-                    "default_control": "idle", "hover_control": "hover",
-                    "pressed_control": "pressed",
-                    "button_mappings": [{"from_button_id":"button.menu_select",
-                        "to_button_id":format!("mod.control:{index}"), "mapping_type":"pressed"}],
-                    "controls": [
-                        {"idle": {"type":"panel", "size":size}},
-                        {"hover": rect(size, [0., 0.], [1., 1., 1., 0.08], RADIUS)},
-                        {"pressed": rect(size, [0., 0.], [0., 0., 0., 0.25], RADIUS)},
-                    ]
-                });
-                nodes.push(named(
-                    id,
-                    anchored(
-                        json!({"type":"panel", "controls":[
-                            {"face": framed(size, [0., 0.], BUTTON)},
-                            {"caption": text(title, [width,10.], [0.,7.], TEXT, "center")},
-                            {"click": click},
-                        ]}),
-                        size,
-                        offset,
-                    ),
-                ));
-            }
-        }
-        nodes.push(footer("P closes this window"));
+        nodes.push(named(
+            "paste_hint",
+            text("#bw_paste_hint", [320., 10.], [118., 282.], MUTED, "left"),
+        ));
+        nodes.push(footer("Numpad 8/4/6/2 move  ·  7/9 down/up  ·  1/3 rotate"));
         nodes
     }
 
     /// The JSON-UI document and its routed controls.
     fn document() -> (String, Vec<Value>) {
         let mut controls = Controls::default();
-        let mut card = vec![named("background", framed(WINDOW, [0., 0.], CARD))];
+        let mut card = vec![named(
+            "background",
+            outlined(WINDOW, [0., 0.], CARD, BORDER),
+        )];
         card.extend(strip(&mut controls));
         card.push(named("materials", body(0, materials(&mut controls))));
         card.push(named("import", body(1, import(&mut controls))));
@@ -787,7 +1063,7 @@ mod layout {
             "namespace": "browser",
             "root": {"type":"screen","size":["100%","100%"],"controls":[
                 {"backdrop": {"type":"custom","renderer":"cinnabar_rounded_rectangle",
-                    "size":["100%","100%"],"color":BACKDROP,"radius":0}},
+                    "size":["100%","100%"],"color":round(&BG),"radius":0}},
                 {"window": {"type":"panel","size":WINDOW,"anchor_from":"center","anchor_to":"center",
                     "controls":card}},
             ]},
@@ -825,17 +1101,36 @@ fn display_name(identifier: &str) -> String {
 
 impl Viewer {
     /// Material indices in alphabetical order, keeping only names containing the search.
-    fn browser_materials(&self) -> Vec<(usize, String)> {
+    /// The sorted names are built once per material list, since schematics with many
+    /// different blocks made rebuilding them on every scroll exhaust the frame's fuel.
+    fn browser_materials(&self) -> Vec<(usize, std::rc::Rc<str>)> {
         let search = self.browser_search.trim().to_lowercase();
-        let mut lines: Vec<_> = self
-            .materials
-            .iter()
-            .enumerate()
-            .map(|(index, line)| (index, display_name(&line.name)))
-            .filter(|(_, name)| search.is_empty() || name.to_lowercase().contains(&search))
-            .collect();
-        lines.sort_by(|a, b| a.1.cmp(&b.1));
-        lines
+        let signature = (self.materials.len(), self.materials.as_ptr() as usize);
+        let mut cache = self.browser_names.borrow_mut();
+        if cache
+            .as_ref()
+            .is_none_or(|(cached, _)| *cached != signature)
+        {
+            let mut names: Vec<_> = self
+                .materials
+                .iter()
+                .enumerate()
+                .map(|(index, line)| {
+                    let name = display_name(&line.name);
+                    let lower = name.to_lowercase();
+                    (index, std::rc::Rc::<str>::from(name), lower)
+                })
+                .collect();
+            names.sort_by(|a, b| a.1.cmp(&b.1));
+            *cache = Some((signature, names));
+        }
+        cache.as_ref().map_or_else(Vec::new, |(_, names)| {
+            names
+                .iter()
+                .filter(|(_, _, lower)| search.is_empty() || lower.contains(&search))
+                .map(|(index, name, _)| (*index, name.clone()))
+                .collect()
+        })
     }
 
     /// Moves the material list a view up or down; returns whether it moved.
@@ -868,10 +1163,21 @@ impl Viewer {
         true
     }
 
-    /// Handles one click in the window: a tab switch, a settings switch carrying its new
-    /// state, the Fast Place mode button, or a library action.
+    /// Handles one click in the window: a two-click Delete, a tab switch, a settings switch
+    /// carrying its new state, the Fast Place mode button, or another menu action.
     pub(super) fn browser_event(&mut self, id: &str, value: f32) {
-        if let Some(tab) = Tab::ALL.into_iter().find(|tab| tab.id() == id) {
+        // Delete takes a second click on the same row; any other click cancels it.
+        let confirming = self.delete_confirm.take();
+        if let Some(row) = id
+            .strip_prefix("delete-")
+            .and_then(|row| row.parse::<usize>().ok())
+        {
+            if confirming == Some(row) {
+                self.menu_action(id);
+            } else {
+                self.delete_confirm = Some(row);
+            }
+        } else if let Some(tab) = Tab::ALL.into_iter().find(|tab| tab.id() == id) {
             self.browser_tab = tab;
         } else if let Some(key) = id.strip_prefix(SETTING_PREFIX) {
             self.browser_setting(key, value >= 0.5);
@@ -917,14 +1223,34 @@ impl Viewer {
 
     /// Blocks still needed for one material: scanned counts once the guide is scanned,
     /// otherwise every block of that material.
-    fn browser_needed(&self, line: &schematica_core::MaterialLine, scanned: bool) -> u64 {
+    fn browser_needed(&self, material: usize, scanned: bool) -> u64 {
         if !scanned {
-            return line.total;
+            return self.materials.get(material).map_or(0, |line| line.total);
         }
-        let indices = self.preview.material_indices(&line.name);
+        // Matching names against the whole palette for every row exhausted the frame's fuel
+        // on schematics with many block states, so the table is built once per palette.
+        let identity = (
+            self.materials.as_ptr() as usize,
+            self.materials.len(),
+            self.preview.palette_identity(),
+        );
+        let mut cache = self.browser_indices.borrow_mut();
+        if cache.as_ref().is_none_or(|(cached, _)| *cached != identity) {
+            let names: Vec<&str> = self
+                .materials
+                .iter()
+                .map(|line| line.name.as_str())
+                .collect();
+            let (_, table) = self.preview.material_index_table(&names);
+            *cache = Some((identity, table));
+        }
+        let indices = cache
+            .as_ref()
+            .and_then(|(_, table)| table.get(material))
+            .map_or(&[][..], Vec::as_slice);
         self.tiles
             .iter()
-            .map(|tile| u64::from(tile.material_counts(&indices)[0]))
+            .map(|tile| u64::from(tile.material_counts(indices)[0]))
             .sum()
     }
 }
@@ -941,12 +1267,27 @@ pub fn bindings(viewer: &Viewer, out: &mut Map<String, Value>, controls: &mut Ve
         "#bw_tab_x".into(),
         json!(viewer.browser_tab.index() as f64 * (TAB_WIDTH + TAB_GAP)),
     );
+    out.insert("#bw_tab".into(), json!(viewer.browser_tab.index()));
+    out.insert(
+        NATIVE_BINDING.into(),
+        json!(NATIVE_TABS.contains(&viewer.browser_tab)),
+    );
     match viewer.browser_tab {
         Tab::Materials => materials(viewer, out),
         Tab::Import => import(viewer, out),
         Tab::Settings => settings(viewer, out, controls),
         Tab::Controls => keys(viewer, out),
     }
+}
+
+/// Cuts `text` to `limit` characters, ending in `...` when it was longer.
+fn shorten(text: &str, limit: usize) -> String {
+    if text.chars().count() <= limit {
+        return text.to_owned();
+    }
+    let mut short: String = text.chars().take(limit.saturating_sub(3)).collect();
+    short.push_str("...");
+    short
 }
 
 fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
@@ -964,17 +1305,14 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
         total
     };
     let title = if viewer.loaded {
-        viewer.schematic.name.clone()
+        shorten(&viewer.schematic.name, 40)
     } else {
         "No schematic loaded".into()
     };
     let summary = if viewer.materials.is_empty() {
-        "Load a schematic to see the blocks it needs.".into()
+        "Load a schematic in Import".into()
     } else {
-        format!(
-            "{needed} blocks needed  ·  {} different blocks",
-            viewer.materials.len()
-        )
+        format!("{} materials", viewer.materials.len())
     };
     let placed = total.saturating_sub(needed);
     let progress = if total == 0 {
@@ -986,11 +1324,11 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
         String::new()
     } else if scanned {
         format!(
-            "{}% built  ·  {placed} of {total} placed",
+            "{}% built  ·  {placed} / {total}",
             (progress * 100.).floor()
         )
     } else {
-        "Place the schematic to track progress".into()
+        "Place it to track progress".into()
     };
     out.insert("#bw_title".into(), json!(title));
     out.insert("#bw_summary".into(), json!(summary));
@@ -999,19 +1337,27 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
     let searching = !viewer.browser_search.is_empty();
     out.insert("#bw_search_empty".into(), json!(!searching));
     out.insert("#bw_search_full".into(), json!(searching));
+    // The native window's search field shows the search it continues from.
+    out.insert("#bw_search_text".into(), json!(viewer.browser_search));
     let lines = viewer.browser_materials();
     let pages = lines.len().div_ceil(ROWS).max(1);
-    let first = viewer.material_page.min(pages - 1) * ROWS;
-    let empty = if !viewer.materials.is_empty() && lines.is_empty() {
-        format!("No blocks match \"{}\"", viewer.browser_search.trim())
-    } else {
-        String::new()
-    };
-    out.insert("#bw_empty_visible".into(), json!(!empty.is_empty()));
-    out.insert("#bw_empty".into(), json!(empty));
+    let page = viewer.material_page.min(pages - 1);
+    let first = page * ROWS;
+    let empty = !viewer.materials.is_empty() && lines.is_empty();
+    out.insert("#bw_empty_visible".into(), json!(empty));
+    out.insert("#bw_empty".into(), json!("No matching materials"));
+    out.insert(
+        "#bw_page".into(),
+        json!(if lines.is_empty() {
+            String::new()
+        } else {
+            format!("Page {} / {pages}", page + 1)
+        }),
+    );
     for row in 0..ROWS {
         let entry = lines.get(first + row);
         let line = entry.map(|(index, _)| &viewer.materials[*index]);
+        let needed = entry.map(|(index, _)| viewer.browser_needed(*index, scanned));
         out.insert(format!("#bw_row{row}_visible"), json!(line.is_some()));
         out.insert(
             format!("#bw_row{row}_icon"),
@@ -1019,14 +1365,17 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
         );
         out.insert(
             format!("#bw_row{row}_name"),
-            json!(entry.map_or("", |(_, name)| name.as_str())),
+            json!(entry.map_or(String::new(), |(_, name)| shorten(name, 22))),
         );
         out.insert(
             format!("#bw_row{row}_needed"),
-            json!(line.map_or(String::new(), |line| {
-                viewer.browser_needed(line, scanned).to_string()
-            })),
+            json!(needed.map_or(String::new(), |needed| needed.to_string())),
         );
+        out.insert(
+            format!("#bw_row{row}_need"),
+            json!(needed.is_some_and(|n| n > 0)),
+        );
+        out.insert(format!("#bw_row{row}_done"), json!(needed == Some(0)));
         out.insert(
             format!("#bw_row{row}_total"),
             json!(line.map_or(String::new(), |line| line.total.to_string())),
@@ -1036,17 +1385,20 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
 
 fn import(viewer: &Viewer, out: &mut Map<String, Value>) {
     let mut count = 0;
+    let mut banner = None;
     for row in 0..LIBRARY_ROWS {
         let index = viewer.visible_entry(row);
         count += usize::from(index.is_some());
         let loaded = viewer.loaded && index.is_some() && viewer.active_entry == index;
         let active = loaded && viewer.shown && viewer.placement.is_some();
-        // Only what these rows show; the old menu's dashboard data is much larger.
+        let name = index
+            .and_then(|index| viewer.library.get(index))
+            .map_or("", String::as_str);
+        if loaded {
+            banner = Some((shorten(name, 28), active));
+        }
         out.insert(format!("#visible{row}"), json!(index.is_some()));
-        out.insert(
-            format!("#entryMeta{row}"),
-            json!(if loaded { "Loaded" } else { "" }),
-        );
+        out.insert(format!("#bw_lib{row}_empty"), json!(index.is_none()));
         out.insert(
             format!("#entryStatus{row}"),
             json!(if active {
@@ -1058,47 +1410,72 @@ fn import(viewer: &Viewer, out: &mut Map<String, Value>) {
             }),
         );
         out.insert(format!("#bw_lib{row}_loaded"), json!(loaded));
-        out.insert(format!("#bw_lib{row}_plain"), json!(!loaded));
         out.insert(format!("#bw_lib{row}_active_on"), json!(active));
         out.insert(format!("#bw_lib{row}_active_off"), json!(!active));
-        // Longer than the old menu's names; the window's rows have the room.
-        let name = index
-            .and_then(|index| viewer.library.get(index))
-            .map_or(String::new(), |name| name.chars().take(32).collect());
-        out.insert(format!("#bw_lib_name{row}"), json!(name));
+        out.insert(
+            format!("#bw_lib{row}_delete"),
+            json!(if viewer.delete_confirm == Some(row) {
+                "Confirm?"
+            } else {
+                "Delete"
+            }),
+        );
+        out.insert(format!("#bw_lib_name{row}"), json!(shorten(name, 18)));
+        // Size and volume come from the header; only the loaded entry has counted blocks.
+        let meta = index
+            .and_then(|index| viewer.library_sizes.get(index))
+            .map_or(String::new(), |[x, y, z]| {
+                let mut meta = format!("{x}x{y}x{z}  ·  vol {}", x * y * z);
+                if loaded {
+                    let blocks: u64 = viewer.materials.iter().map(|line| line.total).sum();
+                    meta = format!("{x}x{y}x{z}  ·  {blocks} blocks  ·  vol {}", x * y * z);
+                }
+                meta
+            });
+        out.insert(format!("#bw_lib{row}_meta"), json!(meta));
     }
     out.insert("#bw_lib_title".into(), json!("Library"));
     out.insert(
         "#bw_lib_summary".into(),
-        json!(if count == 0 {
-            "Import .schem, .schematic, .litematic or .mcstructure files.".to_owned()
+        json!(format!("{count} / {LIBRARY_ROWS} slots used")),
+    );
+    out.insert("#bw_lib_banner_visible".into(), json!(banner.is_some()));
+    out.insert(
+        "#bw_lib_banner".into(),
+        json!(banner.map_or(String::new(), |(name, active)| if active {
+            format!("{name} is loaded and visible")
         } else {
-            format!("{count} of {LIBRARY_ROWS} schematics  ·  Load one to build it")
-        }),
+            format!("{name} is loaded and hidden")
+        })),
     );
 }
 
 fn keys(viewer: &Viewer, out: &mut Map<String, Value>) {
-    out.insert("#bw_keys_title".into(), json!("Hologram controls"));
+    out.insert(
+        "#bw_keys_title".into(),
+        json!(if viewer.loaded {
+            shorten(&viewer.schematic.name, 40)
+        } else {
+            "Controls".into()
+        }),
+    );
     out.insert(
         "#bw_keys_summary".into(),
         json!(viewer.placement.map_or_else(
-            || "Load a schematic to adjust its placement".into(),
+            || "Load a schematic in Import".into(),
             |p| format!(
-                "{} {} {}  ·  {}°  ·  {:?}  ·  {}",
+                "Origin {}, {}, {}  ·  Rot {}  ·  Mirror {}  ·  {}",
                 p.origin[0],
                 p.origin[1],
                 p.origin[2],
-                p.quarter_turns * 90,
-                p.mirror,
+                u16::from(p.quarter_turns) * 90,
+                format!("{:?}", p.mirror).to_lowercase(),
                 viewer.layers_text()
             ),
         )),
     );
-    out.insert(
-        "#bw_lock".into(),
-        json!(if viewer.locked { "Unlock" } else { "Lock" }),
-    );
+    out.insert("#bw_lock_on".into(), json!(viewer.locked));
+    out.insert("#bw_lock_off".into(), json!(!viewer.locked));
     out.insert(
         "#bw_visibility".into(),
         json!(if viewer.shown {
@@ -1108,6 +1485,10 @@ fn keys(viewer: &Viewer, out: &mut Map<String, Value>) {
         }),
     );
     out.insert(
+        "#bw_layer_mode".into(),
+        json!(["All layers", "Single layer", "All below"][usize::from(viewer.layer_mode) % 3]),
+    );
+    out.insert(
         "#bw_paste".into(),
         json!(if viewer.paste_confirm {
             "Confirm paste"
@@ -1115,14 +1496,24 @@ fn keys(viewer: &Viewer, out: &mut Map<String, Value>) {
             "Paste"
         }),
     );
+    let overlaps = if viewer.options.paste_destroy {
+        "ON"
+    } else {
+        "OFF"
+    };
+    out.insert(
+        "#bw_paste_hint".into(),
+        json!(if viewer.paste_confirm {
+            format!("Click again to confirm  ·  Destroy overlaps: {overlaps}")
+        } else {
+            format!("Destroy overlaps: {overlaps}")
+        }),
+    );
 }
 
 fn settings(viewer: &Viewer, out: &mut Map<String, Value>, controls: &mut Vec<Value>) {
     out.insert("#bw_set_title".into(), json!("Settings"));
-    out.insert(
-        "#bw_set_summary".into(),
-        json!("Placement assists and how the guide looks"),
-    );
+    out.insert("#bw_set_summary".into(), json!("Saves immediately"));
     out.insert(
         "#bw_fp_mode".into(),
         json!(if viewer.options.strict_place {
@@ -1130,6 +1521,10 @@ fn settings(viewer: &Viewer, out: &mut Map<String, Value>, controls: &mut Vec<Va
         } else {
             "V1 Classic"
         }),
+    );
+    out.insert(
+        "#bw_opacity".into(),
+        json!(format!("{}%", viewer.options.opacity)),
     );
     for (key, _) in SETTINGS {
         controls.push(json!({
@@ -1199,7 +1594,7 @@ mod tests {
         let mut sorted = names.clone();
         sorted.sort();
         assert_eq!(names, sorted);
-        assert_eq!(out["#bw_row0_name"], names[0]);
+        assert_eq!(out["#bw_row0_name"], &*names[0]);
         assert_eq!(out["#bw_body0"], true);
         assert_eq!(out["#bw_search_empty"], true);
 
@@ -1245,25 +1640,103 @@ mod tests {
         );
     }
 
+    /// The ids of every routed control in the precomputed layout.
+    fn routed_ids() -> Vec<String> {
+        let panel: Value = serde_json::from_str(LAYOUT).unwrap();
+        panel["controls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|control| control["id"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
     #[test]
-    fn controls_tab_routes_placement_and_layer_actions() {
+    fn controls_tab_reads_out_the_placement_and_routes_its_actions() {
         let mut viewer = crate::tests::reference_viewer();
         viewer.browser_event(Tab::Controls.id(), 1.);
+        viewer.placement = Some(schematica_core::Placement {
+            origin: [-1042, 64, 288],
+            quarter_turns: 1,
+            mirror: schematica_core::Mirror::None,
+        });
         let mut out = Map::new();
         bindings(&viewer, &mut out, &mut Vec::new());
         assert_eq!(out["#bw_body3"], true);
-        assert_eq!(out["#bw_keys_title"], "Hologram controls");
-        for id in ["x-minus", "cw", "mirror", "mode", "next-layer", "paste"] {
-            let panel: Value = serde_json::from_str(LAYOUT).unwrap();
-            assert!(
-                panel["controls"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|control| control["id"] == id),
-                "{id}"
-            );
+        let readout = out["#bw_keys_summary"].as_str().unwrap();
+        assert!(
+            readout.starts_with("Origin -1042, 64, 288  ·  Rot 90  ·  Mirror none"),
+            "{readout}"
+        );
+        assert_eq!(out["#bw_lock_off"], !viewer.locked);
+        assert_eq!(out["#bw_paste_hint"], "Destroy overlaps: OFF");
+        let ids = routed_ids();
+        for id in [
+            "place",
+            "ccw",
+            "cw",
+            "mirror",
+            "mode",
+            "next-layer",
+            "lock",
+            "visibility",
+            "paste",
+        ] {
+            assert!(ids.iter().any(|routed| routed == id), "{id}");
         }
+    }
+
+    #[test]
+    fn needed_counts_turn_green_at_zero() {
+        let mut viewer = crate::tests::reference_viewer();
+        let first = viewer.browser_materials()[0].0;
+        viewer.materials[first].total = 0;
+        let mut out = Map::new();
+        bindings(&viewer, &mut out, &mut Vec::new());
+        assert_eq!(out["#bw_row0_done"], true);
+        assert_eq!(out["#bw_row0_need"], false);
+        assert_eq!(out["#bw_row1_need"], true);
+        assert_eq!(out["#bw_page"], "Page 1 / 1");
+    }
+
+    #[test]
+    fn library_cards_show_size_loaded_state_and_banner() {
+        let mut viewer = crate::tests::reference_viewer();
+        viewer.browser_event(Tab::Import.id(), 1.);
+        viewer.library_sizes = vec![[4, 5, 6], [2, 2, 2], [1, 1, 1]];
+        viewer.active_entry = Some(0);
+        let mut out = Map::new();
+        bindings(&viewer, &mut out, &mut Vec::new());
+        assert_eq!(out["#bw_lib_summary"], "3 / 8 slots used");
+        assert_eq!(out["#bw_lib0_loaded"], true);
+        assert_eq!(out["#bw_lib_banner_visible"], true);
+        let blocks: u64 = viewer.materials.iter().map(|line| line.total).sum();
+        assert_eq!(
+            out["#bw_lib0_meta"],
+            format!("4x5x6  ·  {blocks} blocks  ·  vol 120")
+        );
+        assert_eq!(out["#bw_lib1_meta"], "2x2x2  ·  vol 8");
+        assert_eq!(out["#bw_lib3_empty"], true);
+    }
+
+    #[test]
+    fn delete_needs_a_second_click_on_the_same_row() {
+        let mut viewer = crate::tests::reference_viewer();
+        viewer.browser_event(Tab::Import.id(), 1.);
+        viewer.browser_event("delete-1", 1.);
+        assert!(viewer.options.deleted_entries.is_empty());
+        let mut out = Map::new();
+        bindings(&viewer, &mut out, &mut Vec::new());
+        assert_eq!(out["#bw_lib1_delete"], "Confirm?");
+
+        // Another click cancels the pending delete.
+        viewer.browser_event(Tab::Import.id(), 1.);
+        viewer.browser_event("delete-1", 1.);
+        viewer.browser_event("delete-2", 1.);
+        assert!(viewer.options.deleted_entries.is_empty());
+
+        viewer.browser_event("delete-2", 1.);
+        assert_eq!(viewer.options.deleted_entries, vec![2]);
     }
 
     #[test]
@@ -1297,6 +1770,28 @@ mod tests {
         bindings(&viewer, &mut out, &mut Vec::new());
         let label = if strict { "V1 Classic" } else { "V2 Strict" };
         assert_eq!(out["#bw_fp_mode"], label);
+        assert_eq!(out["#bw_opacity"], "65%");
+        viewer.browser_event("opacity", 1.);
+        let mut out = Map::new();
+        bindings(&viewer, &mut out, &mut Vec::new());
+        assert_eq!(out["#bw_opacity"], "90%");
+        let ids = routed_ids();
+        assert!(ids.iter().any(|routed| routed == "opacity"));
+        for removed in ["ui-layout", "hotkeys", "x-minus", "verifier"] {
+            assert!(!ids.iter().any(|routed| routed == removed), "{removed}");
+        }
+    }
+
+    #[test]
+    fn only_native_tabs_ask_for_the_native_window() {
+        let mut viewer = crate::tests::reference_viewer();
+        for tab in Tab::ALL {
+            viewer.browser_event(tab.id(), 1.);
+            let mut out = Map::new();
+            bindings(&viewer, &mut out, &mut Vec::new());
+            assert_eq!(out[NATIVE_BINDING], NATIVE_TABS.contains(&tab), "{tab:?}");
+            assert_eq!(out["#bw_tab"], tab.index());
+        }
     }
 
     #[test]

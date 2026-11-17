@@ -92,6 +92,11 @@ pub fn title(bytes: &[u8]) -> Result<String, String> {
     Ok(Decoder::new(bytes)?.name)
 }
 
+/// The blueprint's size from its header, without decoding its cells.
+pub fn size(bytes: &[u8]) -> Result<[i32; 3], String> {
+    Ok(Decoder::new(bytes)?.size)
+}
+
 /// Builds a fixed-size data slot that the desktop converter can populate without recompiling.
 pub fn embedded_slot(payload: &[u8]) -> Result<Vec<u8>, String> {
     if payload.len() > LIBRARY_BYTES {

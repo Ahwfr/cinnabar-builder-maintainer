@@ -42,6 +42,8 @@ use ui_engine::{
 pub(crate) use widgets::Palette;
 
 const SCREEN: &str = "cinnabar_personal.panel";
+/// The panel binding that asks for the native Cinnamatica window.
+pub const NATIVE_CINNAMATICA: &str = "#cinnamatica_native";
 
 pub(super) struct ModPanel {
     pub(super) owner: PanelUiOwner,
@@ -280,6 +282,20 @@ impl ModUi {
     /// Whether the panel is open and owns input; false while a closed panel plays its exit.
     pub fn mod_panel_open(&self) -> bool {
         self.mod_panel.as_ref().is_some_and(|panel| panel.open)
+    }
+
+    /// The open panel while its owner sets the bool binding [`NATIVE_CINNAMATICA`]: the client
+    /// then draws the Cinnamatica window natively from the panel's bindings and controls
+    /// instead of its JSON-UI surface.
+    pub fn native_cinnamatica_panel(&self) -> Option<&Panel> {
+        self.mod_panel
+            .as_ref()
+            .filter(|panel| {
+                panel.open
+                    && panel.panel.surface.bindings.get(NATIVE_CINNAMATICA)
+                        == Some(&ui::mod_panel::SurfaceValue::Bool(true))
+            })
+            .map(|panel| &panel.panel)
     }
 
     /// The open panel's owner and where it was last laid out over the HUD root, for

@@ -6,8 +6,6 @@ wit_bindgen::generate!({
 
 mod actions;
 mod browser;
-mod dashboard;
-mod hotkeys;
 mod library;
 mod menu;
 mod native_bindings;
@@ -44,7 +42,6 @@ use cinnabar::{
     extension::{budget, gameplay, hud, input, item_use, panel, settings, terrain},
     world_draw::drawing,
 };
-use menu::Screen;
 use overlay::{Preview, Tile, WholeGhost};
 use schematica_core::{LayerMode, MaterialLine, Mirror, Placement, Schematic, blueprint};
 use std::{
@@ -58,7 +55,7 @@ mod saved_placements;
 thread_local! {
     static OPEN_AFTER_LOAD: Cell<bool> = const { Cell::new(false) };
     static RUNTIME: RefCell<(Runtime, Vec<&'static [u8]>, Options, Option<usize>)> =
-        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, textured: true, assist: false, fast_place: false, strict_place: false, correct_aim: false, fullscreen_ui: true, bridge_place: true, opacity: 65, hotkeys: BTreeMap::new(), library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new() }, None)) };
+        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, textured: true, assist: false, fast_place: false, strict_place: false, correct_aim: false, bridge_place: true, opacity: 65, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new() }, None)) };
 }
 
 #[derive(Clone)]
@@ -72,10 +69,8 @@ struct Options {
     fast_place: bool,
     strict_place: bool,
     correct_aim: bool,
-    fullscreen_ui: bool,
     bridge_place: bool,
     opacity: u8,
-    hotkeys: BTreeMap<usize, String>,
     library_revision: u64,
     deleted_entries: Vec<usize>,
     remember_placement: bool,
@@ -94,9 +89,9 @@ impl Options {
                 "correct_aim": self.correct_aim,
                 "strict_place": self.strict_place,
                 "placement_lock": self.placement_lock,
-                "fullscreen_ui": self.fullscreen_ui, "bridge_place": self.bridge_place,
+                "bridge_place": self.bridge_place,
                 "remember_placement": self.remember_placement, "saved_placements": self.saved_placements,
-                "opacity": self.opacity, "hotkeys": self.hotkeys,
+                "opacity": self.opacity,
                 "library_revision": self.library_revision, "deleted_entries": self.deleted_entries,
             })
             .to_string(),
@@ -117,6 +112,14 @@ enum Runtime {
     Ready(Viewer),
     Invalid,
 }
+
+/// Material list identity (length and storage) and its `(index, name, lowercase name)`
+/// entries in alphabetical order.
+type BrowserNames = ((usize, usize), Vec<(usize, std::rc::Rc<str>, String)>);
+/// Material list identity, palette identity, and each material's palette indices.
+type BrowserIndices = ((usize, usize, (usize, usize)), Vec<Vec<usize>>);
+/// Fuel a window refresh needs before it runs in the current frame.
+const REFRESH_FUEL: u64 = 600_000;
 
 struct Schematica;
 
@@ -139,7 +142,6 @@ impl Guest for Schematica {
                 options.correct_aim = value["correct_aim"]
                     .as_bool()
                     .unwrap_or(options.correct_aim);
-                options.fullscreen_ui = value["fullscreen_ui"].as_bool().unwrap_or(true);
                 options.bridge_place = value["bridge_place"].as_bool().unwrap_or(true);
                 options.remember_placement = value["remember_placement"].as_bool().unwrap_or(true);
                 options.saved_placements = saved_placements::load(&value["saved_placements"]);
@@ -155,13 +157,6 @@ impl Guest for Schematica {
                     .collect();
                 if let Some(opacity) = value["opacity"].as_u64() {
                     options.opacity = opacity.clamp(25, 90) as u8;
-                }
-                if let Some(bindings) = value["hotkeys"].as_object() {
-                    for (index, value) in bindings {
-                        if let (Ok(index), Some(value)) = (index.parse(), value.as_str()) {
-                            hotkeys::edit(&mut options.hotkeys, index, value);
-                        }
-                    }
                 }
             });
         }
@@ -179,13 +174,15 @@ impl Guest for Schematica {
                     Ok(entries) => {
                         options.select_library(blueprint::library_revision(bytes));
                         *catalog = entries;
-                        *runtime = Runtime::Ready(Viewer::new(
+                        let mut viewer = Viewer::new(
                             Schematic::new("No schematic loaded", [1; 3]),
                             Vec::new(),
                             library_names(catalog),
                             options.clone(),
                             false,
-                        ));
+                        );
+                        viewer.library_sizes = library_sizes(catalog);
+                        *runtime = Runtime::Ready(viewer);
                     }
                     Err(_) => invalidate(runtime),
                 }
@@ -197,7 +194,7 @@ impl Guest for Schematica {
                 && keys.focused
                 && keys.gameplay
             {
-                if keys.keys_pressed.iter().any(|key| key == browser::KEY) {
+                if native_bindings::menu_pressed(&keys) {
                     OPEN_AFTER_LOAD.set(true);
                 } else if keys.keys_pressed.iter().any(|key| key == "Escape") {
                     OPEN_AFTER_LOAD.set(false);
@@ -301,6 +298,7 @@ impl Guest for Schematica {
                         true,
                     );
                     viewer.active_entry = *active_entry;
+                    viewer.library_sizes = library_sizes(catalog);
                     *runtime = Runtime::Ready(viewer);
                     label(&options.menu_hint("Cinnamatica"));
                 }
@@ -315,6 +313,14 @@ fn library_names(catalog: &[&[u8]]) -> Vec<String> {
     catalog
         .iter()
         .map(|entry| blueprint::title(entry).unwrap_or_else(|_| "Invalid schematic".into()))
+        .collect()
+}
+
+/// Each entry's size, read from its header for the P window's library cards.
+fn library_sizes(catalog: &[&[u8]]) -> Vec<[i32; 3]> {
+    catalog
+        .iter()
+        .map(|entry| blueprint::size(entry).unwrap_or([0; 3]))
         .collect()
 }
 
@@ -366,25 +372,25 @@ struct Viewer {
     nearby_aim: Option<(([f32; 3], [f32; 3]), Option<[i32; 3]>, Option<[i32; 3]>)>,
     options: Options,
     material_page: usize,
-    /// The open tab of the P window.
+    /// The open tab of the window.
     browser_tab: browser::Tab,
-    /// Text typed into the P window's material search.
+    /// Text typed into the window's material search.
     browser_search: String,
-    material_offset: usize,
-    verifier_page: usize,
-    verifier_marker: Option<overlay::DrawPair>,
-    verifier_target: Option<[i32; 3]>,
-    verifier_marker_changed: bool,
-    screen: Screen,
+    /// The library row whose Delete was clicked once and awaits a second click.
+    delete_confirm: Option<usize>,
+    /// The window's alphabetical material names, keyed by the material list they describe.
+    browser_names: std::cell::RefCell<Option<BrowserNames>>,
+    /// Each material's palette indices, keyed by the material list and palette they describe.
+    browser_indices: std::cell::RefCell<Option<BrowserIndices>>,
+    /// A window refresh held over from a frame without enough fuel left for it.
+    browser_refresh_pending: bool,
     library: Vec<String>,
-    selected: Option<usize>,
+    /// Library entry sizes, matching `library`.
+    library_sizes: Vec<[i32; 3]>,
     active_entry: Option<usize>,
     request: Option<usize>,
     loaded: bool,
     auto_place: bool,
-    rotate_ccw: bool,
-    flip_z: bool,
-    sort_name: bool,
     dirty: bool,
     paste_confirm: bool,
     paste: Option<paste::Paste>,
@@ -427,14 +433,12 @@ impl Viewer {
             material_page: 0,
             browser_tab: browser::Tab::default(),
             browser_search: String::new(),
-            material_offset: 0,
-            verifier_page: 0,
-            verifier_marker: None,
-            verifier_target: None,
-            verifier_marker_changed: false,
-            screen: Screen::Main,
+            delete_confirm: None,
+            browser_names: Default::default(),
+            browser_indices: Default::default(),
+            browser_refresh_pending: false,
+            library_sizes: Vec::new(),
             library,
-            selected: None,
             last_item_highlights: Vec::new(),
             highlight_dirty: true,
             layer_counts: Vec::new(),
@@ -446,9 +450,6 @@ impl Viewer {
             request: None,
             loaded,
             auto_place: loaded,
-            rotate_ccw: false,
-            flip_z: true,
-            sort_name: false,
             dirty: false,
             paste_confirm: false,
             paste: None,
@@ -474,9 +475,6 @@ impl Viewer {
                 self.whole = WholeGhost::default();
                 self.placement = None;
                 self.locked = false;
-                self.verifier_marker = None;
-                self.verifier_target = None;
-                self.verifier_marker_changed = false;
                 self.world = Some(scope);
                 self.placement_key = gameplay::read_local_world_key()
                     .ok()
@@ -515,101 +513,38 @@ impl Viewer {
             .keys_held
             .iter()
             .any(|key| key == "AltLeft" || key == "AltRight");
-        let legacy = alt
-            .then(|| {
-                keys.keys_pressed.iter().find_map(|key| match key.as_str() {
-                    "KeyJ" => Some(Screen::Load),
-                    "KeyI" => Some(Screen::Control),
-                    "KeyK" => Some(Screen::Settings),
-                    "KeyP" if !self.loaded => Some(Screen::Load),
-                    _ => None,
-                })
-            })
-            .flatten();
         if keys.panel_open {
             self.menu_armed = false;
-            let old = self.screen;
-            let mut changed = false;
-            if matches!(self.screen, Screen::Main | Screen::Load)
-                && keys.wheel != 0.
-                && let (Some((x, y)), Some(layout)) = (keys.pointer, panel::read_layout())
-            {
-                let x = (x - layout.offset.0) / layout.scale * 640. / layout.width;
-                let y = (y - layout.offset.1) / layout.scale * 360. / layout.height;
-                if (254. ..=624.).contains(&x) && (245. ..332.).contains(&y) {
-                    changed |= self.scroll_materials(-keys.wheel.signum() as isize);
-                }
-            }
-            if self.screen == Screen::Browser {
-                // P types into the search field while it is being edited.
-                let editing = input::read_native_editing().unwrap_or(false);
-                if !alt && !editing && keys.keys_pressed.iter().any(|key| key == browser::KEY) {
-                    let _ = panel::close();
-                    return;
-                }
-                let mut changed = keys.wheel != 0. && self.browser_scroll(keys.wheel < 0.);
-                if !editing && keys.keys_pressed.iter().any(|key| key == "F6") {
-                    self.browser_tab = browser::Tab::Settings;
-                    changed = true;
-                }
-                for event in input::read_field_events().unwrap_or_default() {
-                    if let input::FieldEvent::Change(text) | input::FieldEvent::Submit(text) = event
-                    {
-                        changed |= self.browser_search_changed(&text.id, text.value);
-                    }
-                }
-                for event in keys.events {
-                    self.browser_event(&event.id, event.value);
-                    changed = true;
-                }
-                if changed && self.dirty {
-                    self.remember_placement();
-                }
-                if self.screen != Screen::Browser {
-                    menu::prepare(self);
-                    return;
-                }
-                // Loading a schematic closes the window so the guide can appear.
-                if self.request.is_some() {
-                    let _ = panel::close();
-                    return;
-                }
-                if changed {
-                    menu::refresh(self);
-                }
+            // The menu key closes the window, except while it types into the search field.
+            let editing = input::read_native_editing().unwrap_or(false);
+            if !alt && !editing && native_bindings::menu_pressed(&keys) {
+                let _ = panel::close();
                 return;
             }
-            if self.screen == Screen::Control {
-                for edit in input::read_text_events().unwrap_or_default() {
-                    changed |= self.edit_number(&edit.id, &edit.value);
-                }
-            }
-            if self.screen == Screen::Hotkeys {
-                for edit in input::read_text_events().unwrap_or_default() {
-                    if let Some(index) =
-                        edit.id.strip_prefix("bind-").and_then(|id| id.parse().ok())
-                    {
-                        hotkeys::edit(&mut self.options.hotkeys, index, &edit.value);
-                        self.options.save();
-                        changed = true;
-                    }
+            let mut changed = keys.wheel != 0. && self.browser_scroll(keys.wheel < 0.);
+            for event in input::read_field_events().unwrap_or_default() {
+                if let input::FieldEvent::Change(text) | input::FieldEvent::Submit(text) = event {
+                    changed |= self.browser_search_changed(&text.id, text.value);
                 }
             }
             for event in keys.events {
-                self.menu_action(&event.id);
+                self.browser_event(&event.id, event.value);
                 changed = true;
             }
             if changed && self.dirty {
                 self.remember_placement();
             }
+            // Loading a schematic closes the window so the guide can appear.
             if self.request.is_some() {
                 let _ = panel::close();
                 return;
             }
-            if old != self.screen {
-                menu::prepare(self);
-            } else if changed {
-                menu::refresh(self);
+            // A refresh rebuilds every binding; hold it for a frame with fuel to spare.
+            if changed || self.browser_refresh_pending {
+                self.browser_refresh_pending = budget::remaining_fuel() < REFRESH_FUEL;
+                if !self.browser_refresh_pending {
+                    menu::refresh(self);
+                }
             }
             return;
         }
@@ -619,23 +554,14 @@ impl Viewer {
         if keys.keys_pressed.iter().any(|key| key == "Escape") {
             OPEN_AFTER_LOAD.set(false);
         }
-        let browser = (!alt
-            && (OPEN_AFTER_LOAD.replace(false)
-                || keys.keys_pressed.iter().any(|key| key == browser::KEY)))
-        .then_some(Screen::Browser);
-        if let Some(screen) = legacy
-            .or(browser)
-            .or_else(|| self.builder_hotkey(&keys, alt, gameplay))
-        {
-            self.screen = screen;
-            if screen == Screen::Browser && self.browser_tab == browser::Tab::Materials {
+        if OPEN_AFTER_LOAD.replace(false) || self.builder_hotkey(&keys, alt, gameplay) {
+            if self.browser_tab == browser::Tab::Materials {
                 self.browser_tab = browser::Tab::Import;
             }
-            self.selected = None;
-            self.verifier_page = 0;
             self.material_page = 0;
             // The window's search field opens empty.
             self.browser_search.clear();
+            self.delete_confirm = None;
             if menu::prepare(self) {
                 self.open_retries = 12;
                 menu::request_open();
@@ -699,12 +625,6 @@ impl Viewer {
             return;
         }
         self.update_preview_window();
-        if std::mem::take(&mut self.verifier_marker_changed) {
-            self.clear_verifier_marker();
-            if let Some(cell) = self.verifier_target {
-                self.verifier_marker = overlay::highlight(self.world.unwrap().1, cell).ok();
-            }
-        }
         let world_target = gameplay::read_block_target()
             .ok()
             .flatten()
@@ -880,32 +800,22 @@ impl Viewer {
     }
 
     /// Resolve chords before opening the main menu on release of a standalone M.
-    fn builder_hotkey(
-        &mut self,
-        keys: &input::Controls,
-        alt: bool,
-        gameplay: bool,
-    ) -> Option<Screen> {
+    /// Runs a pressed gameplay binding; returns whether it asks to open the window.
+    fn builder_hotkey(&mut self, keys: &input::Controls, alt: bool, gameplay: bool) -> bool {
         let modified = alt
             || ["Control", "Shift", "Super"]
                 .iter()
                 .any(|modifier| keys.keys_held.iter().any(|key| key.starts_with(modifier)));
         if modified {
             self.menu_armed = false;
-            return None;
+            return false;
         }
-        use hotkeys::Action;
-        match native_bindings::action(keys, &mut self.menu_armed)? {
-            Action::Main => return Some(Screen::Browser),
-            Action::Config => {
-                self.browser_tab = browser::Tab::Settings;
-                return Some(Screen::Browser);
-            }
-            Action::Placement | Action::PlacementConfig => return Some(Screen::Control),
-            Action::Verifier => return Some(Screen::Verifier),
-            Action::Materials => return Some(Screen::Materials),
-            _ if !gameplay => return None,
-            Action::Render => {
+        use native_bindings::Action;
+        match native_bindings::action(keys, &mut self.menu_armed) {
+            Some(Action::Main) => return true,
+            None => return false,
+            _ if !gameplay => return false,
+            Some(Action::Render) => {
                 self.render_all = !self.render_all;
                 self.dirty = true;
                 self.last_label.clear();
@@ -913,16 +823,16 @@ impl Viewer {
                     label("");
                 }
             }
-            Action::Ghosts => self.dirty |= self.control("KeyB"),
-            Action::NextMode => self.dirty |= self.control("KeyL"),
-            Action::PreviousMode => {
+            Some(Action::Ghosts) => self.dirty |= self.control("KeyB"),
+            Some(Action::NextMode) => self.dirty |= self.control("KeyL"),
+            Some(Action::PreviousMode) => {
                 self.layer_mode = (self.layer_mode + 2) % 3;
                 self.dirty = true;
             }
-            Action::NextLayer => self.dirty |= self.control("BracketRight"),
-            Action::PreviousLayer => self.dirty |= self.control("BracketLeft"),
+            Some(Action::NextLayer) => self.dirty |= self.control("BracketRight"),
+            Some(Action::PreviousLayer) => self.dirty |= self.control("BracketLeft"),
         }
-        None
+        false
     }
 
     fn control(&mut self, key: &str) -> bool {
@@ -1018,28 +928,6 @@ impl Viewer {
             pose.eye.z.floor() as i32 + dz,
         ];
         self.shown = true;
-        true
-    }
-
-    fn edit_number(&mut self, id: &str, text: &str) -> bool {
-        if let Ok(value) = text.trim().parse::<i32>() {
-            if id == "layer" {
-                self.layer = value.clamp(0, self.schematic.size()[1] - 1);
-                if self.layer_mode == 0 {
-                    self.layer_mode = 1;
-                }
-                self.dirty = true;
-            } else if !self.locked
-                && let (Some(p), Some(axis)) = (
-                    &mut self.placement,
-                    ["x", "y", "z"].iter().position(|name| *name == id),
-                )
-            {
-                p.origin[axis] = value.clamp(-30_000_000, 30_000_000);
-                self.dirty = true;
-            }
-        }
-        // Repaint the accepted value even when the submitted text was invalid.
         true
     }
 
@@ -1153,9 +1041,6 @@ impl Viewer {
         self.highlight_again = false;
         self.highlight_delay = 0;
         self.highlight_dirty = true;
-        self.clear_verifier_marker();
-        self.verifier_target = None;
-        self.verifier_marker_changed = false;
         self.retired
             .extend(self.tiles.drain(..).filter(Tile::has_draws));
         self.cursor = 0;
@@ -1287,7 +1172,6 @@ impl Viewer {
 
     fn release_for_switch(&mut self) -> bool {
         self.whole.clear();
-        self.clear_verifier_marker();
         self.retired
             .extend(self.tiles.drain(..).filter(Tile::has_draws));
         self.clear_retired();

@@ -1,7 +1,32 @@
 //! Cached, paged observations of the player's normal Keyboard & Mouse settings.
 
-use crate::{hotkeys::Action, input};
+use crate::input;
 use std::cell::RefCell;
+
+/// The guest features bound in the player's Keyboard & Mouse settings.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Action {
+    /// Opens and closes the Cinnamatica window.
+    Main,
+    Render,
+    Ghosts,
+    NextMode,
+    PreviousMode,
+    NextLayer,
+    PreviousLayer,
+}
+
+impl Action {
+    const ALL: [Action; 7] = [
+        Action::Main,
+        Action::Render,
+        Action::Ghosts,
+        Action::NextMode,
+        Action::PreviousMode,
+        Action::NextLayer,
+        Action::PreviousLayer,
+    ];
+}
 
 pub(super) const TRANSFORMS: [(&str, &str); 8] = [
     ("schematic-forward", "ViewForward"),
@@ -62,15 +87,10 @@ pub fn sample() {
 fn name(action: Action) -> &'static str {
     match action {
         Action::Main => "schematic-menu",
-        Action::Config => "schematic-config",
-        Action::Placement => "schematic-placement",
-        Action::Verifier => "schematic-verifier",
-        Action::Materials => "schematic-materials",
         Action::Render => "schematic-render",
         Action::Ghosts => "schematic-ghosts",
         Action::NextMode => "schematic-next-mode",
         Action::PreviousMode => "schematic-previous-mode",
-        Action::PlacementConfig => "schematic-placement-config",
         Action::NextLayer => "schematic-next-layer",
         Action::PreviousLayer => "schematic-previous-layer",
     }
@@ -110,20 +130,19 @@ pub fn is_held(action: &str, keys: &input::Controls) -> bool {
 fn fallback(action: Action) -> Option<(&'static str, &'static str)> {
     match action {
         Action::Main => Some(("KeyM", "M")),
-        Action::Config => Some(("F6", "F6")),
         _ => None,
     }
 }
 
 /// Resolves guest features from the same physical settings rows the native router observes.
 pub fn action(keys: &input::Controls, armed: &mut bool) -> Option<Action> {
-    for (action, _, _) in crate::hotkeys::BINDINGS {
+    for action in Action::ALL {
         if pressed(name(action), keys) {
             *armed = false;
             return Some(action);
         }
     }
-    for action in [Action::Main, Action::Config] {
+    for action in [Action::Main] {
         let bound = CACHE.with(|cache| {
             cache.borrow().bindings.iter().any(|binding| {
                 binding.action == name(action) && binding.context == input::BindingContext::Gameplay
@@ -138,6 +157,11 @@ pub fn action(keys: &input::Controls, armed: &mut bool) -> Option<Action> {
         }
     }
     None
+}
+
+/// Whether this frame pressed the window's menu key: its current binding, or M while unbound.
+pub fn menu_pressed(keys: &input::Controls) -> bool {
+    action(keys, &mut false) == Some(Action::Main)
 }
 
 pub fn caption(action: Action) -> String {

@@ -49,12 +49,26 @@ impl Preview {
         self.palette.len() == schematic.palette().len()
     }
 
-    pub fn material_indices(&self, name: &str) -> Vec<usize> {
-        self.palette
+    /// Each of `names`' palette indices, from one pass over the palette. Identifies the
+    /// palette it was built from, which changes whenever the preview is rebuilt.
+    pub fn material_index_table(&self, names: &[&str]) -> ((usize, usize), Vec<Vec<usize>>) {
+        let position: std::collections::HashMap<&str, usize> = names
             .iter()
             .enumerate()
-            .filter_map(|(index, block)| (block.name == name).then_some(index))
-            .collect()
+            .map(|(index, name)| (*name, index))
+            .collect();
+        let mut table = vec![Vec::new(); names.len()];
+        for (index, block) in self.palette.iter().enumerate() {
+            if let Some(&material) = position.get(block.name.as_str()) {
+                table[material].push(index);
+            }
+        }
+        (self.palette_identity(), table)
+    }
+
+    /// The palette's storage and length, which change whenever it is rebuilt.
+    pub fn palette_identity(&self) -> (usize, usize) {
+        (self.palette.as_ptr() as usize, self.palette.len())
     }
 
     fn bounds(&self, size: [i32; 3]) -> ([i32; 3], [i32; 3]) {
@@ -382,22 +396,6 @@ impl DrawPair {
     }
 }
 
-pub(super) fn highlight(dimension: i32, cell: [i32; 3]) -> Result<DrawPair, draw::DrawError> {
-    let mut mesh = draw::Mesh {
-        vertices: Vec::new(),
-        indices: Vec::new(),
-    };
-    add_box(&mut mesh, [0; 3], (0.20, 0.96, 0.81, 0.42));
-    create(
-        draw::GeometrySpec::Triangles(mesh),
-        draw::BlockAnchor {
-            dimension,
-            position: cell.into(),
-        },
-        1.,
-    )
-}
-
 impl Tile {
     pub fn distance_squared(&self, eye: [f32; 3]) -> f32 {
         (0..3)
@@ -463,10 +461,6 @@ impl Tile {
             .fold([0; 3], |sum, counts| {
                 std::array::from_fn(|i| sum[i] + u32::from(counts[i]))
             })
-    }
-
-    pub fn mismatch_count(&self) -> usize {
-        self.mismatches.len()
     }
 
     fn query(&self) -> terrain::RegionQuery {

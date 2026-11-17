@@ -115,16 +115,6 @@ impl Viewer {
             self.options.save();
         }
     }
-
-    /// Unloading stops automatic reopen while retaining the entry transform.
-    pub(super) fn remember_unload(&mut self) {
-        self.remember_placement();
-        if let Some(key) = &self.placement_key
-            && self.options.saved_placements.remove(key).is_some()
-        {
-            self.options.save();
-        }
-    }
 }
 
 #[cfg(test)]
@@ -150,7 +140,7 @@ fn restores_only_the_matching_world_and_dimension() {
 
 #[cfg(test)]
 #[test]
-fn reloads_each_entry_after_unloading_and_switching() {
+fn reloads_each_entry_after_switching() {
     let mut viewer = crate::tests::reference_viewer();
     viewer.options.remember_placement = true;
     viewer.library = vec!["First".into(), "Second".into()];
@@ -159,8 +149,7 @@ fn reloads_each_entry_after_unloading_and_switching() {
     let second = Placement::new([32, 70, 12]);
     viewer.active_entry = Some(0);
     viewer.placement = Some(first);
-    viewer.remember_unload();
-    assert!(!viewer.options.saved_placements.contains_key("world-a/0"));
+    viewer.remember_placement();
     viewer.active_entry = Some(1);
     viewer.placement = Some(second);
     viewer.remember_placement();

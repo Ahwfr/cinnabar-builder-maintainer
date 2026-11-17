@@ -25,9 +25,6 @@ impl Viewer {
         };
         self.options.deleted_entries.push(index);
         self.options.save();
-        if self.selected == Some(index) {
-            self.selected = None;
-        }
         if self.request == Some(index) {
             self.request = None;
         }
@@ -37,7 +34,6 @@ impl Viewer {
             self.loaded = false;
             self.auto_place = false;
             self.materials.clear();
-            self.material_offset = 0;
             self.dirty = true;
         }
     }

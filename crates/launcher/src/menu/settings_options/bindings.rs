@@ -114,43 +114,33 @@ bindings! {
         None, false, Some("Player List");
     SchematicMenu => "key.schematic-menu", Some(Action::SchematicMenu), Some(DeviceRow::Action(22)), None,
         None, false, Some("Cinnamatica Menu");
-    SchematicConfig => "key.schematic-config", Some(Action::SchematicConfig), Some(DeviceRow::Action(23)), None,
-        None, false, Some("Cinnamatica Settings");
-    SchematicPlacement => "key.schematic-placement", Some(Action::SchematicPlacement), Some(DeviceRow::Action(24)), None,
-        None, false, Some("Cinnamatica Placement");
-    SchematicVerifier => "key.schematic-verifier", Some(Action::SchematicVerifier), Some(DeviceRow::Action(25)), None,
-        None, false, Some("Cinnamatica Verifier");
-    SchematicMaterials => "key.schematic-materials", Some(Action::SchematicMaterials), Some(DeviceRow::Action(26)), None,
-        None, false, Some("Cinnamatica Materials");
-    SchematicRender => "key.schematic-render", Some(Action::SchematicRender), Some(DeviceRow::Action(27)), None,
+    SchematicRender => "key.schematic-render", Some(Action::SchematicRender), Some(DeviceRow::Action(23)), None,
         None, false, Some("Cinnamatica Rendering");
-    SchematicGhosts => "key.schematic-ghosts", Some(Action::SchematicGhosts), Some(DeviceRow::Action(28)), None,
+    SchematicGhosts => "key.schematic-ghosts", Some(Action::SchematicGhosts), Some(DeviceRow::Action(24)), None,
         None, false, Some("Cinnamatica Ghost Blocks");
-    SchematicNextMode => "key.schematic-next-mode", Some(Action::SchematicNextMode), Some(DeviceRow::Action(29)), None,
+    SchematicNextMode => "key.schematic-next-mode", Some(Action::SchematicNextMode), Some(DeviceRow::Action(25)), None,
         None, false, Some("Cinnamatica Next Layer Mode");
-    SchematicPreviousMode => "key.schematic-previous-mode", Some(Action::SchematicPreviousMode), Some(DeviceRow::Action(30)), None,
+    SchematicPreviousMode => "key.schematic-previous-mode", Some(Action::SchematicPreviousMode), Some(DeviceRow::Action(26)), None,
         None, false, Some("Cinnamatica Previous Layer Mode");
-    SchematicPlacementConfig => "key.schematic-placement-config", Some(Action::SchematicPlacementConfig), Some(DeviceRow::Action(31)), None,
-        None, false, Some("Cinnamatica Placement Settings");
-    SchematicNextLayer => "key.schematic-next-layer", Some(Action::SchematicNextLayer), Some(DeviceRow::Action(32)), None,
+    SchematicNextLayer => "key.schematic-next-layer", Some(Action::SchematicNextLayer), Some(DeviceRow::Action(27)), None,
         None, false, Some("Cinnamatica Next Layer");
-    SchematicPreviousLayer => "key.schematic-previous-layer", Some(Action::SchematicPreviousLayer), Some(DeviceRow::Action(33)), None,
+    SchematicPreviousLayer => "key.schematic-previous-layer", Some(Action::SchematicPreviousLayer), Some(DeviceRow::Action(28)), None,
         None, false, Some("Cinnamatica Previous Layer");
-    SchematicForward => "key.schematic-forward", Some(Action::SchematicForward), Some(DeviceRow::Action(34)), None,
+    SchematicForward => "key.schematic-forward", Some(Action::SchematicForward), Some(DeviceRow::Action(29)), None,
         None, true, Some("Cinnamatica Move Build Forward");
-    SchematicLeft => "key.schematic-left", Some(Action::SchematicLeft), Some(DeviceRow::Action(35)), None,
+    SchematicLeft => "key.schematic-left", Some(Action::SchematicLeft), Some(DeviceRow::Action(30)), None,
         None, true, Some("Cinnamatica Move Build Left");
-    SchematicRight => "key.schematic-right", Some(Action::SchematicRight), Some(DeviceRow::Action(36)), None,
+    SchematicRight => "key.schematic-right", Some(Action::SchematicRight), Some(DeviceRow::Action(31)), None,
         None, true, Some("Cinnamatica Move Build Right");
-    SchematicBack => "key.schematic-back", Some(Action::SchematicBack), Some(DeviceRow::Action(37)), None,
+    SchematicBack => "key.schematic-back", Some(Action::SchematicBack), Some(DeviceRow::Action(32)), None,
         None, true, Some("Cinnamatica Move Build Back");
-    SchematicDown => "key.schematic-down", Some(Action::SchematicDown), Some(DeviceRow::Action(38)), None,
+    SchematicDown => "key.schematic-down", Some(Action::SchematicDown), Some(DeviceRow::Action(33)), None,
         None, true, Some("Cinnamatica Move Build Down");
-    SchematicUp => "key.schematic-up", Some(Action::SchematicUp), Some(DeviceRow::Action(39)), None,
+    SchematicUp => "key.schematic-up", Some(Action::SchematicUp), Some(DeviceRow::Action(34)), None,
         None, true, Some("Cinnamatica Move Build Up");
-    SchematicRotateLeft => "key.schematic-rotate-left", Some(Action::SchematicRotateLeft), Some(DeviceRow::Action(40)), None,
+    SchematicRotateLeft => "key.schematic-rotate-left", Some(Action::SchematicRotateLeft), Some(DeviceRow::Action(35)), None,
         None, true, Some("Cinnamatica Rotate Build Left");
-    SchematicRotateRight => "key.schematic-rotate-right", Some(Action::SchematicRotateRight), Some(DeviceRow::Action(41)), None,
+    SchematicRotateRight => "key.schematic-rotate-right", Some(Action::SchematicRotateRight), Some(DeviceRow::Action(36)), None,
         None, true, Some("Cinnamatica Rotate Build Right");
     Inventory => "key.inventory", None, Some(DeviceRow::Extra(0, Some(PhysicalControl::KeyboardUsage(0x08)))), Some(DeviceRow::Extra(0, Some(PhysicalControl::GamepadButton(2)))),
         None, false, None;

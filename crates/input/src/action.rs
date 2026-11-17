@@ -44,15 +44,10 @@ pub enum Action {
     InteractWithToast,
     PickItem,
     SchematicMenu,
-    SchematicConfig,
-    SchematicPlacement,
-    SchematicVerifier,
-    SchematicMaterials,
     SchematicRender,
     SchematicGhosts,
     SchematicNextMode,
     SchematicPreviousMode,
-    SchematicPlacementConfig,
     SchematicNextLayer,
     SchematicPreviousLayer,
     SchematicForward,
@@ -109,15 +104,10 @@ impl Action {
             Self::InteractWithToast => "interact-with-toast",
             Self::PickItem => "pick-item",
             Self::SchematicMenu => "schematic-menu",
-            Self::SchematicConfig => "schematic-config",
-            Self::SchematicPlacement => "schematic-placement",
-            Self::SchematicVerifier => "schematic-verifier",
-            Self::SchematicMaterials => "schematic-materials",
             Self::SchematicRender => "schematic-render",
             Self::SchematicGhosts => "schematic-ghosts",
             Self::SchematicNextMode => "schematic-next-mode",
             Self::SchematicPreviousMode => "schematic-previous-mode",
-            Self::SchematicPlacementConfig => "schematic-placement-config",
             Self::SchematicNextLayer => "schematic-next-layer",
             Self::SchematicPreviousLayer => "schematic-previous-layer",
             Self::SchematicForward => "schematic-forward",
@@ -131,7 +121,7 @@ impl Action {
         }
     }
 
-    pub const COUNT: usize = 59;
+    pub const COUNT: usize = 54;
 
     pub(crate) const ALL: [Self; Self::COUNT] = [
         Self::MoveForward,
@@ -174,15 +164,10 @@ impl Action {
         Self::InteractWithToast,
         Self::PickItem,
         Self::SchematicMenu,
-        Self::SchematicConfig,
-        Self::SchematicPlacement,
-        Self::SchematicVerifier,
-        Self::SchematicMaterials,
         Self::SchematicRender,
         Self::SchematicGhosts,
         Self::SchematicNextMode,
         Self::SchematicPreviousMode,
-        Self::SchematicPlacementConfig,
         Self::SchematicNextLayer,
         Self::SchematicPreviousLayer,
         Self::SchematicForward,

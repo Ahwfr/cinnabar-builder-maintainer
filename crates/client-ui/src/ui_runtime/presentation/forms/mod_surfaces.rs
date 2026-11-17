@@ -185,7 +185,7 @@ impl UiPresentationRuntime {
         (self.screens.mod_ui.hud_viewport(), self.hud_elements.states)
     }
 
-    /// Draws the personal panel.
+    /// Draws the personal panel, natively when it asks for the Cinnamatica window.
     pub(in super::super) fn append_mod_panel(
         &mut self,
         _player: &player_state::PlayerState,
@@ -209,9 +209,64 @@ impl UiPresentationRuntime {
             )
         };
         let mut paint = paint_frame!(self, runtime, nodes, next, metrics, content, &translate);
+        if let Some(panel) = self.screens.mod_ui.native_cinnamatica_panel() {
+            let input = oreui::CinnamaticaInput {
+                bindings: &panel.surface.bindings,
+                controls: &panel.controls,
+                icon: &icon,
+            };
+            if let Err(error) = self.screens.cinnamatica.paint(input, &mut paint) {
+                tracing::warn!(%error, "Cinnamatica window paint failed");
+            }
+            return;
+        }
         self.screens
             .mod_ui
             .paint_mod_panel_with_icons(self.engine.as_deref(), &mut paint, &icon);
+    }
+
+    /// Whether the open personal panel is drawn as the native Cinnamatica window.
+    pub fn cinnamatica_native(&self) -> bool {
+        self.screens.mod_ui.native_cinnamatica_panel().is_some()
+    }
+
+    /// What a press at the window-logical `position` hits on the native Cinnamatica window.
+    pub fn hit_test_cinnamatica(&self, position: ui::UiPoint) -> Option<oreui::CinnamaticaHit> {
+        self.screens.cinnamatica.hit(position)
+    }
+
+    /// Whether the native Cinnamatica search field has focus and takes typed keys.
+    pub fn cinnamatica_searching(&self) -> bool {
+        self.screens.cinnamatica.searching()
+    }
+
+    /// Focuses the native search field, continuing from the mod's current search.
+    pub fn begin_cinnamatica_search(&mut self) {
+        let value = match self
+            .screens
+            .mod_ui
+            .native_cinnamatica_panel()
+            .and_then(|panel| panel.surface.bindings.get("#bw_search_text"))
+        {
+            Some(ui::mod_panel::SurfaceValue::Text(value)) => value.clone(),
+            _ => String::new(),
+        };
+        self.screens.cinnamatica.begin_search(&value);
+    }
+
+    /// Ends native search typing.
+    pub fn end_cinnamatica_search(&mut self) {
+        self.screens.cinnamatica.end_search();
+    }
+
+    /// Applies one typed key to the native search; returns the new search when it changed.
+    pub fn cinnamatica_search_key(&mut self, key: &str, text: Option<&str>) -> Option<String> {
+        self.screens.cinnamatica.search_key(key, text)
+    }
+
+    /// Tracks the pointer for the native Cinnamatica window's next hover state.
+    pub fn set_cinnamatica_pointer(&mut self, position: Option<ui::UiPoint>) {
+        self.screens.cinnamatica.set_pointer(position);
     }
 
     /// Draws the client part's modal over the gameplay scenes; trusted chrome draws after it.

@@ -89,10 +89,8 @@ pub(super) fn reference_viewer() -> Viewer {
             paste_destroy: false,
             remember_placement: false,
             saved_placements: BTreeMap::new(),
-            fullscreen_ui: true,
             bridge_place: true,
             opacity: 65,
-            hotkeys: BTreeMap::new(),
             library_revision: 0,
             deleted_entries: Vec::new(),
         },
@@ -106,32 +104,14 @@ pub(super) fn reference_viewer() -> Viewer {
 }
 
 #[test]
-fn dashboard_reports_the_current_schematic_and_unload_state() {
-    let mut viewer = reference_viewer();
-    let mut out = serde_json::Map::new();
-    dashboard::bindings(&viewer, &mut out);
-    assert_eq!(out["#detailBlocks"], serde_json::json!("171"));
-    assert_eq!(out["#materialCount0"], serde_json::json!("104"));
-    assert_eq!(out["#active0"], serde_json::json!(true));
-    assert_eq!(out["#active1"], serde_json::json!(false));
-    viewer.menu_action("unload-0");
-    dashboard::bindings(&viewer, &mut out);
-    assert_eq!(out["#hasBlueprint"], serde_json::json!(false));
-    assert!(viewer.placement.is_none());
-}
-
-#[test]
 fn deleting_compacts_the_library_and_reimport_restores_entries() {
     let mut viewer = reference_viewer();
     viewer.menu_action("delete-0");
     assert!(!viewer.loaded);
     assert!(viewer.placement.is_none());
     assert_eq!(viewer.visible_entry(0), Some(1));
-    viewer.menu_action("select-0");
+    viewer.menu_action("toggle-0");
     assert_eq!(viewer.request, Some(1));
-    let mut out = serde_json::Map::new();
-    dashboard::bindings(&viewer, &mut out);
-    assert_eq!(out["#file0"], "Sugar Cane Farm");
     viewer.options.select_library(0);
     assert_eq!(viewer.options.deleted_entries, vec![0]);
     viewer.options.select_library(1);
@@ -157,10 +137,8 @@ fn menu_edits_turn_the_guide_and_select_layer_ranges() {
             paste_destroy: false,
             remember_placement: false,
             saved_placements: BTreeMap::new(),
-            fullscreen_ui: true,
             bridge_place: true,
             opacity: 65,
-            hotkeys: BTreeMap::new(),
             library_revision: 0,
             deleted_entries: Vec::new(),
         },
@@ -168,10 +146,6 @@ fn menu_edits_turn_the_guide_and_select_layer_ranges() {
     );
     viewer.placement = Some(Placement::new([12, 64, -5]));
     assert!(viewer.options.textured);
-    viewer.menu_action("select-1");
-    viewer.menu_action("select-8");
-    assert_eq!(viewer.selected, Some(1));
-
     viewer.menu_action("ccw");
     let placement = viewer.placement.unwrap();
     assert_eq!(placement.quarter_turns, 3);
@@ -189,39 +163,17 @@ fn menu_edits_turn_the_guide_and_select_layer_ranges() {
     assert_eq!(viewer.layers(), LayerMode::All);
 }
 #[test]
-fn dashboard_transform_controls_move_and_mirror_the_active_placement() {
+fn mirror_flips_and_restores_unless_the_guide_is_locked() {
     let mut viewer = reference_viewer();
-    let start = viewer.placement.unwrap().origin;
-    for id in ["x-plus", "y-plus", "z-plus"] {
-        viewer.menu_action(id);
-    }
-    assert_eq!(viewer.placement.unwrap().origin, start.map(|n| n + 1));
-    for id in ["x-minus", "y-minus", "z-minus"] {
-        viewer.menu_action(id);
-    }
-    assert_eq!(viewer.placement.unwrap().origin, start);
-    for expected in [Mirror::X, Mirror::Z, Mirror::None] {
-        viewer.menu_action("mirror-cycle");
-        assert_eq!(viewer.placement.unwrap().mirror, expected);
-    }
-    viewer.locked = true;
-    viewer.menu_action("x-plus");
-    viewer.menu_action("mirror-cycle");
-    assert_eq!(viewer.placement.unwrap().origin, start);
+    let turns = viewer.placement.unwrap().quarter_turns;
+    viewer.menu_action("mirror");
+    assert_ne!(viewer.placement.unwrap().mirror, Mirror::None);
+    viewer.menu_action("mirror");
     assert_eq!(viewer.placement.unwrap().mirror, Mirror::None);
-}
-
-#[test]
-fn dashboard_can_scroll_to_the_last_material() {
-    let mut viewer = reference_viewer();
-    let mut bindings = serde_json::Map::new();
-    viewer.menu_action("materials-down");
-    crate::dashboard::bindings(&viewer, &mut bindings);
-    assert_eq!(viewer.material_offset, 1);
-    assert_eq!(bindings["#materialName4"], "torch");
-    assert_eq!(bindings["#materialsDown"], false);
-    viewer.menu_action("materials-up");
-    assert_eq!(viewer.material_offset, 0);
+    assert_eq!(viewer.placement.unwrap().quarter_turns, turns);
+    viewer.locked = true;
+    viewer.menu_action("mirror");
+    assert_eq!(viewer.placement.unwrap().mirror, Mirror::None);
 }
 
 #[test]

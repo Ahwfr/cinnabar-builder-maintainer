@@ -501,13 +501,38 @@ pub(super) fn prepare_mod_input(
     }
     let mut pressed = pointer_pressed;
     let mut events = Vec::new();
+    if !open {
+        presentation.end_cinnamatica_search();
+    }
+    // The native Cinnamatica search field types its own text and owns the keys meanwhile.
+    let native_searching = open && focused && !absorbed && presentation.cinnamatica_searching();
+    let mut native_search = None;
     for sample in panel_keys {
+        // Committed IME text types into the native search like a key carrying that text.
+        if native_searching {
+            if let PanelSample::Ime(bevy::window::Ime::Commit { value, .. }) = &sample
+                && let Some(search) = presentation.cinnamatica_search_key(TEXT_INPUT, Some(value))
+            {
+                native_search = Some(search);
+            }
+            if matches!(sample, PanelSample::Ime(_)) {
+                continue;
+            }
+        }
         let Some((key, text, repeat, modifiers)) =
             field::route_sample(sample, presentation.mod_ui_mut(), focused && !absorbed)
         else {
             continue;
         };
         if POINTER_BUTTONS.iter().any(|(_, name)| *name == key) {
+            continue;
+        }
+        if native_searching {
+            if !(modifiers.control || modifiers.super_key)
+                && let Some(value) = presentation.cinnamatica_search_key(&key, text.as_deref())
+            {
+                native_search = Some(value);
+            }
             continue;
         }
         if open && focused && !absorbed && editing {
@@ -549,7 +574,30 @@ pub(super) fn prepare_mod_input(
     let was_held = mouse
         .as_ref()
         .is_some_and(|buttons| buttons.just_pressed(MouseButton::Left));
-    if open && focused {
+    if open && presentation.cinnamatica_native() {
+        // The native Cinnamatica window sends the same control events as its JSON-UI surface.
+        let pointer = window
+            .cursor_position()
+            .filter(|_| focused)
+            .and_then(|position| ui::UiPoint::new(position.x, position.y).ok());
+        presentation.set_cinnamatica_pointer(pointer);
+        if was_held {
+            match pointer.and_then(|point| presentation.hit_test_cinnamatica(point)) {
+                Some(hit) if hit.id == oreui::CINNAMATICA_SEARCH_ID => {
+                    presentation.begin_cinnamatica_search();
+                }
+                Some(hit) => {
+                    presentation.end_cinnamatica_search();
+                    client_ui::sound_requests::ui_click();
+                    events.push(ui::mod_panel::Event {
+                        id: hit.id,
+                        value: hit.value,
+                    });
+                }
+                None => presentation.end_cinnamatica_search(),
+            }
+        }
+    } else if open && focused {
         if let Some(position) = window.cursor_position() {
             events.extend(presentation.mod_ui_mut().mod_panel_events(
                 position.to_array(),
@@ -603,7 +651,8 @@ pub(super) fn prepare_mod_input(
     );
     // The editor state in which this frame's keys were routed, before Escape or a commit
     // could end the edit.
-    extension.native_editing = (editing && focused && !absorbed).then_some(owner);
+    extension.native_editing =
+        ((editing || native_searching) && focused && !absorbed).then_some(owner);
     extension.controls = mod_host::ControlFrame {
         seconds: time
             .as_ref()
@@ -663,9 +712,17 @@ pub(super) fn prepare_mod_input(
     {
         warn!(%error,"native mod text edit rejected");
     }
-    let field_events = presentation
+    let mut field_events = presentation
         .mod_ui_mut()
         .take_mod_panel_field_events(extension.panel_ui_owner(owner));
+    if let Some(value) = native_search {
+        field_events.push(ui::mod_panel::FieldEvent::Change(
+            ui::mod_panel::TextEvent {
+                id: oreui::CINNAMATICA_SEARCH_ID.to_owned(),
+                value,
+            },
+        ));
+    }
     if focused
         && !absorbed
         && !field_events.is_empty()
