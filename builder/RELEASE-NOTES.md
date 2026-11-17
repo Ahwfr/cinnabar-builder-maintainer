@@ -1,4 +1,10 @@
-# Cinnamatica 0.3.17
+# Cinnamatica 0.3.18
+
+- Publish the entire textured guide in a single retained native mesh. Local world comparisons still update individual cells.
+- Retry opening menus in fresh callbacks when the frame that prepares a panel is time-sliced.
+- Dim storage slots that cannot supply needed schematic materials. Matching item stacks and shulkers with matching contents stay bright.
+
+## 0.3.17
 
 - Restore conservative ghost refresh scheduling and keep visible tiles during temporary terrain read failures. Large schematics use smaller tiles in a bounded window around the player. Dense mismatches show a limited number of 3D markers per tile, while the verifier still lists every scanned mismatch.
 - Keep P and the default M shortcut available if the client cannot supply the menu binding.

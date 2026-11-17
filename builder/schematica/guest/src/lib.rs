@@ -45,7 +45,7 @@ use cinnabar::{
     world_draw::drawing,
 };
 use menu::Screen;
-use overlay::{Preview, Tile};
+use overlay::{Preview, Tile, WholeGhost};
 use schematica_core::{LayerMode, MaterialLine, Mirror, Placement, Schematic, blueprint};
 use std::{
     cell::{Cell, RefCell},
@@ -346,6 +346,8 @@ struct Viewer {
     pose: Option<gameplay::Snapshot>,
     tile_focus: Option<[i32; 3]>,
     preview: Preview,
+    whole: WholeGhost,
+    open_retries: u8,
     tiles: Vec<Tile>,
     retired: Vec<Tile>,
     cursor: usize,
@@ -403,6 +405,8 @@ impl Viewer {
             pose: None,
             tile_focus: None,
             preview: Preview::default(),
+            whole: WholeGhost::default(),
+            open_retries: 0,
             tiles: Vec::new(),
             retired: Vec::new(),
             cursor: 0,
@@ -464,6 +468,7 @@ impl Viewer {
                 // Cinnabar invalidates drawing handles on dimension changes.
                 self.tiles.clear();
                 self.retired.clear();
+                self.whole = WholeGhost::default();
                 self.placement = None;
                 self.locked = false;
                 self.verifier_marker = None;
@@ -488,6 +493,18 @@ impl Viewer {
         };
         if !keys.focused {
             self.menu_armed = false;
+            self.open_retries = 0;
+            return;
+        }
+        if keys.panel_open || keys.keys_pressed.iter().any(|key| key == "Escape") {
+            self.open_retries = 0;
+        }
+        if self.open_retries > 0 {
+            self.open_retries -= 1;
+            // Preparing a large panel can be time-sliced by the host. An open
+            // request from a continued frame is stale, even if its panel committed.
+            // Retry the inexpensive visibility write in a separate fresh callback.
+            let _ = panel::open();
             return;
         }
         native_bindings::sample();
@@ -599,8 +616,7 @@ impl Viewer {
         if keys.keys_pressed.iter().any(|key| key == "Escape") {
             OPEN_AFTER_LOAD.set(false);
         }
-        let browser = (keys.gameplay
-            && !alt
+        let browser = (!alt
             && (OPEN_AFTER_LOAD.replace(false)
                 || keys.keys_pressed.iter().any(|key| key == browser::KEY)))
         .then_some(Screen::Browser);
@@ -618,6 +634,7 @@ impl Viewer {
             // The window's search field opens empty.
             self.browser_search.clear();
             if menu::prepare(self) {
+                self.open_retries = 12;
                 menu::request_open();
             }
             return;
@@ -768,8 +785,18 @@ impl Viewer {
         let textured =
             self.options.textured && caps.contains(drawing::Permissions::RENDER_MATERIAL);
         if self.shown && !self.tiles.is_empty() {
-            let opacity = textured.then_some(f32::from(self.options.opacity) / 100.);
+            let opacity = f32::from(self.options.opacity) / 100.;
             let dimension = self.world.unwrap().1;
+            if textured
+                && !self
+                    .whole
+                    .prepare(&self.preview, &self.schematic, dimension, opacity)
+            {
+                self.show_label("Preparing full schematic preview");
+                return;
+            }
+            let whole = self.whole.active();
+            let tile_opacity = (textured && !whole).then_some(opacity);
             // Alternate the hot tile and the background cursor. One tile can consume
             // most of a frame when many cells change or need discrepancy markers.
             let priority = [recent, world_target, aimed]
@@ -784,9 +811,18 @@ impl Viewer {
             };
             let mut changed = false;
             if budget::remaining_fuel() >= 650_000 {
-                let (advance, updated) =
-                    self.tiles[index].step(&self.preview, &self.schematic, dimension, opacity);
+                let (advance, updated) = self.tiles[index].step(
+                    &self.preview,
+                    &self.schematic,
+                    dimension,
+                    tile_opacity,
+                    whole,
+                );
                 changed = updated;
+                if updated && whole && budget::remaining_fuel() >= 225_000 {
+                    self.whole
+                        .compare_tile(&self.preview, &self.schematic, &self.tiles[index]);
+                }
                 if advance && index == self.cursor {
                     self.cursor = (self.cursor + 1) % self.tiles.len();
                 }
@@ -801,6 +837,14 @@ impl Viewer {
                     && budget::remaining_fuel() >= 500_000
                 {
                     self.tiles[next].prefetch();
+                }
+            }
+            if whole && budget::remaining_fuel() >= 250_000 {
+                self.whole.flush();
+                if self.whole.failed {
+                    for tile in &mut self.tiles {
+                        tile.stamp = None;
+                    }
                 }
             }
             if changed {
@@ -839,10 +883,6 @@ impl Viewer {
             self.menu_armed = false;
             return None;
         }
-        if !gameplay {
-            self.menu_armed = false;
-            return None;
-        }
         use hotkeys::Action;
         match native_bindings::action(keys, &mut self.menu_armed)? {
             Action::Main => return Some(Screen::Browser),
@@ -853,6 +893,7 @@ impl Viewer {
             Action::Placement | Action::PlacementConfig => return Some(Screen::Control),
             Action::Verifier => return Some(Screen::Verifier),
             Action::Materials => return Some(Screen::Materials),
+            _ if !gameplay => return None,
             Action::Render => {
                 self.render_all = !self.render_all;
                 self.dirty = true;
@@ -1093,6 +1134,7 @@ impl Viewer {
     }
 
     fn rebuild(&mut self) {
+        self.whole.clear();
         self.nearby_aim = None;
         self.layer_counts.clear();
         self.layer_count_cursor = 0;
@@ -1233,6 +1275,7 @@ impl Viewer {
     }
 
     fn release_for_switch(&mut self) -> bool {
+        self.whole.clear();
         self.clear_verifier_marker();
         self.retired
             .extend(self.tiles.drain(..).filter(Tile::has_draws));

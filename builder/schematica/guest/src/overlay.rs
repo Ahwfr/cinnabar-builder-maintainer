@@ -1,6 +1,7 @@
 use crate::{budget, drawing as draw, terrain};
 use schematica_core::{BlockState, CellStatus, LayerMode, Placement, Schematic, StateValue, Tally};
 use serde_json::{Map, json};
+use std::collections::BTreeMap;
 
 const SMALL_TILE_EDGE: i32 = 4;
 const LARGE_TILE_EDGE: i32 = 5;
@@ -208,6 +209,167 @@ pub struct Tile {
     grid_cells: Vec<u32>,
 }
 
+/// One retained grid for the entire requested view. Preparation is bounded, and the
+/// renderer publishes the mesh only when all native sections are ready.
+#[derive(Default)]
+pub struct WholeGhost {
+    packed: Vec<u32>,
+    hidden: Vec<bool>,
+    changes: BTreeMap<[u32; 3], u32>,
+    pair: Option<DrawPair>,
+    pub failed: bool,
+    pub error: Option<String>,
+}
+
+impl WholeGhost {
+    pub fn clear(&mut self) {
+        if let Some(pair) = self.pair.take() {
+            pair.remove();
+        }
+        *self = Self::default();
+    }
+
+    pub fn active(&self) -> bool {
+        self.pair.is_some()
+    }
+
+    pub fn prepare(
+        &mut self,
+        preview: &Preview,
+        schematic: &Schematic,
+        dimension: i32,
+        opacity: f32,
+    ) -> bool {
+        if self.failed || self.active() {
+            return true;
+        }
+        let placement = preview.placement.unwrap();
+        let (lo, hi) = preview.bounds(schematic.size());
+        let [sx, sy, sz] = [0, 1, 2].map(|axis| (hi[axis] - lo[axis]) as usize);
+        let volume = sx * sy * sz;
+        if self.packed.len() < volume {
+            self.packed.reserve_exact(volume - self.packed.len());
+            let end = (self.packed.len() + 2048).min(volume);
+            for index in self.packed.len()..end {
+                let [x, y, z] = [index / (sy * sz), index % sy, index / sy % sz];
+                let world = [lo[0] + x as i32, lo[1] + y as i32, lo[2] + z as i32];
+                let local = placement.world_to_local(schematic.size(), world).unwrap();
+                let id = schematic.palette_index(local).unwrap();
+                let block = &schematic.palette()[id as usize];
+                let palette = if block.is_air() || block.is_placement_artifact() {
+                    0
+                } else {
+                    id + 1
+                };
+                self.packed.push(DEFAULT_LIGHT | palette);
+            }
+            return false;
+        }
+        if budget::remaining_fuel() < 750_000 {
+            return false;
+        }
+        let palette = std::iter::once(draw::BlockState::Named(draw::NamedBlock {
+            name: "minecraft:air".into(),
+            states: "{}".into(),
+        }))
+        .chain(preview.palette.iter().cloned().map(draw::BlockState::Named))
+        .collect();
+        let cells = std::mem::take(&mut self.packed);
+        let grid = draw::BlockGrid {
+            size: (sx as u32, sy as u32, sz as u32),
+            palette,
+            cells,
+        };
+        match create(
+            draw::GeometrySpec::Blocks(grid),
+            draw::BlockAnchor {
+                dimension,
+                position: lo.into(),
+            },
+            opacity,
+        ) {
+            Ok(pair) => {
+                self.hidden = vec![false; volume];
+                self.pair = Some(pair);
+            }
+            Err(error) => {
+                self.failed = true;
+                self.error = Some(error.detail);
+            }
+        }
+        true
+    }
+
+    pub fn compare_tile(&mut self, preview: &Preview, schematic: &Schematic, tile: &Tile) {
+        if !self.active() {
+            return;
+        }
+        let (lo, hi) = preview.bounds(schematic.size());
+        let sy = (hi[1] - lo[1]) as usize;
+        let sz = (hi[2] - lo[2]) as usize;
+        let placement = preview.placement.unwrap();
+        for x in tile.lo[0]..tile.hi[0] {
+            for z in tile.lo[2]..tile.hi[2] {
+                for y in tile.lo[1]..tile.hi[1] {
+                    let world = [x, y, z];
+                    let Some(status) = tile.status_at(world) else {
+                        continue;
+                    };
+                    let local = placement.world_to_local(schematic.size(), world).unwrap();
+                    let id = schematic.palette_index(local).unwrap();
+                    if schematic.is_air_index(id)
+                        || schematic.palette()[id as usize].is_placement_artifact()
+                    {
+                        continue;
+                    }
+                    let pos = [0, 1, 2].map(|axis| (world[axis] - lo[axis]) as u32);
+                    let index = (pos[0] as usize * sz + pos[2] as usize) * sy + pos[1] as usize;
+                    let hidden = !matches!(status, CellStatus::Missing | CellStatus::Unloaded);
+                    if hidden != self.hidden[index] {
+                        self.hidden[index] = hidden;
+                        self.changes.insert(pos, if hidden { 0 } else { id + 1 });
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn flush(&mut self) {
+        let Some(pair) = &self.pair else {
+            return;
+        };
+        match draw::geometry_status(pair.geometry) {
+            Ok(draw::GeometryState::Ready) if !self.changes.is_empty() => {
+                let edits: Vec<_> = self
+                    .changes
+                    .iter()
+                    .take(192)
+                    .map(|(&[x, y, z], &palette)| draw::BlockEdit {
+                        position: (x, y, z),
+                        cell: draw::BlockCell {
+                            palette,
+                            sky_light: None,
+                            block_light: None,
+                        },
+                    })
+                    .collect();
+                if draw::update_blocks(pair.geometry, &edits).is_ok() {
+                    for edit in edits {
+                        let (x, y, z) = edit.position;
+                        self.changes.remove(&[x, y, z]);
+                    }
+                }
+            }
+            Err(error) => {
+                self.clear();
+                self.failed = true;
+                self.error = Some(error.detail);
+            }
+            _ => {}
+        }
+    }
+}
+
 pub(super) struct DrawPair {
     geometry: draw::Handle,
     instance: draw::Handle,
@@ -325,6 +487,7 @@ impl Tile {
         schematic: &Schematic,
         dimension: i32,
         opacity: Option<f32>,
+        whole: bool,
     ) -> (bool, bool) {
         if let Some(pair) = &self.blocks
             && let Err(error) = draw::geometry_status(pair.geometry)
@@ -352,6 +515,7 @@ impl Tile {
                     schematic,
                     dimension,
                     opacity.filter(|_| !self.fallback),
+                    whole,
                     region,
                 );
                 return (
@@ -375,6 +539,7 @@ impl Tile {
         schematic: &Schematic,
         dimension: i32,
         opacity: Option<f32>,
+        whole: bool,
         region: terrain::Region,
     ) {
         let [sx, sy, sz] = [0, 1, 2].map(|i| self.hi[i] - self.lo[i]);
@@ -461,6 +626,8 @@ impl Tile {
                                     self.grid_palette.binary_search(&(id as u32)).unwrap();
                                 word |= palette_index as u32 + 1;
                                 used_texture = true;
+                                None
+                            } else if whole {
                                 None
                             } else {
                                 Some((0.16, 0.60, 0.94, 0.30))
