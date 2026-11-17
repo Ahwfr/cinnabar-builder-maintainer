@@ -160,6 +160,14 @@ impl Runner for BdsRunner {
             unlink_world(&link);
             return Err(error);
         }
+        if spec
+            .world
+            .options
+            .enabled(launcher::local_worlds::options::WorldOption::ActivateCheats)
+            && let Err(error) = super::structure_pack::install(&world_dir, install)
+        {
+            tracing::warn!(%error, "Structure Paste could not activate the Cinnamatica behavior pack");
+        }
         let launched = timed("bds final run", id, || run("bds"));
         let process = match launched {
             Ok(process) => process,

@@ -1,10 +1,7 @@
 //! Paired door states and the neighboring facts used to choose their hinge.
 
 use assets::facts::BlockProperty as P;
-use assets::{
-    facts::{BlockFact, SupportKind},
-    registry::BlockTraits as T,
-};
+use assets::{facts::BlockFact, registry::BlockTraits as T};
 use serde_json::{Map, Value};
 
 use crate::placement_state::{only_keys, set_bit, set_value, value, yaw_quadrant};
@@ -15,7 +12,7 @@ pub(crate) fn door_states(
     canonical: &str,
     position: [i32; 3],
     yaw: f32,
-    mut read: impl FnMut([i32; 3]) -> Option<BlockFact>,
+    mut read: impl FnMut([i32; 3]) -> Option<(BlockFact, bool)>,
 ) -> Option<(Map<String, Value>, Map<String, Value>)> {
     if !fact.traits.contains(T::DOOR) {
         return None;
@@ -55,20 +52,14 @@ pub(crate) fn door_states(
     let mut sides = [(0, false); 2];
     for (side, sign) in [-1, 1].into_iter().enumerate() {
         for height in 0..2 {
-            let name = read([
+            let (neighbor, full_cube) = read([
                 position[0] + sign * step[0],
                 position[1] + height,
                 position[2] + sign * step[2],
             ])?;
-            let solid = if name.traits.intersects(T::AIR | T::DOOR) {
-                false
-            } else if name.support == SupportKind::Stone {
-                true
-            } else {
-                return None;
-            };
-            sides[side].0 += u8::from(solid);
-            sides[side].1 |= name.traits.contains(T::DOOR);
+            let door = neighbor.traits.contains(T::DOOR);
+            sides[side].0 += u8::from(full_cube && !door);
+            sides[side].1 |= door;
         }
     }
     let mut upper = lower.clone();

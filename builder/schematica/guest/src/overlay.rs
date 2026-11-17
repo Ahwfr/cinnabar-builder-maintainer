@@ -254,7 +254,11 @@ impl WholeGhost {
         dimension: i32,
         opacity: f32,
     ) -> bool {
-        if self.failed || self.active() {
+        if let Some(pair) = &mut self.pair {
+            pair.set_opacity(opacity);
+            return true;
+        }
+        if self.failed {
             return true;
         }
         let placement = preview.placement.unwrap();
@@ -263,7 +267,7 @@ impl WholeGhost {
         let volume = sx * sy * sz;
         if self.packed.len() < volume {
             self.packed.reserve_exact(volume - self.packed.len());
-            let end = (self.packed.len() + 2048).min(volume);
+            let end = (self.packed.len() + 1024).min(volume);
             for index in self.packed.len()..end {
                 let [x, y, z] = [index / (sy * sz), index % sy, index / sy % sz];
                 let world = [lo[0] + x as i32, lo[1] + y as i32, lo[2] + z as i32];
@@ -374,7 +378,7 @@ impl WholeGhost {
                     }
                 }
             }
-            Err(error) => {
+            Err(error) if error.code != draw::ErrorCode::BudgetExceeded => {
                 self.clear();
                 self.failed = true;
                 self.error = Some(error.detail);
@@ -387,9 +391,20 @@ impl WholeGhost {
 pub(super) struct DrawPair {
     geometry: draw::Handle,
     instance: draw::Handle,
+    placement: draw::Instance,
 }
 
 impl DrawPair {
+    fn set_opacity(&mut self, opacity: f32) {
+        if self.placement.tint.3 != opacity {
+            let mut changed = self.placement.clone();
+            changed.tint.3 = opacity;
+            if draw::update(self.instance, &changed).is_ok() {
+                self.placement = changed;
+            }
+        }
+    }
+
     pub(super) fn remove(self) {
         let _ = draw::remove(self.instance);
         let _ = draw::remove(self.geometry);
@@ -486,9 +501,15 @@ impl Tile {
         if let Some(pair) = &self.blocks
             && let Err(error) = draw::geometry_status(pair.geometry)
         {
+            if error.code == draw::ErrorCode::BudgetExceeded {
+                return (false, false);
+            }
             self.clear();
-            self.fallback = error.code != draw::ErrorCode::BudgetExceeded;
+            self.fallback = true;
             self.error = Some(format!("Texture unavailable: {}", error.detail));
+        }
+        if let (Some(pair), Some(opacity)) = (&mut self.blocks, opacity) {
+            pair.set_opacity(opacity);
         }
         match terrain::read_region(self.query(), self.stamp) {
             Ok(terrain::ReadResult::Pending) => {
@@ -943,7 +964,11 @@ fn create(
             // Stock Cinnabar accepts native block grids only at full opacity.
             placement.tint = (1., 1., 1., opacity);
             if let Ok(instance) = draw::create(&placement) {
-                return Ok(DrawPair { geometry, instance });
+                return Ok(DrawPair {
+                    geometry,
+                    instance,
+                    placement,
+                });
             }
             placement.tint.3 = 1.;
             draw::create(&placement)
@@ -951,7 +976,11 @@ fn create(
         result => result,
     };
     match instance {
-        Ok(instance) => Ok(DrawPair { geometry, instance }),
+        Ok(instance) => Ok(DrawPair {
+            geometry,
+            instance,
+            placement,
+        }),
         Err(error) => {
             let _ = draw::remove(geometry);
             Err(error)

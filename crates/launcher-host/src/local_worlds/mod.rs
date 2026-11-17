@@ -18,6 +18,7 @@ mod process;
 mod provision;
 mod startup_timing;
 mod store;
+mod structure_pack;
 #[cfg(test)]
 mod test_support;
 mod translated;

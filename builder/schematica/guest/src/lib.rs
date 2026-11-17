@@ -12,6 +12,7 @@ mod native_bindings;
 mod overlay;
 mod paste;
 mod status;
+mod structure_paste;
 
 // Embed the revision in the guest itself so the importer labels the code it actually packages.
 #[cfg(target_arch = "wasm32")]
@@ -55,7 +56,7 @@ mod saved_placements;
 thread_local! {
     static OPEN_AFTER_LOAD: Cell<bool> = const { Cell::new(false) };
     static RUNTIME: RefCell<(Runtime, Vec<&'static [u8]>, Options, Option<usize>)> =
-        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, textured: true, assist: false, fast_place: false, strict_place: false, correct_aim: false, bridge_place: true, opacity: 65, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new() }, None)) };
+        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, structure_paste: false, textured: true, assist: false, fast_place: false, strict_place: false, correct_aim: false, bridge_place: true, opacity: 65, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new() }, None)) };
 }
 
 #[derive(Clone)]
@@ -64,6 +65,7 @@ struct Options {
     placement_lock: bool,
     auto_layer: bool,
     paste_destroy: bool,
+    structure_paste: bool,
     textured: bool,
     assist: bool,
     fast_place: bool,
@@ -85,6 +87,7 @@ impl Options {
                 "hold_place": self.hold_place,
                 "auto_layer": self.auto_layer,
                 "paste_destroy": self.paste_destroy,
+                "structure_paste": self.structure_paste,
                 "textured":self.textured, "assist":self.assist, "fast_place": self.fast_place,
                 "correct_aim": self.correct_aim,
                 "strict_place": self.strict_place,
@@ -134,6 +137,7 @@ impl Guest for Schematica {
                 options.hold_place = value["hold_place"].as_bool().unwrap_or(false);
                 options.auto_layer = value["auto_layer"].as_bool().unwrap_or(true);
                 options.paste_destroy = value["paste_destroy"].as_bool().unwrap_or(false);
+                options.structure_paste = value["structure_paste"].as_bool().unwrap_or(false);
                 options.textured = value["textured"].as_bool().unwrap_or(options.textured);
                 options.assist = value["assist"].as_bool().unwrap_or(options.assist);
                 options.fast_place = value["fast_place"].as_bool().unwrap_or(options.fast_place);

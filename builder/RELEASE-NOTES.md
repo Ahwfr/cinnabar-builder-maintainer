@@ -1,4 +1,10 @@
-# Cinnamatica 0.3.21
+# Cinnamatica 0.3.22
+
+- Choose Setblock or Structure under Controls. Structure converts the guide into native Bedrock templates and loads sections on the host. Cinnamatica-managed Bedrock worlds activate the host pack at startup.
+- Replace wrong blocks preserves correct blocks and leaves schematic air alone. An active paste offers Cancel Paste.
+- Improve Fast Place for doors bordered by partial blocks. Change ghost opacity on the retained preview and keep drawing it through temporary rendering budget failures.
+
+## 0.3.21
 
 - Count the visible Materials rows across frames so opening the tab stays within the mod callback budget.
 - Resolve door items for Fast Place and let either ghost half select the lower placement cell.

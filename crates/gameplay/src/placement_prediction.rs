@@ -161,7 +161,10 @@ pub fn predicted_placement(
     let door_pair =
         crate::placement_doors::door_states(fact, canonical, position, context.input.yaw, |cell| {
             let block = world.primary_runtime_id(cell).ok()?;
-            Some(collisions.block_facts(mode, block))
+            Some((
+                collisions.block_facts(mode, block),
+                collisions.block_is_full_cube(mode, block),
+            ))
         });
     let (placed_identity, mut states, full_cell) =
         if let Some((_, name, states, full_cell)) = merged {

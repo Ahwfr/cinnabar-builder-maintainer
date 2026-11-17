@@ -202,6 +202,13 @@ fn command_allowed(command: &str, granted: &[String]) -> bool {
     let Some(body) = command.strip_prefix('/') else {
         return false;
     };
+    if let Some(payload) = body.strip_prefix("scriptevent cinnamatica:structure ") {
+        return payload.len() <= 1500
+            && payload.bytes().all(|byte| (0x20..0x7f).contains(&byte))
+            && ["setblock", "fill"]
+                .into_iter()
+                .all(|name| granted.iter().any(|grant| grant == name));
+    }
     let name = body.split(' ').next().unwrap_or_default();
     command.len() <= MAX_COMMAND_BYTES
         && command.bytes().all(|byte| (0x20..0x7f).contains(&byte))
@@ -628,7 +635,10 @@ impl cinnabar::extension::gameplay::Host for State {
         if self.snapshot.is_none() {
             return Ok(Err("commands require a current gameplay frame".into()));
         }
-        if !command_allowed(&command, &self.grants.commands) {
+        if (command.starts_with("/scriptevent cinnamatica:structure ")
+            && !self.gameplay_facts.operator_paste)
+            || !command_allowed(&command, &self.grants.commands)
+        {
             return Ok(Err(
                 "command is not granted or not short printable text".into()
             ));

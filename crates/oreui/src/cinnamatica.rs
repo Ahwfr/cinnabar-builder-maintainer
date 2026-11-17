@@ -855,10 +855,20 @@ impl Window<'_> {
             },
             hits,
         )?;
+        let mode_left = paste[2] + pad;
+        let mode_right = mode_left + canvas.r(14.0);
+        self.button(
+            canvas,
+            "bw-paste-mode",
+            self.text("#bw_paste_mode"),
+            [mode_left, paste_top, mode_right, paste[3]],
+            neutral,
+            hits,
+        )?;
         canvas.text_line(
             self.text("#bw_paste_hint"),
-            [paste[2] + pad, paste_top + canvas.r(0.6)],
-            right - paste[2] - pad,
+            [mode_right + pad, paste_top + canvas.r(0.6)],
+            right - mode_right - pad,
             CAPTION,
             TEXT_DIMMER,
         )?;

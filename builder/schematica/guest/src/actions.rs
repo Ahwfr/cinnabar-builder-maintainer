@@ -46,7 +46,6 @@ impl Viewer {
                     _ => 25,
                 };
                 self.options.save();
-                self.dirty = true;
                 return;
             }
             "place" => {

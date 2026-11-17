@@ -1,6 +1,6 @@
 //! Explicit operator paste through Bedrock's advertised editing commands.
 
-use crate::{Viewer, gameplay};
+use crate::{Viewer, gameplay, overlay, structure_paste::StructurePaste, terrain};
 use schematica_core::{BlockState, Placement, Schematic, StateValue};
 use std::collections::HashMap;
 
@@ -14,12 +14,15 @@ pub(super) struct Paste {
     sent: usize,
     skipped: usize,
     palette: HashMap<u32, Option<String>>,
+    structure: Option<StructurePaste>,
 }
 
 impl Viewer {
     pub(super) fn paste_button(&mut self) {
         if self.paste.take().is_some() {
             self.paste_confirm = false;
+            let _ = crate::panel::close();
+            self.show_label("Paste canceled | Completed blocks were kept");
             return;
         }
         let Some((scope, placement)) = self.world.zip(self.placement) else {
@@ -37,6 +40,9 @@ impl Viewer {
             sent: 0,
             skipped: 0,
             palette: HashMap::new(),
+            structure: self.options.structure_paste.then(|| {
+                StructurePaste::new(&self.schematic, placement, self.options.paste_destroy)
+            }),
         });
         let _ = crate::panel::close();
     }
@@ -55,6 +61,17 @@ impl Viewer {
             );
             return true;
         }
+        if let Some(structure) = &mut run.structure {
+            match structure.step(&self.schematic, run.placement) {
+                Ok(Some(progress)) => {
+                    self.show_label(&progress);
+                    self.paste = Some(run);
+                }
+                Ok(None) => self.show_label("Structure sent | The host reports placement in chat"),
+                Err(error) => self.show_label(&format!("Structure paste stopped | {error}")),
+            }
+            return true;
+        }
         let [width, height, depth] = self.schematic.size().map(|size| size as usize);
         let volume = width * height * depth;
         for _ in 0..4 {
@@ -66,11 +83,68 @@ impl Viewer {
                 let local = coordinates(run.cursor, width, depth);
                 let palette_index = self.schematic.palette_index(local).unwrap();
                 if self.schematic.is_air_index(palette_index)
-                    || self.schematic.palette()[palette_index as usize].name
-                        == "minecraft:structure_void"
+                    || self.schematic.palette()[palette_index as usize].is_placement_artifact()
                 {
                     run.cursor += 1;
                     continue;
+                }
+                let mut line_end = width as i32 - 1;
+                if run.destroy {
+                    let last = (local[0] + 31).min(line_end);
+                    let [a, b] = [local, [last, local[1], local[2]]]
+                        .map(|cell| run.placement.local_to_world(self.schematic.size(), cell));
+                    let min: [i32; 3] = std::array::from_fn(|i| a[i].min(b[i]));
+                    let max: [i32; 3] = std::array::from_fn(|i| a[i].max(b[i]) + 1);
+                    let point = |[x, y, z]: [i32; 3]| terrain::Position { x, y, z };
+                    let sample = terrain::read_region(
+                        terrain::RegionQuery {
+                            min: point(min),
+                            max: point(max),
+                            geometry: terrain::Geometry::empty(),
+                        },
+                        None,
+                    );
+                    let region = match sample {
+                        Ok(terrain::ReadResult::Changed(region)) => region,
+                        Ok(_) | Err(terrain::ReadError::BudgetExhausted) => {
+                            self.paste = Some(run);
+                            return true;
+                        }
+                        Err(_) => {
+                            self.show_label("Paste stopped | Move closer to the destination");
+                            return true;
+                        }
+                    };
+                    let block = run
+                        .placement
+                        .transform_state(&self.schematic.palette()[palette_index as usize]);
+                    let expected =
+                        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(
+                            &overlay::canonical(&block),
+                        )
+                        .unwrap();
+                    let eligible = |x| {
+                        let world = run
+                            .placement
+                            .local_to_world(self.schematic.size(), [x, local[1], local[2]]);
+                        let cell =
+                            ((world[0] - min[0]) * (max[2] - min[2]) + world[2] - min[2]) as usize;
+                        needs_replace(&region, cell, &block.name, &expected)
+                    };
+                    if !eligible(local[0]) {
+                        run.cursor += 1;
+                        continue;
+                    }
+                    line_end = local[0];
+                    while line_end < last
+                        && self
+                            .schematic
+                            .palette_index([line_end + 1, local[1], local[2]])
+                            == Some(palette_index)
+                        && eligible(line_end + 1)
+                    {
+                        line_end += 1;
+                    }
                 }
                 let formatted = run.palette.entry(palette_index).or_insert_with(|| {
                     format_state(
@@ -90,6 +164,7 @@ impl Viewer {
                     palette_index,
                     formatted,
                     run.destroy,
+                    line_end,
                 );
                 let Some(command) = command else {
                     run.cursor += 1;
@@ -141,13 +216,14 @@ fn command(
     index: u32,
     state: &str,
     destroy: bool,
+    line_end: i32,
 ) -> (Option<String>, usize) {
-    let mode = if destroy { "destroy" } else { "keep" };
+    let mode = if destroy { "replace" } else { "keep" };
     let [x, y, z] = local;
     let size = schematic.size();
     let start = placement.local_to_world(size, local);
     let mut end = x;
-    while end + 1 < size[0] && schematic.palette_index([end + 1, y, z]) == Some(index) {
+    while end < line_end && schematic.palette_index([end + 1, y, z]) == Some(index) {
         end += 1;
     }
     if end > x {
@@ -164,6 +240,51 @@ fn command(
     ((setblock.len() <= COMMAND_BYTES).then_some(setblock), 1)
 }
 
+/// Never replace an unreadable cell or a matching state. Omitted or
+/// neighbor-derived properties do not make an otherwise correct block wrong.
+fn needs_replace(
+    region: &terrain::Region,
+    cell: usize,
+    name: &str,
+    expected: &serde_json::Map<String, serde_json::Value>,
+) -> bool {
+    if !region
+        .loaded
+        .get(cell / 64)
+        .is_some_and(|mask| mask & (1 << (cell % 64)) != 0)
+    {
+        return false;
+    }
+    let Some(block) = region
+        .states
+        .get(cell)
+        .and_then(|&index| region.palette.get(index as usize))
+    else {
+        return false;
+    };
+    let Some(actual_name) = block.identifier.as_deref() else {
+        return false;
+    };
+    if actual_name != name {
+        return true;
+    }
+    let Some(actual) = block.canonical_state.as_deref().and_then(|data| {
+        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(data).ok()
+    }) else {
+        return false;
+    };
+    expected.iter().any(|(property, value)| {
+        placement_property(property) && actual.get(property) != Some(value)
+    })
+}
+
+pub(super) fn placement_property(name: &str) -> bool {
+    !name.starts_with("minecraft:connection_")
+        && name != "minecraft:corner"
+        && !name.starts_with("wall_connection_type_")
+        && name != "wall_post_bit"
+}
+
 fn format_state(block: &BlockState) -> Option<String> {
     let safe = |text: &str| {
         !text.is_empty()
@@ -176,11 +297,7 @@ fn format_state(block: &BlockState) -> Option<String> {
     }
     let mut properties = Vec::new();
     for (name, value) in &block.states {
-        if name.starts_with("minecraft:connection_")
-            || name == "minecraft:corner"
-            || name.starts_with("wall_connection_type_")
-            || name == "wall_post_bit"
-        {
+        if !placement_property(name) {
             continue;
         }
         if !safe(name) {

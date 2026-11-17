@@ -177,8 +177,22 @@ fn prepare(
                     attempt.view,
                 )
             });
+        let paired_fits = paired.is_some_and(|block| {
+            ready && caps.can_build && local_use != LocalUse::Interact
+                && observed.selection.item.count() > 0
+                && paired_item_fits(&context.collisions, stream, world, block, &observed, &surroundings, attempt.view)
+        });
         if let Some(expected) = &attempt.expected {
             let mode = stream.network_id_mode();
+            let supported_door = placement.is_none()
+                && !expected.strict_state
+                && expected.name.ends_with("_door")
+                && paired_fits
+                && paired.and_then(|block| context.collisions.block_identifier(mode, block)) == Some(expected.name.as_str())
+                && surroundings.destination(observed.target.position, observed.target.face).0 == expected.position;
+            if supported_door {
+                local_use = LocalUse::Place;
+            } else {
             let Some(placement) = placement.as_ref() else {
                 bevy::log::info!(block = %expected.name, states = %expected.states,
                     ghost = ?expected.position, support = ?observed.target.position,
@@ -213,26 +227,13 @@ fn prepare(
                     click_y = observed.target.relative_hit[1],
                     "Fast Place stair placement prediction");
             }
+            }
         }
         if placement.is_some() && observed.selection.item.count() > 0 {
             local_use = LocalUse::Place;
         }
         // Without a verified state, such as any bed, the server's block update draws the cells.
-        if let Some(block) = paired
-            && ready
-            && caps.can_build
-            && local_use == LocalUse::Nothing
-            && observed.selection.item.count() > 0
-            && paired_item_fits(
-                &context.collisions,
-                stream,
-                world,
-                block,
-                &observed,
-                &surroundings,
-                attempt.view,
-            )
-        {
+        if paired_fits && local_use == LocalUse::Nothing {
             local_use = LocalUse::Place;
         }
         // A predicted placement can become the next ray hit before the release edge reaches

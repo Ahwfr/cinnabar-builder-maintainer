@@ -62,7 +62,7 @@ const SETTINGS: [(&str, &str); 10] = [
     ("look", "Textured ghost blocks"),
     ("assist", "Target info"),
     ("remember-placement", "Remember positions"),
-    ("paste-destroy", "Destroy overlaps on paste"),
+    ("paste-destroy", "Replace wrong blocks"),
     ("fast-place", "Fast Place"),
     ("correct-aim", "Auto orientation"),
     ("bridge-place", "Nearby placement assist"),
@@ -174,7 +174,7 @@ mod layout {
         ),
         (
             "paste-destroy",
-            "Lets a confirmed paste replace blocks that are in the way.",
+            "Replace mismatched blocks and orientations. Preserve already correct blocks.",
         ),
     ];
 
@@ -1040,8 +1040,18 @@ mod layout {
             plain(controls, "paste", "#bw_paste", [90., 20.], [20., 277.]),
         ));
         nodes.push(named(
+            "paste_mode",
+            plain(
+                controls,
+                "bw-paste-mode",
+                "#bw_paste_mode",
+                [95., 20.],
+                [118., 277.],
+            ),
+        ));
+        nodes.push(named(
             "paste_hint",
-            text("#bw_paste_hint", [320., 10.], [118., 282.], MUTED, "left"),
+            text("#bw_paste_hint", [220., 10.], [221., 282.], MUTED, "left"),
         ));
         nodes.push(footer("Numpad 8/4/6/2 move  ·  7/9 down/up  ·  1/3 rotate"));
         nodes
@@ -1199,6 +1209,10 @@ impl Viewer {
             self.browser_tab = tab;
         } else if let Some(key) = id.strip_prefix(SETTING_PREFIX) {
             self.browser_setting(key, value >= 0.5);
+        } else if id == "bw-paste-mode" {
+            self.options.structure_paste = !self.options.structure_paste;
+            self.paste_confirm = false;
+            self.options.save();
         } else if id == MODE_ID {
             self.options.strict_place = !self.options.strict_place;
             self.options.save();
@@ -1531,10 +1545,20 @@ fn keys(viewer: &Viewer, out: &mut Map<String, Value>) {
     );
     out.insert(
         "#bw_paste".into(),
-        json!(if viewer.paste_confirm {
+        json!(if viewer.paste.is_some() {
+            "Cancel Paste"
+        } else if viewer.paste_confirm {
             "Confirm paste"
         } else {
             "Paste"
+        }),
+    );
+    out.insert(
+        "#bw_paste_mode".into(),
+        json!(if viewer.options.structure_paste {
+            "Structure"
+        } else {
+            "Setblock"
         }),
     );
     let overlaps = if viewer.options.paste_destroy {
@@ -1544,10 +1568,12 @@ fn keys(viewer: &Viewer, out: &mut Map<String, Value>) {
     };
     out.insert(
         "#bw_paste_hint".into(),
-        json!(if viewer.paste_confirm {
-            format!("Click again to confirm  ·  Destroy overlaps: {overlaps}")
+        json!(if viewer.paste.is_some() {
+            "Stops the remaining paste".to_string()
+        } else if viewer.paste_confirm {
+            format!("Click again to confirm  ·  Replace wrong blocks: {overlaps}")
         } else {
-            format!("Destroy overlaps: {overlaps}")
+            format!("Replace wrong blocks: {overlaps}")
         }),
     );
 }
@@ -1710,7 +1736,7 @@ mod tests {
             "{readout}"
         );
         assert_eq!(out["#bw_lock_off"], !viewer.locked);
-        assert_eq!(out["#bw_paste_hint"], "Destroy overlaps: OFF");
+        assert_eq!(out["#bw_paste_hint"], "Replace wrong blocks: OFF");
         let ids = routed_ids();
         for id in [
             "place",

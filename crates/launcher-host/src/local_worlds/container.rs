@@ -309,6 +309,14 @@ impl BdsRunner {
         timed("bds configure", id, || {
             super::level_dat::configure(&spec.world, &world_dir, fresh || spec.options_unapplied)
         })?;
+        if spec
+            .world
+            .options
+            .enabled(launcher::local_worlds::options::WorldOption::ActivateCheats)
+            && let Err(error) = super::structure_pack::install(&world_dir, install)
+        {
+            tracing::warn!(%error, "Structure Paste could not activate the Cinnamatica behavior pack");
+        }
         let instance = Arc::new(timed("bds final run", id, || run("bds-container"))?);
         let watched = Arc::clone(&instance);
         thread::spawn(move || {
