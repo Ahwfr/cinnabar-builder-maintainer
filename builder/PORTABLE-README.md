@@ -6,22 +6,19 @@ Keep the **App/** folder beside it. It contains the required runtime, importer t
 Your worlds, login, options and schematic library live in **profile/**.
 For an update, close Builder and extract the new ZIP into the same folder.
 Keep profile/. The launcher upgrades the library to the new build and backs up its old component.
-Both the Mods page and the Cinnamatica header show the guest build revision.
+The Mods page shows the guest build revision.
 
 Press **M** for the schematic menu. **Import schematic…** opens the file picker.
 Choose your Java or Bedrock files, then select a schematic in the library.
 Enabled libraries reload automatically. Each import replaces the library selection and backs up the previous component.
 Original input files stay at their original paths.
-The red **Delete** button removes a schematic from the library and clears its active guide.
+Click **Delete** twice to remove a schematic from the library and clear its active guide.
 Original files and recovery backups are preserved. Reimport to restore a removed entry.
 Materials show the native inventory artwork: isometric block textures or item sprites as appropriate.
 
-Edit the Cinnamatica bindings in **Settings → Keyboard & Mouse**.
-Defaults are M for Menu, F6 for Settings, F7 for Placement, F8 for Verifier,
-F9 for Materials, F10 for Rendering, Numpad 0 for Ghosts, Numpad +/* for layer modes,
-Numpad - for placement settings, and [ / ] for previous and next layer in new profiles.
-Existing Page Up and Page Down bindings are shown by name. The dashboard also has layer buttons and a scrollable materials list.
-The old Alt+J/I/K shortcuts remain available.
+**M** opens and closes the unified window. Use its **Materials**, **Import**,
+**Settings** and **Controls** tabs. Edit the menu, rendering, layer and movement
+bindings in Minecraft’s **Settings → Keyboard & Mouse**.
 
 Turn **Fast Place** on to select carried blocks, move main-inventory blocks to the hotbar,
 or obtain a Creative catalog block. Right-click a real support beside the ghost.
@@ -35,6 +32,5 @@ reach. In V2 Strict, aim at an isolated ghost to attempt an air placement
 within reach. Survival consumes inventory, and exact orientation depends on
 the block's placement rule. Paste build is a separate operator action in Creative.
 
-Choose **Menu layout** in Cinnamatica Settings for full screen or compact mode.
 Turn on **Remember local world placement** to reopen the active schematic at its saved position, rotation and mirror when returning to a local world and dimension. Unloading clears that saved placement. Reimporting a different library starts fresh.
 Cinnamatica-Source.zip contains the editable fork source for this exact build.

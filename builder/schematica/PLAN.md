@@ -12,10 +12,10 @@ The fork keeps the upstream runtime and adds generic native capabilities used by
 | Saved placements | Optional restore of the active library entry and transform for each launcher-selected local world and dimension | Remote servers have no placement restore. Live relog needs verification |
 | Import | In-game Mods page runs the matching bundled converter on its worker and reloads enabled components | Needs native picker check from the packaged runtime |
 | Guest upgrades | Portable launcher copies the old library payload into the new template, backs up the old component, and stamps the name and metadata version | Nested payload preservation regression and actual library smoke check |
-| UI | Minecraft-style gray/green panels, button feedback, full viewport or compact mode | Requires rendered checks at small and large window sizes |
-| Bindings | Schematica has normal Keyboard & Mouse rows. The guest observes their physical assignments | Remap and unbind regression. Legacy Alt+J/I/K remain |
+| UI | One tabbed native Ore UI window with a matching fallback layout | Requires rendered checks at small and large window sizes |
+| Bindings | Schematica has normal Keyboard & Mouse rows. The guest observes their physical assignments | Remap and unbind regression for the unified window |
 | Packaging | One Cinnamatica.exe entry point beside runtime, template and persistent profile. Includes asset preparation kit and exact source ZIP | Needs extracted package startup check |
 
-The UI uses the existing JSON-UI mod surface with Minecraft-style controls. Import and binding edits use native OreUI Settings. Every release keeps the same mod filename so its enabled state, permissions and settings can follow the upgraded code.
+The client renders the unified window natively from the mod panel’s control values. The same window has a JSON-UI fallback. Import and binding edits use native OreUI Settings. Every release keeps the same mod filename so its enabled state, permissions and settings can follow the upgraded code.
 
 Remaining upstream parity work includes large schematic streaming, capture/export, complete Java-to-Bedrock state mappings and multi-block placement fixtures. Current import bounds remain documented in README. A successful compilation does not establish server placement acceptance.

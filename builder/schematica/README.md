@@ -6,28 +6,10 @@ This workspace is based on Schematica v4.2. See the [Cinnamatica guide](../READM
 
 Enable the imported Schematica library in **Settings > Mods** with **terrain**, **controls**, and **world_draw**. Grant **render_material** to see native block textures. Grant **settings** to remember the preview style and Target info setting.
 
-On joining a world, the library waits for you to choose a blueprint. Press **Alt+J**, select a row, and click **Load selected**. Choosing a different row and loading it clears the previous guide before the new one appears.
-
-| Shortcut | Action |
-| --- | --- |
-| M / M+C | Open the main menu / configuration |
-| M+P / Numpad - | Open placement controls |
-| M+L / M+V | Open the materials table / verifier |
-| M+R / M+G | Toggle all schematic rendering / only the ghost blocks |
-| Page Up/Down / M+Page Up/Down | Change the selected layer / change the layer mode |
-| Alt+J | Open the blueprint library |
-| Alt+I | Open manipulation controls and the materials table |
-| Alt+K | Open preview and placement settings |
-| Alt+U | Identify the planned block you are aiming at |
-| Alt+P | Re-anchor the active guide ahead of you |
-| Alt+arrow keys / Alt+Page Up or Down | Nudge along X/Z or Y |
-| Alt+R / Alt+M | Rotate clockwise / cycle horizontal mirror |
-| Alt+L / Alt+[ / Alt+] | Cycle layer modes / adjust the layer |
-| Alt+B / Alt+H | Switch preview style / toggle visibility |
-
-Cinnabar keeps its regular chat, crouch, and pick-block controls. This release uses Alt chords so the slash keys, Numpad *, and Shift+middle-click can keep their normal Cinnabar behavior.
-
-Use **Hotkeys** in the main menu to change the Litematica-style bindings. Enter a key such as `F6` or a chord such as `M+V` and press Enter. A blank field unbinds that action. The placement lock prevents edits to the active guide. The verifier lists coordinates from the currently scanned layers and distinguishes missing blocks, wrong blocks, wrong states, extra blocks, and unknown cells.
+In a world, press **M** to open the Cinnamatica window. Choose a schematic in
+**Import**, then use **Controls** to move the guide or select a layer. Search the
+**Materials** tab for needed blocks and use **Settings** to configure placement.
+Use Minecraft’s **Settings → Keyboard & Mouse** to edit Cinnamatica keybindings.
 
 ## Preview and placement settings
 
@@ -55,7 +37,7 @@ cargo test --locked --workspace
 .\Build-Schematica.ps1 'C:\path\to\your-build.schematic'
 ```
 
-For the native importer source, build `schematica-builder` for Windows and `schematica-guest` for `wasm32-unknown-unknown`. Place the compiled guest next to the executable as `schematica-guest-template.bin`. The guest's JSON-UI assets are checked into `guest/ui`. Regenerate them after editing the layout with `.\guest\menu_layout.ps1 using PowerShell 7`.
+For the native importer source, build `schematica-builder` for Windows and `schematica-guest` for `wasm32-unknown-unknown`. Place the compiled guest next to the executable as `schematica-guest-template.bin`. The guest's JSON-UI assets are checked into `guest/ui`. Regenerate the fallback layout with `SCHEMATICA_BROWSER_REGENERATE=1 cargo test`.
 
 The guest targets Cinnabar's extension 0.1.0 and world-draw 0.2.0 interfaces. The WIT snapshot is from [Cinnabar](https://github.com/cinnabar-mc/cinnabar) under the license in `guest/wit/LICENSE`. The layout reference is [Lunatrius Schematica](https://github.com/Lunatrius/Schematica), whose MIT license is included in `SCHEMATICA-LICENSE.txt`.
 

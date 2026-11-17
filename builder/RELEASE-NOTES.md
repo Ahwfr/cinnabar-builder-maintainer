@@ -1,4 +1,10 @@
-# Cinnamatica 0.3.19
+# Cinnamatica 0.3.20
+
+- Bring ThsSilentKnight’s native Ore UI window to Windows, with the same Materials, Import, Settings and Controls tabs, search, placement tools and two-click deletion as Linux.
+- Retire the separate legacy panels and shortcuts. M opens the unified window by default. Game controls remain editable in Keyboard & Mouse.
+- Cache material lookups and send only changed panel values to keep large schematics responsive.
+
+## 0.3.19
 
 - Add a Placement lock toggle under Cinnamatica Settings. With Fast Place enabled and the guide visible, it prevents ordinary block placement from falling through to an unrelated cell. V1 and V2 retain their separate placement behavior.
 - Predict fence gate placement and let Bedrock resolve the open and in-wall states.
