@@ -387,10 +387,12 @@ fn placement_properties(
     let comparator = offer.name.ends_with("_comparator");
     let fence = offer.name.ends_with("_fence");
     let trapdoor = offer.name.ends_with("trapdoor");
+    let gate = offer.name.ends_with("fence_gate");
     planned.retain(|key, _| {
         !((wall && (key == "wall_post_bit" || key.starts_with("wall_connection_type_")))
             || ((pane || wire || fence) && key.starts_with("minecraft:connection_"))
-            || (trapdoor && key == "open_bit")
+            || ((trapdoor || gate) && key == "open_bit")
+            || (gate && key == "in_wall_bit")
             || (leaves && matches!(key.as_str(), "persistent_bit" | "update_bit"))
             || (redstone && key.starts_with("redstone_"))
             || (observer && key == "powered_bit")

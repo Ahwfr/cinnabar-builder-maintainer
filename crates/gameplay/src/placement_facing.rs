@@ -82,6 +82,16 @@ pub(crate) fn named_states(
                 Value::from(direction),
             )?;
         }
+        name if name.starts_with("minecraft:") && name.ends_with("fence_gate") => {
+            let direction = ["south", "west", "north", "east"][yaw_quadrant(yaw)?];
+            set_value(
+                &mut states,
+                "minecraft:cardinal_direction",
+                Value::from(direction),
+            )?;
+            set_bit(&mut states, "in_wall_bit", false)?;
+            set_bit(&mut states, "open_bit", false)?;
+        }
         "minecraft:redstone_wire" => {
             set_value(&mut states, "redstone_signal", Value::from(0))?;
         }

@@ -1,6 +1,7 @@
 # Cinnamatica 0.3.19
 
 - Add a Placement lock toggle under Cinnamatica Settings. With Fast Place enabled and the guide visible, it prevents ordinary block placement from falling through to an unrelated cell. V1 and V2 retain their separate placement behavior.
+- Predict fence gate placement and let Bedrock resolve the open and in-wall states.
 - Keep the previous ghost mesh on screen until the replacement is ready to draw after a block edit.
 
 ## 0.3.18

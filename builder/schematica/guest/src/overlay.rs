@@ -805,10 +805,12 @@ fn preview_states_match(name: &str, expected: &str, actual: &str) -> bool {
     let observer = name == "minecraft:observer";
     let hopper = name == "minecraft:hopper";
     let fence = name.ends_with("_fence");
+    let gate = name.ends_with("fence_gate");
     let stair = name.ends_with("_stairs");
     if !stair
         && !wall
         && !fence
+        && !gate
         && !wire
         && !leaves
         && !redstone
@@ -846,6 +848,10 @@ fn preview_states_match(name: &str, expected: &str, actual: &str) -> bool {
                 || (observer && key == "powered_bit")
                 || (hopper && key == "toggle_bit"))
         });
+        if gate {
+            values.remove("in_wall_bit");
+            values.remove("open_bit");
+        }
         Some(values)
     };
     without_connections(expected)
