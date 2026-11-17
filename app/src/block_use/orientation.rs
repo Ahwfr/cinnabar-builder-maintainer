@@ -348,7 +348,7 @@ fn separate_facing(rotation: Quat, mut matches: impl FnMut(Quat) -> bool) -> Opt
         .find(|&candidate| matches(candidate))
 }
 
-/// Choose the air click face that produces the intended half when the server honors it.
+/// Stock Bedrock resolves a click into air as a top-face placement.
 pub(super) fn air_place_face(offer: &CreativePlacementOffer) -> Option<u8> {
     let planned =
         serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&offer.states).ok()?;
@@ -364,8 +364,11 @@ pub(super) fn air_place_face(offer: &CreativePlacementOffer) -> Option<u8> {
         Some("x" | "z")
     );
     // DoorItem needs a solid floor. An air click cannot make a freestanding door.
-    (!hopper_needs_side && !horizontal_pillar && !offer.name.ends_with("_door"))
-        .then(|| u8::from(planned_upper(&planned) != Some(true)))
+    (!hopper_needs_side
+        && !horizontal_pillar
+        && !offer.name.ends_with("_door")
+        && planned_upper(&planned) != Some(true))
+    .then_some(1)
 }
 
 fn planned_upper(planned: &serde_json::Map<String, serde_json::Value>) -> Option<bool> {
