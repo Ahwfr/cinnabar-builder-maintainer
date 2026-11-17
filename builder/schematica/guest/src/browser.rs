@@ -1099,7 +1099,25 @@ fn display_name(identifier: &str) -> String {
     words
 }
 
+/// Counts for the current Materials page, accumulated across callbacks.
+#[derive(Default)]
+pub(super) struct MaterialPageCounts {
+    materials: [Option<usize>; ROWS],
+    needed: [u64; ROWS],
+    cursor: usize,
+}
+
 impl Viewer {
+    pub(super) fn material_counts_pending(&self) -> bool {
+        self.browser_tab == Tab::Materials
+            && self.browser_counts.borrow().cursor < self.tiles.len()
+            && self.material_scan_available()
+    }
+
+    fn material_scan_available(&self) -> bool {
+        !self.dirty && self.tiles.iter().any(|tile| tile.stamp.is_some())
+    }
+
     /// Material indices in alphabetical order, keeping only names containing the search.
     /// The sorted names are built once per material list, since schematics with many
     /// different blocks made rebuilding them on every scroll exhaust the frame's fuel.
@@ -1223,12 +1241,14 @@ impl Viewer {
 
     /// Blocks still needed for one material: scanned counts once the guide is scanned,
     /// otherwise every block of that material.
-    fn browser_needed(&self, material: usize, scanned: bool) -> u64 {
+    fn browser_needed(
+        &self,
+        materials: [Option<usize>; ROWS],
+        scanned: bool,
+    ) -> [Option<u64>; ROWS] {
         if !scanned {
-            return self.materials.get(material).map_or(0, |line| line.total);
+            return materials.map(|index| index.map(|index| self.materials[index].total));
         }
-        // Matching names against the whole palette for every row exhausted the frame's fuel
-        // on schematics with many block states, so the table is built once per palette.
         let identity = (
             self.materials.as_ptr() as usize,
             self.materials.len(),
@@ -1244,14 +1264,29 @@ impl Viewer {
             let (_, table) = self.preview.material_index_table(&names);
             *cache = Some((identity, table));
         }
-        let indices = cache
-            .as_ref()
-            .and_then(|(_, table)| table.get(material))
-            .map_or(&[][..], Vec::as_slice);
-        self.tiles
-            .iter()
-            .map(|tile| u64::from(tile.material_counts(indices)[0]))
-            .sum()
+        let (_, table) = cache.as_ref().unwrap();
+        let mut counts = self.browser_counts.borrow_mut();
+        if counts.materials != materials {
+            *counts = MaterialPageCounts {
+                materials,
+                ..Default::default()
+            };
+        }
+        // Keep the UI open while a large schematic's visible rows are counted.
+        let end = (counts.cursor + 4).min(self.tiles.len());
+        for tile in &self.tiles[counts.cursor..end] {
+            for (row, material) in materials.iter().enumerate() {
+                if let Some(index) = material {
+                    counts.needed[row] += u64::from(tile.material_counts(&table[*index])[0]);
+                }
+            }
+        }
+        counts.cursor = end;
+        if end == self.tiles.len() {
+            std::array::from_fn(|row| materials[row].map(|_| counts.needed[row]))
+        } else {
+            [None; ROWS]
+        }
     }
 }
 
@@ -1291,7 +1326,7 @@ fn shorten(text: &str, limit: usize) -> String {
 }
 
 fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
-    let scanned = !viewer.dirty && viewer.tiles.iter().any(|tile| tile.stamp.is_some());
+    let scanned = viewer.material_scan_available();
     let total: u64 = viewer.materials.iter().map(|line| line.total).sum();
     // Per-material counts walk every tile, so only the rows in view compute them; the
     // totals read the tiles' running tallies.
@@ -1354,10 +1389,13 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
             format!("Page {} / {pages}", page + 1)
         }),
     );
-    for row in 0..ROWS {
+    let needed = viewer.browser_needed(
+        std::array::from_fn(|row| lines.get(first + row).map(|(index, _)| *index)),
+        scanned,
+    );
+    for (row, needed) in needed.into_iter().enumerate() {
         let entry = lines.get(first + row);
         let line = entry.map(|(index, _)| &viewer.materials[*index]);
-        let needed = entry.map(|(index, _)| viewer.browser_needed(*index, scanned));
         out.insert(format!("#bw_row{row}_visible"), json!(line.is_some()));
         out.insert(
             format!("#bw_row{row}_icon"),
@@ -1369,7 +1407,10 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
         );
         out.insert(
             format!("#bw_row{row}_needed"),
-            json!(needed.map_or(String::new(), |needed| needed.to_string())),
+            json!(needed.map_or_else(
+                || if line.is_some() { "…" } else { "" }.into(),
+                |needed| needed.to_string()
+            )),
         );
         out.insert(
             format!("#bw_row{row}_need"),

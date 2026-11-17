@@ -618,7 +618,7 @@ pub(super) fn resume(
     let clock = RepeatClock::for_state(context.time.elapsed(), &state, Some(pending.game_mode));
     let mut build =
         build::BuildInput::new(observed, state, pending.trigger, clock.now, clock, view);
-    build.air_place = pending.bridge && pending.offer.strict_state && use_air;
+    build.air_place = pending.offer.strict_state && use_air;
     build.expected = Some(pending.offer);
     bevy::log::debug!(
         slot = pending.slot,

@@ -231,3 +231,44 @@ fn numpad_nudges_follow_the_nearest_camera_heading() {
         );
     }
 }
+
+#[test]
+fn aiming_at_a_door_upper_half_uses_its_matching_lower_half() {
+    use schematica_core::{BlockState, StateValue};
+    let mut viewer = reference_viewer();
+    viewer.schematic = Schematic::new("Door", [1, 2, 1]);
+    viewer.placement = Some(Placement::new([0; 3]));
+    let door = BlockState::new("minecraft:dark_oak_door");
+    viewer.schematic.set(
+        [0, 0, 0],
+        door.clone().with("upper_block_bit", StateValue::Byte(0)),
+    );
+    viewer
+        .schematic
+        .set([0, 1, 0], door.with("upper_block_bit", StateValue::Byte(1)));
+    let (block, cell) = viewer.placement_block([0, 1, 0]).unwrap();
+    assert_eq!(cell, [0, 0, 0]);
+    assert_eq!(block.states["upper_block_bit"], StateValue::Byte(0));
+    viewer
+        .schematic
+        .set([0, 0, 0], BlockState::new("minecraft:stone"));
+    assert!(viewer.placement_block([0, 1, 0]).is_none());
+}
+
+#[test]
+fn material_page_counts_finish_over_multiple_frames() {
+    let mut viewer = reference_viewer();
+    viewer.tiles.resize_with(10, Tile::default);
+    viewer.tiles[0].stamp = Some(terrain::Stamp {
+        session: 1,
+        dimension: 0,
+        registry: 1,
+        revision: 0,
+    });
+    for pending in [true, true, false] {
+        let mut bindings = serde_json::Map::new();
+        browser::bindings(&viewer, &mut bindings, &mut Vec::new());
+        assert_eq!(viewer.material_counts_pending(), pending);
+        assert_eq!(bindings["#bw_row0_needed"], if pending { "…" } else { "0" });
+    }
+}

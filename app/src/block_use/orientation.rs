@@ -250,46 +250,85 @@ pub(super) fn correction(
             }
         }
     }
-    best.or(separate).or_else(|| {
-        if bridge || expected.strict_state {
-            for face in 0..6 {
-                for height in [0.25, 0.75, 0.5] {
-                    let Some(hit) = hidden_support_hit_at(&world, expected.position, face, height)
-                    else {
-                        continue;
-                    };
-                    let mut candidate = observed.clone();
-                    apply_support_hit(&mut candidate, hit);
-                    if !gameplay::interaction_authority::pick_point_in_range(
-                        candidate.target.hit_world,
-                        state.position,
-                        observed.reach,
-                    ) {
-                        continue;
-                    }
-                    let mut view = *context.view;
-                    let rotation = if matches(&candidate, view) {
-                        Some(view.rotation())
-                    } else {
-                        separate_facing(view.rotation(), |rotation| {
-                            view.set_rotation(rotation);
-                            matches(&candidate, view)
-                        })
-                    };
-                    if let Some(rotation) = rotation {
-                        return Some(PlacementAim {
-                            rotation,
-                            support_ray: None,
-                            interaction_ray: Vec3::from_array(candidate.target.hit_world) - eye,
-                            hidden_height: Some(height),
-                            support: (candidate.target.position, face, candidate.target.runtime_id),
-                        });
+    best.or(separate)
+        .or_else(|| {
+            if bridge || expected.strict_state {
+                for face in 0..6 {
+                    for height in [0.25, 0.75, 0.5] {
+                        let Some(hit) =
+                            hidden_support_hit_at(&world, expected.position, face, height)
+                        else {
+                            continue;
+                        };
+                        let mut candidate = observed.clone();
+                        apply_support_hit(&mut candidate, hit);
+                        if !gameplay::interaction_authority::pick_point_in_range(
+                            candidate.target.hit_world,
+                            state.position,
+                            observed.reach,
+                        ) {
+                            continue;
+                        }
+                        let mut view = *context.view;
+                        let rotation = if matches(&candidate, view) {
+                            Some(view.rotation())
+                        } else {
+                            separate_facing(view.rotation(), |rotation| {
+                                view.set_rotation(rotation);
+                                matches(&candidate, view)
+                            })
+                        };
+                        if let Some(rotation) = rotation {
+                            return Some(PlacementAim {
+                                rotation,
+                                support_ray: None,
+                                interaction_ray: Vec3::from_array(candidate.target.hit_world) - eye,
+                                hidden_height: Some(height),
+                                support: (
+                                    candidate.target.position,
+                                    face,
+                                    candidate.target.runtime_id,
+                                ),
+                            });
+                        }
                     }
                 }
             }
-        }
-        None
-    })
+            None
+        })
+        .or_else(|| {
+            if !expected.strict_state {
+                return None;
+            }
+            let face = air_place_face(expected)?;
+            let air = stream.air_block_id();
+            let hit = super::target::air_hit(
+                &world,
+                expected.position,
+                face,
+                air,
+                eye,
+                state.position,
+                observed.reach,
+            )?;
+            let mut candidate = observed.clone();
+            apply_support_hit(&mut candidate, hit);
+            let direction = (Vec3::from_array(candidate.target.hit_world) - eye).try_normalize()?;
+            let mut view = *context.view;
+            let rotation = if matches(&candidate, view) {
+                view.rotation()
+            } else {
+                separate_facing(view.rotation(), |rotation| {
+                    view.set_rotation(rotation);
+                    matches(&candidate, view)
+                })?
+            };
+            Some(PlacementAim::observed(
+                rotation,
+                (expected.position, face, air),
+                direction,
+            ))
+        })
 }
 
 /// Keeps stair corrections away from the boundary between two wire-facing quadrants.
@@ -309,27 +348,24 @@ fn separate_facing(rotation: Quat, mut matches: impl FnMut(Quat) -> bool) -> Opt
         .find(|&candidate| matches(candidate))
 }
 
-/// Direct air clicks preserve reported yaw, but Bedrock can ignore the click face.
-pub(super) fn air_place_preserves_state(offer: &CreativePlacementOffer) -> bool {
-    let Ok(planned) =
-        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&offer.states)
-    else {
-        return false;
-    };
+/// Choose the air click face that produces the intended half when the server honors it.
+pub(super) fn air_place_face(offer: &CreativePlacementOffer) -> Option<u8> {
+    let planned =
+        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&offer.states).ok()?;
     let hopper_needs_side = offer.name == "minecraft:hopper"
         && planned
             .get("facing_direction")
             .and_then(|state| state["value"].as_u64())
             .is_some_and(|face| face != 0);
-    !offer.name.ends_with("trapdoor")
-        && !hopper_needs_side
-        && planned_upper(&planned) != Some(true)
-        && !matches!(
-            planned
-                .get("pillar_axis")
-                .and_then(|state| state["value"].as_str()),
-            Some("x" | "z")
-        )
+    let horizontal_pillar = matches!(
+        planned
+            .get("pillar_axis")
+            .and_then(|state| state["value"].as_str()),
+        Some("x" | "z")
+    );
+    // DoorItem needs a solid floor. An air click cannot make a freestanding door.
+    (!hopper_needs_side && !horizontal_pillar && !offer.name.ends_with("_door"))
+        .then(|| u8::from(planned_upper(&planned) != Some(true)))
 }
 
 fn planned_upper(planned: &serde_json::Map<String, serde_json::Value>) -> Option<bool> {
@@ -388,10 +424,12 @@ fn placement_properties(
     let fence = offer.name.ends_with("_fence");
     let trapdoor = offer.name.ends_with("trapdoor");
     let gate = offer.name.ends_with("fence_gate");
+    let door = offer.name.ends_with("_door");
     planned.retain(|key, _| {
         !((wall && (key == "wall_post_bit" || key.starts_with("wall_connection_type_")))
             || ((pane || wire || fence) && key.starts_with("minecraft:connection_"))
-            || ((trapdoor || gate) && key == "open_bit")
+            || ((trapdoor || gate || door) && key == "open_bit")
+            || (door && key == "door_hinge_bit")
             || (gate && key == "in_wall_bit")
             || (leaves && matches!(key.as_str(), "persistent_bit" | "update_bit"))
             || (redstone && key.starts_with("redstone_"))
@@ -432,6 +470,27 @@ pub(super) fn recapture(
         pick,
     )
     .with_cell_overlays(&overlays);
+    let (position, face, block) = aim.support;
+    if block == stream.air_block_id() {
+        let hit = super::target::air_hit(
+            &world,
+            position,
+            face,
+            block,
+            Vec3::from_array(observed.ray.origin),
+            state.position,
+            observed.reach,
+        )?;
+        observed.ray.direction = (Vec3::new(
+            hit.hit_world.x as f32,
+            hit.hit_world.y as f32,
+            hit.hit_world.z as f32,
+        ) - Vec3::from_array(observed.ray.origin))
+        .try_normalize()?
+        .to_array();
+        apply_support_hit(&mut observed, hit);
+        return Some(observed);
+    }
     if let Some(height) = aim.hidden_height {
         let (support, face, runtime_id) = aim.support;
         let ghost = placement_cell(support, face);

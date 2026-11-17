@@ -68,7 +68,12 @@ pub(super) fn held_placement_block(
     item_identifier: impl FnOnce() -> Option<std::sync::Arc<str>>,
 ) -> Option<u32> {
     held_block_store_id(stream, block_id).or_else(|| {
-        let name = match item_identifier()?.as_ref() {
+        let identifier = item_identifier()?;
+        let mode = stream.network_id_mode();
+        if let Some(block) = gameplay::block_use::paired_item_block(collisions, mode, &identifier) {
+            return Some(block);
+        }
+        let name = match identifier.as_ref() {
             "minecraft:cauldron" => "minecraft:cauldron",
             "minecraft:string" => "minecraft:trip_wire",
             "minecraft:redstone" => "minecraft:redstone_wire",

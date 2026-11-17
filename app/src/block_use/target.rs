@@ -48,9 +48,11 @@ pub(super) fn observe_bridge_target(
             }
             let eye_f32 = Vec3::new(eye.x as f32, eye.y as f32, eye.z as f32);
             let forward = Vec3::new(forward.x as f32, forward.y as f32, forward.z as f32);
-            let prefer_air = offer.strict_state
-                && offer.name.ends_with("_stairs")
-                && super::orientation::air_place_preserves_state(offer);
+            let air_face = offer
+                .strict_state
+                .then(|| super::orientation::air_place_face(offer))
+                .flatten();
+            let prefer_air = offer.name.ends_with("_stairs") && air_face == Some(1);
             let mut best = None;
             let mut score = f32::NEG_INFINITY;
             for face in 0..6 {
@@ -126,41 +128,27 @@ pub(super) fn observe_bridge_target(
                 }
             }
             if best.is_none()
-                && offer.strict_state
-                && super::orientation::air_place_preserves_state(offer)
+                && let Some(face) = air_face
             {
-                let [x, y, z] = offer.position;
-                let point = [f64::from(x) + 0.5, f64::from(y) + 1.0, f64::from(z) + 0.5];
-                if !gameplay::interaction_authority::pick_point_in_range(
-                    point.map(|axis| axis as f32),
+                let Some(hit) = air_hit(
+                    world,
+                    offer.position,
+                    face,
+                    stream.air_block_id(),
+                    eye_f32,
                     state.position,
                     reach,
-                ) {
-                    return Ok(None);
-                }
-                let Some(primary) = world.primary_is_air(offer.position)? else {
+                ) else {
                     return Ok(None);
                 };
-                if !primary.value {
-                    return Ok(None);
-                }
-                let hit_world = sim::Vec3::new(point[0], point[1], point[2]);
-                let Some(aim) =
-                    (Vec3::from_array(point.map(|axis| axis as f32)) - eye_f32).try_normalize()
-                else {
-                    return Ok(None);
-                };
-                direction = Some(aim.to_array());
-                best = Some(sim::BlockHit {
-                    block_pos: offer.position,
-                    face: 1,
-                    hit_local: sim::Vec3::new(0.5, 1.0, 0.5),
-                    hit_world,
-                    runtime_id: stream.air_block_id(),
-                    distance: (hit_world - eye).length_squared().sqrt(),
-                    identity: primary.identity,
-                    overlay: None,
-                });
+                direction = (Vec3::new(
+                    hit.hit_world.x as f32,
+                    hit.hit_world.y as f32,
+                    hit.hit_world.z as f32,
+                ) - eye_f32)
+                    .try_normalize()
+                    .map(|aim| aim.to_array());
+                best = Some(hit);
             }
             Ok(best)
         },
@@ -169,6 +157,45 @@ pub(super) fn observe_bridge_target(
     .value?;
     observation.ray.direction = direction?;
     Some(observation)
+}
+
+/// Synthesizes a click on the empty destination, retaining its loaded world identity.
+pub(super) fn air_hit(
+    world: &PaletteWorld<'_>,
+    position: [i32; 3],
+    face: u8,
+    air: u32,
+    eye: bevy::prelude::Vec3,
+    player: [f32; 3],
+    reach: f64,
+) -> Option<sim::BlockHit> {
+    let [x, y, z] = position.map(f64::from);
+    let offset = f64::from(face);
+    let point = [x + 0.5, y + offset, z + 0.5];
+    if !gameplay::interaction_authority::pick_point_in_range(
+        point.map(|axis| axis as f32),
+        player,
+        reach,
+    ) || !world.is_air(position).ok()?
+    {
+        return None;
+    }
+    let primary = world.primary_is_air(position).ok()??;
+    if !primary.value {
+        return None;
+    }
+    let hit_world = sim::Vec3::new(point[0], point[1], point[2]);
+    let eye = sim::Vec3::new(f64::from(eye.x), f64::from(eye.y), f64::from(eye.z));
+    Some(sim::BlockHit {
+        block_pos: position,
+        face,
+        hit_local: sim::Vec3::new(0.5, offset, 0.5),
+        hit_world,
+        runtime_id: air,
+        distance: (hit_world - eye).length_squared().sqrt(),
+        identity: primary.identity,
+        overlay: None,
+    })
 }
 
 /// Recasts the pre-tick frame pick against the current world and resolves the held support.

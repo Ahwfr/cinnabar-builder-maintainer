@@ -1,4 +1,10 @@
-# Cinnamatica 0.3.20
+# Cinnamatica 0.3.21
+
+- Count the visible Materials rows across frames so opening the tab stays within the mod callback budget.
+- Resolve door items for Fast Place and let either ghost half select the lower placement cell.
+- Use the requested half for V2 air clicks and try an air click when nearby support cannot produce the planned state.
+
+## 0.3.20
 
 - Bring ThsSilentKnight’s native Ore UI window to Windows, with the same Materials, Import, Settings and Controls tabs, search, placement tools and two-click deletion as Linux.
 - Retire the separate legacy panels and shortcuts. M opens the unified window by default. Game controls remain editable in Keyboard & Mouse.

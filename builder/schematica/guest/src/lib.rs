@@ -384,6 +384,7 @@ struct Viewer {
     browser_indices: std::cell::RefCell<Option<BrowserIndices>>,
     /// A window refresh held over from a frame without enough fuel left for it.
     browser_refresh_pending: bool,
+    browser_counts: std::cell::RefCell<browser::MaterialPageCounts>,
     library: Vec<String>,
     /// Library entry sizes, matching `library`.
     library_sizes: Vec<[i32; 3]>,
@@ -437,6 +438,7 @@ impl Viewer {
             browser_names: Default::default(),
             browser_indices: Default::default(),
             browser_refresh_pending: false,
+            browser_counts: Default::default(),
             library_sizes: Vec::new(),
             library,
             last_item_highlights: Vec::new(),
@@ -540,7 +542,7 @@ impl Viewer {
                 return;
             }
             // A refresh rebuilds every binding; hold it for a frame with fuel to spare.
-            if changed || self.browser_refresh_pending {
+            if changed || self.browser_refresh_pending || self.material_counts_pending() {
                 self.browser_refresh_pending = budget::remaining_fuel() < REFRESH_FUEL;
                 if !self.browser_refresh_pending {
                     menu::refresh(self);
@@ -559,6 +561,7 @@ impl Viewer {
                 self.browser_tab = browser::Tab::Import;
             }
             self.material_page = 0;
+            *self.browser_counts.get_mut() = Default::default();
             // The window's search field opens empty.
             self.browser_search.clear();
             self.delete_confirm = None;
@@ -677,8 +680,8 @@ impl Viewer {
             None
         };
         if let Some(placement) = self.placement
-            && let Some(pos @ [x, y, z]) = placement_cell
-            && let Some(block) = self.planned_block(pos)
+            && let Some((block, [x, y, z])) =
+                placement_cell.and_then(|pos| self.placement_block(pos))
         {
             let block = placement.transform_state(block);
             let states = overlay::canonical(&block);
@@ -941,6 +944,32 @@ impl Viewer {
         let block = self.schematic.get(local)?;
         (self.layers().includes(local[1]) && !block.is_air() && !block.is_placement_artifact())
             .then_some(block)
+    }
+
+    /// One door item places a pair. Aim at either ghost half to place from the lower cell.
+    fn placement_block(&self, pos: [i32; 3]) -> Option<(&schematica_core::BlockState, [i32; 3])> {
+        use schematica_core::StateValue;
+        let block = self.planned_block(pos)?;
+        if !block.name.ends_with("_door")
+            || !matches!(
+                block.states.get("upper_block_bit"),
+                Some(StateValue::Bool(true) | StateValue::Byte(1) | StateValue::Int(1))
+            )
+        {
+            return Some((block, pos));
+        }
+        let [x, y, z] = pos;
+        let lower = [x, y - 1, z];
+        let local = self
+            .placement?
+            .world_to_local(self.schematic.size(), lower)?;
+        let base = self.schematic.get(local)?;
+        (base.name == block.name
+            && matches!(
+                base.states.get("upper_block_bit"),
+                Some(StateValue::Bool(false) | StateValue::Byte(0) | StateValue::Int(0))
+            ))
+        .then_some((base, lower))
     }
 
     fn aim_ray(&self) -> Option<([f32; 3], [f32; 3])> {
