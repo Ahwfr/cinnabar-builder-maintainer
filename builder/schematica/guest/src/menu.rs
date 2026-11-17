@@ -49,7 +49,7 @@ fn update(viewer: &Viewer) -> Result<(), String> {
             return Ok(());
         }
         let text = format!(
-            r#"{{"bindings":{},"controls":{}}}"#,
+            r#"{{"binding_changes":{},"controls":{}}}"#,
             serde_json::to_string(&changed).map_err(|error| error.to_string())?,
             serde_json::to_string(&controls).map_err(|error| error.to_string())?,
         );
