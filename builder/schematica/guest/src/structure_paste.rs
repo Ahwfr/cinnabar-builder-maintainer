@@ -4,8 +4,8 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 
 const EDGE: i32 = 8;
-// CommandRequest limits the entire command to 1000 bytes.
-const FRAGMENT: usize = 880;
+// Stock BDS accepts 440-byte script commands and disconnects on larger payloads.
+const FRAGMENT: usize = 400;
 const PREFIX: &str = "/scriptevent cinnamatica:structure";
 
 pub(super) struct StructurePaste {

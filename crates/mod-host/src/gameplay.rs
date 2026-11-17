@@ -203,7 +203,7 @@ fn command_allowed(command: &str, granted: &[String]) -> bool {
         return false;
     };
     if let Some(payload) = body.strip_prefix("scriptevent cinnamatica:structure ") {
-        return command.len() <= 1000
+        return command.len() <= 440
             && !payload.is_empty()
             && payload.bytes().all(|byte| (0x20..0x7f).contains(&byte))
             && ["setblock", "fill"]
@@ -217,11 +217,20 @@ fn command_allowed(command: &str, granted: &[String]) -> bool {
             && ["setblock", "fill"]
                 .into_iter()
                 .all(|name| granted.iter().any(|grant| grant == name))
-            && command.len() <= 1000
+            && command.len() <= 440
             && command.bytes().all(|byte| (0x20..0x7f).contains(&byte));
     }
     let name = body.split(' ').next().unwrap_or_default();
-    command.len() <= MAX_COMMAND_BYTES
+    let max_bytes = if matches!(name, "setblock" | "fill")
+        && ["setblock", "fill"]
+            .into_iter()
+            .all(|name| granted.iter().any(|grant| grant == name))
+    {
+        440
+    } else {
+        MAX_COMMAND_BYTES
+    };
+    command.len() <= max_bytes
         && command.bytes().all(|byte| (0x20..0x7f).contains(&byte))
         && granted.iter().any(|granted| granted == name)
 }

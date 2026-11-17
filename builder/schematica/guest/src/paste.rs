@@ -4,7 +4,7 @@ use crate::{Viewer, gameplay, structure_paste::StructurePaste};
 use schematica_core::{BlockState, Placement, Schematic, StateValue};
 use std::collections::HashMap;
 
-const COMMAND_BYTES: usize = 128;
+const COMMAND_BYTES: usize = 440;
 
 pub(super) struct Paste {
     scope: (u64, i32),
@@ -176,7 +176,7 @@ fn command(
         let [x, y, z] = start;
         let block = format!("{x} {y} {z} {state}");
         let edit = format!("/execute unless block {block} run setblock {block} replace");
-        return ((edit.len() <= 1000).then_some(edit), 1);
+        return ((edit.len() <= COMMAND_BYTES).then_some(edit), 1);
     }
     let mode = "keep";
     let mut end = x;

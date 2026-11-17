@@ -26,7 +26,7 @@ pub(super) fn install(world: &Path, server: &Path) -> io::Result<()> {
     create_private_dir(&pack.join("scripts"))?;
     write_private(&pack.join("manifest.json"), MANIFEST.as_bytes())?;
     write_private(&pack.join("scripts/main.js"), SCRIPT.as_bytes())?;
-    let entry = json!({"pack_id": ID, "version": [1, 0, 0]});
+    let entry = json!({"pack_id": ID, "version": [1, 0, 1]});
     if enabled.iter().any(|value| *value == entry) {
         return Ok(());
     }
