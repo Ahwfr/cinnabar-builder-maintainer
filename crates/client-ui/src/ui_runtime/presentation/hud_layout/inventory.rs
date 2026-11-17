@@ -437,6 +437,10 @@ impl HudLayout<'_> {
             .iter()
             .find(|(cell, _)| *cell == hit)
         else {
+            if frame.window_text.dim_unneeded_storage && matches!(hit, InventoryCellHit::Storage(_))
+            {
+                self.solid_gui([x + 1., y + 1.], [16., 16.], [26, 26, 26, 162])?;
+            }
             return Ok(());
         };
         let color = if *boxed {

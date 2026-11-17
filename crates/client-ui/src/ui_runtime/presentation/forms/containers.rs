@@ -548,6 +548,7 @@ impl UiPresentationRuntime {
                 layout,
                 drawn,
                 &window_text.material_marks,
+                window_text.dim_unneeded_storage,
                 paint_frame.nodes,
                 paint_frame.next,
                 self.solid_texture_page,
@@ -675,19 +676,34 @@ fn paint_material_marks(
     layout: ScreenLayout,
     frame: &EngineFrame,
     marks: &[(InventoryCellHit, bool)],
+    dim_storage: bool,
     nodes: &mut Vec<UiNode>,
     next: &mut u32,
     page: u16,
 ) {
-    if marks.is_empty() {
+    if marks.is_empty() && !dim_storage {
         return;
     }
     for (hit, point) in layout.cells(frame) {
-        let Some((_, boxed)) = marks.iter().find(|(cell, _)| *cell == hit) else {
-            continue;
-        };
         let [x, y] = std::array::from_fn(|i| frame.origin[i] + point[i] * frame.scale);
         let radius = 8.0 * frame.scale;
+        let Some((_, boxed)) = marks.iter().find(|(cell, _)| *cell == hit) else {
+            if dim_storage
+                && matches!(hit, InventoryCellHit::Storage(_))
+                && let Ok(rect) = super::super::rect(x - radius, y - radius, x + radius, y + radius)
+            {
+                nodes.push(
+                    UiNode::new(ui::UiNodeId::new(*next), None, rect).with_visual(
+                        ui::UiVisual::Solid {
+                            texture_page: page,
+                            color: [26, 26, 26, 162],
+                        },
+                    ),
+                );
+                *next += 1;
+            }
+            continue;
+        };
         let stroke = frame.scale * 1.5;
         for bounds in [
             [x - radius, y - radius, x + radius, y - radius + stroke],

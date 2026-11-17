@@ -105,6 +105,7 @@ pub struct WindowText {
     pub effect_names: Vec<(i32, String)>,
     pub book_title: Option<String>,
     /// Item cells with a material match. A true flag means a shulker contains a match.
+    pub dim_unneeded_storage: bool,
     pub material_marks: Vec<(InventoryCellHit, bool)>,
 }
 

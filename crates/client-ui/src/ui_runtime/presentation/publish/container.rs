@@ -45,7 +45,9 @@ pub(super) fn capture(
             window_icons,
         );
         capture_tooltip(player_runtime, items, &mut window_text);
-        window_text.material_marks = material_marks(player_runtime, items);
+        let (active_filter, marks) = material_marks(player_runtime, items);
+        window_text.dim_unneeded_storage = active_filter;
+        window_text.material_marks = marks;
     }
     window_text
 }
@@ -54,7 +56,10 @@ pub(super) fn capture(
 fn material_marks(
     player: &player_state::PlayerState,
     items: &ItemResolver<'_>,
-) -> Vec<(ui_screens::container_actions::InventoryCellHit, bool)> {
+) -> (
+    bool,
+    Vec<(ui_screens::container_actions::InventoryCellHit, bool)>,
+) {
     use inventory::inventory_ledger::InventoryTarget;
     use ui_screens::container_actions::InventoryCellHit as Hit;
     let Some(names) = items
@@ -63,12 +68,11 @@ fn material_marks(
         .inventory_highlights
         .as_deref()
     else {
-        return Vec::new();
+        return (false, Vec::new());
     };
     let ledger = items.runtime.inventory_ledger(player);
-    let in_window = ledger.window_position().is_some() || ledger.window_kind().is_some();
-    if !in_window {
-        return Vec::new();
+    if !ledger.storage_slot_count().is_some_and(|slots| slots > 0) {
+        return (false, Vec::new());
     }
     let needed = |name: &str| {
         let placed = match name {
@@ -107,7 +111,7 @@ fn material_marks(
         );
     }
     check(Hit::CraftOutput, ledger.created_output_stack());
-    marks
+    (true, marks)
 }
 
 /// Captures untranslated custom titles and the screen's localized labels.
