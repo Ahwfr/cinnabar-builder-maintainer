@@ -253,17 +253,19 @@ fn retained_block_outline_shader_validates() {
         include_str!("../../src/liquid.wesl"),
         include_str!("../../src/transparent_terrain.wesl"),
     ] {
-        let source = shader_source::composed(
-            raw,
-            &["MOD_BLOCKS", "MOD_BLOCK_TINT", "MOD_BLOCK_OUTLINE"],
-        );
-        let module = naga::front::wgsl::parse_str(&source).expect("outlined block shader parses");
-        naga::valid::Validator::new(
-            naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::all(),
-        )
-        .validate(&module)
-        .expect("outlined block shader validates");
+        for defines in [
+            &["MOD_BLOCKS", "MOD_BLOCK_TINT", "MOD_BLOCK_OUTLINE"][..],
+            &["MOD_BLOCKS", "MOD_BLOCK_TINT"][..],
+        ] {
+            let source = shader_source::composed(raw, defines);
+            let module = naga::front::wgsl::parse_str(&source).expect("tinted block shader parses");
+            naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::all(),
+            )
+            .validate(&module)
+            .expect("tinted block shader validates");
+        }
     }
 }
 

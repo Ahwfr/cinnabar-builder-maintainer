@@ -163,7 +163,10 @@ mod layout {
             "assist",
             "Shows the targeted material and its coordinates on screen.",
         ),
-        ("opacity", "How see-through the ghost blocks are."),
+        (
+            "lightness",
+            "How strongly the ghost blocks are washed with light blue.",
+        ),
         (
             "remember-placement",
             "Restores where a schematic was placed when you come back to the same world.",
@@ -907,7 +910,7 @@ mod layout {
         for (line, key) in ["look", "assist"].into_iter().enumerate() {
             rows.push(switch(controls, key, [242., 78. + 26. * line as f64]));
         }
-        for (line, (id, title, binding)) in [("opacity", "Ghost opacity", "#bw_opacity")]
+        for (line, (id, title, binding)) in [("lightness", "Ghost lightness", "#bw_lightness")]
             .into_iter()
             .enumerate()
         {
@@ -1590,8 +1593,8 @@ fn settings(viewer: &Viewer, out: &mut Map<String, Value>, controls: &mut Vec<Va
         }),
     );
     out.insert(
-        "#bw_opacity".into(),
-        json!(format!("{}%", viewer.options.opacity)),
+        "#bw_lightness".into(),
+        json!(format!("{}%", viewer.options.lightness)),
     );
     for (key, _) in SETTINGS {
         controls.push(json!({
@@ -1837,13 +1840,16 @@ mod tests {
         bindings(&viewer, &mut out, &mut Vec::new());
         let label = if strict { "V1 Classic" } else { "V2 Strict" };
         assert_eq!(out["#bw_fp_mode"], label);
-        assert_eq!(out["#bw_opacity"], "65%");
-        viewer.browser_event("opacity", 1.);
-        let mut out = Map::new();
-        bindings(&viewer, &mut out, &mut Vec::new());
-        assert_eq!(out["#bw_opacity"], "90%");
+        assert_eq!(out["#bw_lightness"], "15%");
+        for expected in ["25%", "35%", "5%", "10%", "15%"] {
+            viewer.browser_event("lightness", 1.);
+            let mut out = Map::new();
+            bindings(&viewer, &mut out, &mut Vec::new());
+            assert_eq!(out["#bw_lightness"], expected);
+        }
         let ids = routed_ids();
-        assert!(ids.iter().any(|routed| routed == "opacity"));
+        assert!(ids.iter().any(|routed| routed == "lightness"));
+        assert!(!ids.iter().any(|routed| routed == "opacity"));
         for removed in ["ui-layout", "hotkeys", "x-minus", "verifier"] {
             assert!(!ids.iter().any(|routed| routed == removed), "{removed}");
         }

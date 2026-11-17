@@ -38,13 +38,13 @@ impl Viewer {
                 }
                 return;
             }
-            "opacity" => {
-                self.options.opacity = match self.options.opacity {
-                    0..=25 => 45,
-                    26..=45 => 65,
-                    46..=65 => 90,
-                    _ => 25,
-                };
+            "lightness" => {
+                let levels = crate::LIGHTNESS_LEVELS;
+                self.options.lightness = levels
+                    .iter()
+                    .copied()
+                    .find(|&level| level > self.options.lightness)
+                    .unwrap_or(levels[0]);
                 self.options.save();
                 return;
             }

@@ -25,7 +25,7 @@ fn paint(screen: &mut CinnamaticaScreen, tab: f64, size: [f32; 2]) {
             "#bw_fp_mode".to_owned(),
             SurfaceValue::Text("V2 Strict".into()),
         ),
-        ("#bw_opacity".to_owned(), SurfaceValue::Text("45%".into())),
+        ("#bw_lightness".to_owned(), SurfaceValue::Text("45%".into())),
         ("#bw_paste".to_owned(), SurfaceValue::Text("Paste".into())),
         (
             "#bw_lib_banner_visible".to_owned(),
@@ -121,13 +121,13 @@ fn settings_rows_send_the_mods_control_events() {
     for (id, _) in TABS {
         assert!(target(&screen, id).is_some(), "{id}");
     }
-    let (_, opacity) = target(&screen, "opacity").unwrap();
+    let (_, lightness) = target(&screen, "lightness").unwrap();
     let centre = UiPoint::new(
-        (opacity.min().x() + opacity.max().x()) * 0.5,
-        (opacity.min().y() + opacity.max().y()) * 0.5,
+        (lightness.min().x() + lightness.max().x()) * 0.5,
+        (lightness.min().y() + lightness.max().y()) * 0.5,
     )
     .unwrap();
-    assert_eq!(screen.hit(centre).unwrap().id, "opacity");
+    assert_eq!(screen.hit(centre).unwrap().id, "lightness");
     for removed in ["hotkeys", "ui-layout"] {
         assert!(target(&screen, removed).is_none(), "{removed}");
     }

@@ -79,9 +79,9 @@ const GROUPS: [(&str, &[Row]); 3] = [
             Row::Switch("look"),
             Row::Switch("assist"),
             Row::Cycle {
-                id: "opacity",
-                title: "Ghost opacity",
-                caption: "#bw_opacity",
+                id: "lightness",
+                title: "Ghost lightness",
+                caption: "#bw_lightness",
             },
         ],
     ),

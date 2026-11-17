@@ -56,7 +56,25 @@ mod saved_placements;
 thread_local! {
     static OPEN_AFTER_LOAD: Cell<bool> = const { Cell::new(false) };
     static RUNTIME: RefCell<(Runtime, Vec<&'static [u8]>, Options, Option<usize>)> =
-        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, structure_paste: false, textured: true, assist: false, fast_place: false, strict_place: false, correct_aim: false, bridge_place: true, opacity: 65, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new() }, None)) };
+        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, structure_paste: false, textured: true, assist: false, fast_place: false, strict_place: false, correct_aim: false, bridge_place: true, lightness: DEFAULT_LIGHTNESS, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new() }, None)) };
+}
+
+/// The "Ghost lightness" cycle: percent the ghost blocks blend toward light blue.
+pub(crate) const LIGHTNESS_LEVELS: [u8; 5] = [5, 10, 15, 25, 35];
+const DEFAULT_LIGHTNESS: u8 = LIGHTNESS_LEVELS[2];
+
+/// Reads the saved ghost lightness, bounded to the cycle. Older settings files hold a
+/// see-through "opacity" or a white-blend "lightness" instead; neither applies any more,
+/// so they fall back to the default.
+fn saved_lightness(settings: &serde_json::Value) -> u8 {
+    settings["ghost_tint"]
+        .as_u64()
+        .map_or(DEFAULT_LIGHTNESS, |lightness| {
+            lightness.clamp(
+                u64::from(LIGHTNESS_LEVELS[0]),
+                u64::from(LIGHTNESS_LEVELS[LIGHTNESS_LEVELS.len() - 1]),
+            ) as u8
+        })
 }
 
 #[derive(Clone)]
@@ -72,7 +90,8 @@ struct Options {
     strict_place: bool,
     correct_aim: bool,
     bridge_place: bool,
-    opacity: u8,
+    /// Percent the ghost blocks blend toward light blue; one of `LIGHTNESS_LEVELS`.
+    lightness: u8,
     library_revision: u64,
     deleted_entries: Vec<usize>,
     remember_placement: bool,
@@ -94,7 +113,7 @@ impl Options {
                 "placement_lock": self.placement_lock,
                 "bridge_place": self.bridge_place,
                 "remember_placement": self.remember_placement, "saved_placements": self.saved_placements,
-                "opacity": self.opacity,
+                "ghost_tint": self.lightness,
                 "library_revision": self.library_revision, "deleted_entries": self.deleted_entries,
             })
             .to_string(),
@@ -159,9 +178,7 @@ impl Guest for Schematica {
                     .map(|index| index as usize)
                     .take(blueprint::MAX_LIBRARY)
                     .collect();
-                if let Some(opacity) = value["opacity"].as_u64() {
-                    options.opacity = opacity.clamp(25, 90) as u8;
-                }
+                options.lightness = saved_lightness(&value);
             });
         }
         RUNTIME.with(|runtime| label(&runtime.borrow().2.menu_hint("Cinnamatica")));
@@ -740,18 +757,18 @@ impl Viewer {
         let textured =
             self.options.textured && caps.contains(drawing::Permissions::RENDER_MATERIAL);
         if self.shown && !self.tiles.is_empty() {
-            let opacity = f32::from(self.options.opacity) / 100.;
+            let lightness = f32::from(self.options.lightness) / 100.;
             let dimension = self.world.unwrap().1;
             if textured
                 && !self
                     .whole
-                    .prepare(&self.preview, &self.schematic, dimension, opacity)
+                    .prepare(&self.preview, &self.schematic, dimension, lightness)
             {
                 self.show_label("Preparing full schematic preview");
                 return;
             }
             let whole = self.whole.active();
-            let tile_opacity = (textured && !whole).then_some(opacity);
+            let tile_lightness = (textured && !whole).then_some(lightness);
             // Alternate the hot tile and the background cursor. One tile can consume
             // most of a frame when many cells change or need discrepancy markers.
             let priority = [recent, world_target, aimed]
@@ -770,7 +787,7 @@ impl Viewer {
                     &self.preview,
                     &self.schematic,
                     dimension,
-                    tile_opacity,
+                    tile_lightness,
                     whole,
                 );
                 changed = updated;

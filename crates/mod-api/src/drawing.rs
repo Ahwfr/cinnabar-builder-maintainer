@@ -21,6 +21,11 @@ pub const MAX_BLOCK_TRIANGLES: usize = 2 * 1024 * 1024;
 pub const MAX_BLOCK_DRAW_TRIANGLES: usize = MAX_BLOCK_TRIANGLES * 2;
 /// Optional voxel edge lines for tinted native block grids. Values of 0.5 or more enable them.
 pub const BLOCK_GRID_OUTLINE_PARAM: usize = 10;
+/// How far a native block grid's shaded colour blends toward the wash colour. 0 keeps the
+/// block's own colour and 1 is the wash colour alone; values outside 0..=1 are rejected.
+pub const BLOCK_GRID_WASH_PARAM: usize = 11;
+/// First of three parameters holding the wash colour's red, green and blue, each 0..=1.
+pub const BLOCK_GRID_WASH_COLOR_PARAM: usize = 12;
 /// Packed terrain mesh bytes in one generation.
 pub const MAX_BLOCK_MESH_BYTES: usize = 128 * 1024 * 1024;
 /// GPU bytes for an owner's block arenas, orders and placement uniforms.

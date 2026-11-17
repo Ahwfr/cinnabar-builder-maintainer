@@ -221,7 +221,7 @@ pub(super) fn placement_fixture() -> (
         pipelines: [pipeline; 5],
         clip: None,
         always: false,
-        tint: [1.; 4],
+        shading: Shading::NEUTRAL,
         opacity_binding: None,
         active: false,
         _charge: ledger.allocate(0, || Some(())).unwrap(),
@@ -379,4 +379,44 @@ fn retained_depth_always_contents_remain_above_world_glass() {
     });
     world.run_schedule(Core3d);
     assert_eq!(world.resource::<Pixel>().color, [0.5, 0.5, 0.]);
+}
+
+#[test]
+fn a_wash_alone_selects_the_recoloured_opaque_block_variant() {
+    let (_, _, _, mut instance) = grid_scene();
+    assert_eq!(Shading::of(&instance), Shading::NEUTRAL);
+    assert!(!Shading::of(&instance).recolours());
+    // A colour alone has no effect until an amount is set.
+    instance.params[mod_api::drawing::BLOCK_GRID_WASH_COLOR_PARAM] = 0.2;
+    assert_eq!(Shading::of(&instance), Shading::NEUTRAL);
+    instance.params[mod_api::drawing::BLOCK_GRID_WASH_PARAM] = 0.3;
+    let shading = Shading::of(&instance);
+    assert!(shading.recolours());
+    assert!(!shading.translucent());
+    let key = Key {
+        msaa: Msaa::Off,
+        hdr: false,
+        clipped: false,
+        always: false,
+        additive: false,
+        mirrored: false,
+        translucent: shading.translucent(),
+        tinted: shading.recolours(),
+        outlined: true,
+    };
+    for mut descriptor in pipeline::layouts::descriptors::build(false) {
+        let layouts = descriptor.layout.len();
+        let writes = descriptor
+            .depth_stencil
+            .as_ref()
+            .unwrap()
+            .depth_write_enabled;
+        Specialization.specialize(key, &mut descriptor).unwrap();
+        // Opaque ghosts keep terrain's depth writes and gain the shading binding.
+        let depth = descriptor.depth_stencil.unwrap();
+        assert_eq!(depth.depth_write_enabled, writes);
+        assert_eq!(descriptor.layout.len(), layouts + 1);
+    }
+    // The WGSL `BlockShading` struct is two vec4s.
+    assert_eq!(Shading::min_size().get(), 32);
 }

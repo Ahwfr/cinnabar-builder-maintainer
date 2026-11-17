@@ -91,7 +91,7 @@ pub(super) fn reference_viewer() -> Viewer {
             remember_placement: false,
             saved_placements: BTreeMap::new(),
             bridge_place: true,
-            opacity: 65,
+            lightness: DEFAULT_LIGHTNESS,
             library_revision: 0,
             deleted_entries: Vec::new(),
         },
@@ -140,7 +140,7 @@ fn menu_edits_turn_the_guide_and_select_layer_ranges() {
             remember_placement: false,
             saved_placements: BTreeMap::new(),
             bridge_place: true,
-            opacity: 65,
+            lightness: DEFAULT_LIGHTNESS,
             library_revision: 0,
             deleted_entries: Vec::new(),
         },
@@ -273,4 +273,21 @@ fn material_page_counts_finish_over_multiple_frames() {
         assert_eq!(viewer.material_counts_pending(), pending);
         assert_eq!(bindings["#bw_row0_needed"], if pending { "…" } else { "0" });
     }
+}
+
+#[test]
+fn ghost_lightness_loads_bounded_and_ignores_older_settings() {
+    use serde_json::json;
+    assert_eq!(DEFAULT_LIGHTNESS, 15);
+    assert_eq!(
+        saved_lightness(&json!({ "opacity": 90 })),
+        DEFAULT_LIGHTNESS
+    );
+    assert_eq!(
+        saved_lightness(&json!({ "lightness": 60 })),
+        DEFAULT_LIGHTNESS
+    );
+    assert_eq!(saved_lightness(&json!({ "ghost_tint": 25 })), 25);
+    assert_eq!(saved_lightness(&json!({ "ghost_tint": 99 })), 35);
+    assert_eq!(saved_lightness(&json!({ "ghost_tint": 0 })), 5);
 }

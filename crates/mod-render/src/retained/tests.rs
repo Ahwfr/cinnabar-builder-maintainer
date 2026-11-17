@@ -974,3 +974,41 @@ fn cached_mesh_vertex_counts_match_emitted_topology() {
         geometry.mesh_vertices()
     );
 }
+
+#[test]
+fn block_grid_wash_amount_and_colour_are_admitted_only_between_zero_and_one() {
+    let mut store = Store::default();
+    let grid = store
+        .create_geometry(GeometrySpec::Blocks(blocks::BlockGrid {
+            revision: 0,
+            size: [1; 3],
+            palette: vec![blocks::BlockState::RuntimeId(0)],
+            cells: vec![blocks::BlockCell {
+                palette: 0,
+                sky_light: None,
+                block_light: None,
+            }],
+        }))
+        .unwrap();
+    let instance = drawing(grid);
+    let amount = mod_api::drawing::BLOCK_GRID_WASH_PARAM;
+    let blue = mod_api::drawing::BLOCK_GRID_WASH_COLOR_PARAM + 2;
+    for (param, value, admitted) in [
+        (amount, 0., true),
+        (amount, 0.45, true),
+        (amount, 1., true),
+        (amount, -0.1, false),
+        (amount, 1.5, false),
+        (blue, 0.9, true),
+        (blue, 1.2, false),
+        (blue, -0.5, false),
+    ] {
+        let mut instance = instance.clone();
+        instance.params[param] = value;
+        let result = store.create(instance, DrawingPermissions::ALL);
+        assert_eq!(result.is_ok(), admitted, "param {param} = {value}");
+        if !admitted {
+            assert_eq!(result.unwrap_err().code, ErrorCode::Invalid);
+        }
+    }
+}

@@ -1,4 +1,10 @@
-# Cinnamatica 0.3.23
+# Cinnamatica 0.3.24
+
+- Sync the Windows and Linux holograms with textured, solid light-blue ghosts, thinner outlines, and a Ghost lightness setting.
+- Reuse the schematic palette and unaffected section meshes when blocks change. Keep drawing the old guide until the complete replacement is ready.
+- Raise the per-schematic import limit to 400,000 bounding-box cells. The library still has a shared size limit.
+
+## 0.3.23
 
 - Send Structure Paste fragments within the Bedrock command packet limit. Schedule section preparation as bounded server jobs and cancel queued sections when the user cancels.
 - Check Setblock replacement against the actual server block, and keep paste feedback visible.

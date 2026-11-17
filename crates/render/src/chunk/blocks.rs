@@ -1,7 +1,7 @@
 //! Independent terrain arenas for retained block grids, built without frame-thread meshing.
 
 use crate::chunk::*;
-use bevy::render::render_resource::{BufferSize, CachedRenderPipelineId, FrontFace, UniformBuffer};
+use bevy::render::render_resource::{CachedRenderPipelineId, FrontFace, ShaderType, UniformBuffer};
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, poll_once};
 use gpu::resource_geometry::PreparedResourceGeometry;
 use mod_api::drawing::DrawingHandle;
@@ -115,7 +115,49 @@ impl Specializer<RenderPipeline> for Specialization {
     }
 }
 
-/// Binds opacity independently of the shared terrain camera and material data.
+/// Per-placement colour controls for a retained block grid: RGB multiply and opacity in
+/// `tint`, and the wash colour with its blend amount in `wash.w`.
+#[derive(Clone, Copy, PartialEq, Debug, ShaderType)]
+struct Shading {
+    tint: bevy::math::Vec4,
+    wash: bevy::math::Vec4,
+}
+
+impl Shading {
+    /// Draws blocks exactly as terrain does.
+    const NEUTRAL: Self = Self {
+        tint: bevy::math::Vec4::ONE,
+        wash: bevy::math::Vec4::ZERO,
+    };
+
+    /// Reads the validated tint and wash parameters of one placement.
+    fn of(instance: &mod_render::retained::Instance) -> Self {
+        use mod_api::drawing::{BLOCK_GRID_WASH_COLOR_PARAM, BLOCK_GRID_WASH_PARAM};
+        let colour = &instance.params[BLOCK_GRID_WASH_COLOR_PARAM..BLOCK_GRID_WASH_COLOR_PARAM + 3];
+        let amount = instance.params[BLOCK_GRID_WASH_PARAM];
+        Self {
+            tint: bevy::math::Vec4::from_array(instance.tint),
+            // An unused colour is irrelevant, so keep it out of placement comparisons.
+            wash: if amount > 0. {
+                bevy::math::Vec4::new(colour[0], colour[1], colour[2], amount)
+            } else {
+                bevy::math::Vec4::ZERO
+            },
+        }
+    }
+
+    /// Whether the fragment colour changes, which needs the tint shader variant.
+    fn recolours(&self) -> bool {
+        self.tint.truncate() != bevy::math::Vec3::ONE || self.wash.w > 0.
+    }
+
+    /// Whether the placement blends with what is behind it instead of writing depth.
+    fn translucent(&self) -> bool {
+        self.tint.w < 1.
+    }
+}
+
+/// Binds tint, opacity and lightness independently of the shared terrain camera and material data.
 fn opacity_layout() -> BindGroupLayoutDescriptor {
     BindGroupLayoutDescriptor::new(
         "retained block opacity",
@@ -125,7 +167,7 @@ fn opacity_layout() -> BindGroupLayoutDescriptor {
             ty: BindingType::Buffer {
                 ty: BufferBindingType::Uniform,
                 has_dynamic_offset: false,
-                min_binding_size: BufferSize::new(16),
+                min_binding_size: Some(Shading::min_size()),
             },
             count: None,
         }],
@@ -185,8 +227,8 @@ struct Placement {
     pipelines: [CachedRenderPipelineId; 5],
     clip: Option<DrawingHandle>,
     always: bool,
-    tint: [f32; 4],
-    opacity_binding: Option<(UniformBuffer<bevy::math::Vec4>, BindGroup)>,
+    shading: Shading,
+    opacity_binding: Option<(UniformBuffer<Shading>, BindGroup)>,
     active: bool,
     _charge: mod_render::GpuAllocation<()>,
 }
@@ -194,7 +236,7 @@ struct Placement {
 impl Placement {
     /// Translucent grids draw after opaque terrain while keeping the requested depth test.
     fn overlay(&self) -> bool {
-        self.always || self.tint[3] < 1.
+        self.always || self.shading.translucent()
     }
 }
 

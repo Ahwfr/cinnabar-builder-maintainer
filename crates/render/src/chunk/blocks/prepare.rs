@@ -300,6 +300,7 @@ pub(super) fn prepare(
                     continue;
                 };
                 let determinant = matrix.determinant();
+                let shading = Shading::of(instance);
                 let key = Key {
                     msaa: *msaa,
                     hdr: camera.hdr,
@@ -307,8 +308,8 @@ pub(super) fn prepare(
                     always: instance.depth == Depth::Always,
                     additive: instance.blend == Blend::Additive,
                     mirrored: determinant < 0.,
-                    translucent: instance.tint[3] < 1.,
-                    tinted: instance.tint[..3] != [1.; 3],
+                    translucent: shading.translucent(),
+                    tinted: shading.recolours(),
                     outlined: instance.params[mod_api::drawing::BLOCK_GRID_OUTLINE_PARAM] >= 0.5,
                 };
                 let ids: Option<Vec<_>> = pipelines
@@ -328,9 +329,10 @@ pub(super) fn prepare(
                     retired_placements.push(old);
                 }
                 if let std::collections::btree_map::Entry::Vacant(entry) = placements.entry(key) {
-                    let Some(charge) =
-                        ledger.allocate(ViewUniform::min_size().get() + 16, || Some(()))
-                    else {
+                    let Some(charge) = ledger.allocate(
+                        ViewUniform::min_size().get() + Shading::min_size().get(),
+                        || Some(()),
+                    ) else {
                         fail(&native.geometry, "block view memory");
                         continue;
                     };
@@ -352,7 +354,7 @@ pub(super) fn prepare(
                         pipelines: ids.clone().try_into().unwrap(),
                         clip: instance.clip,
                         always: instance.depth == Depth::Always,
-                        tint: [1.; 4],
+                        shading: Shading::NEUTRAL,
                         opacity_binding: None,
                         active: true,
                         _charge: charge,
@@ -363,9 +365,9 @@ pub(super) fn prepare(
                 placement.clip = instance.clip;
                 placement.always = instance.depth == Depth::Always;
                 placement.active = true;
-                if placement.tint != instance.tint {
-                    if instance.tint != [1.; 4] {
-                        let value = bevy::math::Vec4::from_array(instance.tint);
+                if placement.shading != shading {
+                    if shading != Shading::NEUTRAL {
+                        let value = shading;
                         if let Some((uniform, _)) = &mut placement.opacity_binding {
                             uniform.set(value);
                             uniform.write_buffer(&device, &queue);
@@ -383,7 +385,7 @@ pub(super) fn prepare(
                             placement.opacity_binding = Some((uniform, binding));
                         }
                     }
-                    placement.tint = instance.tint;
+                    placement.shading = shading;
                 }
                 if placement.matrix != matrix
                     || placement.projection != view.clip_from_view

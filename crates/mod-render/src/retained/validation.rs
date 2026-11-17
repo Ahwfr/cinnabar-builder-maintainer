@@ -209,10 +209,13 @@ pub(super) fn instance(
                 .all(|value| (0. ..=1.).contains(value))
             || !(0. ..=1.).contains(&instance.tint[3])
             || (instance.tint[3] < 1. && instance.blend != Blend::Premultiplied)
+            || !instance.params[wash_params()]
+                .iter()
+                .all(|value| (0. ..=1.).contains(value))
         {
             return Err(error(
                 ErrorCode::Invalid,
-                "block grids accept only opacity with normal blending",
+                "block grid tint, opacity or wash",
             ));
         }
     }
@@ -289,4 +292,11 @@ fn color(color: [f32; 4]) -> bool {
     color
         .iter()
         .all(|v| v.is_finite() && (0. ..=MAX_DRAW_COLOR_COMPONENT).contains(v))
+}
+
+/// The block-grid wash amount followed by its red, green and blue.
+fn wash_params() -> std::ops::RangeInclusive<usize> {
+    use mod_api::drawing::{BLOCK_GRID_WASH_COLOR_PARAM, BLOCK_GRID_WASH_PARAM};
+    const _: () = assert!(BLOCK_GRID_WASH_COLOR_PARAM == BLOCK_GRID_WASH_PARAM + 1);
+    BLOCK_GRID_WASH_PARAM..=BLOCK_GRID_WASH_COLOR_PARAM + 2
 }

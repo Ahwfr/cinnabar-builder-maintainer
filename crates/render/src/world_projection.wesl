@@ -17,8 +17,19 @@ fn section_camera_offset(section_origin: vec3<i32>, local: vec3<f32>, camera: ve
 fn camera_offset_clip(clip_from_world: mat4x4<f32>, camera: vec3<f32>, offset: vec3<f32>) -> vec4<f32> {
     return clip_from_world * vec4(offset, 0.0) + clip_from_world * vec4(camera, 1.0);
 }
+/// Tint and opacity in `tint`; the tinted colour blends toward `wash.rgb` by `wash.a`.
+struct BlockShading {
+    tint: vec4<f32>,
+    wash: vec4<f32>,
+}
+
 @if(MOD_BLOCK_TINT || MOD_BLOCK_OPACITY)
-@group(2) @binding(0) var<uniform> block_tint: vec4<f32>;
+@group(2) @binding(0) var<uniform> block_shading: BlockShading;
+
+@if(MOD_BLOCK_TINT)
+fn washed_block_colour(colour: vec3<f32>) -> vec3<f32> {
+    return mix(colour * block_shading.tint.rgb, block_shading.wash.rgb, block_shading.wash.a);
+}
 
 fn apply_block_tint(colour: vec4<f32>, world_position: vec3<f32>) -> vec4<f32> {
     @if(MOD_BLOCK_TINT && MOD_BLOCK_OUTLINE) {
@@ -26,19 +37,18 @@ fn apply_block_tint(colour: vec4<f32>, world_position: vec3<f32>) -> vec4<f32> {
         let edge = min(fraction, vec3(1.0) - fraction);
         // Two close boundaries form an edge. One close boundary is a face interior.
         let distance_to_edge = min(max(edge.x, edge.y), min(max(edge.y, edge.z), max(edge.z, edge.x)));
-        let line = 1.0 - smoothstep(0.016, 0.035, distance_to_edge);
-        let shaded = mix(colour.rgb * block_tint.rgb, vec3(0.10, 0.67, 0.91), line);
-        return vec4(shaded, colour.a);
+        let line = 1.0 - smoothstep(0.008, 0.0175, distance_to_edge);
+        return vec4(mix(washed_block_colour(colour.rgb), vec3(0.10, 0.67, 0.91), line), colour.a);
     }
     @if(MOD_BLOCK_TINT && !MOD_BLOCK_OUTLINE)
-    return vec4(colour.rgb * block_tint.rgb, colour.a);
+    return vec4(washed_block_colour(colour.rgb), colour.a);
     @if(!MOD_BLOCK_TINT)
     return colour;
 }
 
 fn apply_block_opacity(colour: vec4<f32>) -> vec4<f32> {
     @if(MOD_BLOCK_OPACITY)
-    return vec4(colour.rgb, colour.a * block_tint.a);
+    return vec4(colour.rgb, colour.a * block_shading.tint.a);
     @if(!MOD_BLOCK_OPACITY)
     return colour;
 }
