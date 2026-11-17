@@ -196,7 +196,14 @@ pub(super) fn maintain_block_use(
             }
             let strict = offer.strict_state;
             let native = observed.as_ref().filter(|hit| {
-                placement_cell(hit.target.position, hit.target.face) == offer.position
+                (!offer.correct_aim || !offer.name.ends_with("_door") || hit.target.face == 1)
+                    && (!offer.strict_state
+                        || super::orientation::support_produces_half(
+                            super::orientation::planned_placement_half(offer),
+                            hit.target.face,
+                            hit.target.relative_hit[1],
+                        ))
+                    && placement_cell(hit.target.position, hit.target.face) == offer.position
             });
             let bridge = native
                 .is_none()

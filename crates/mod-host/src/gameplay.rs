@@ -203,11 +203,22 @@ fn command_allowed(command: &str, granted: &[String]) -> bool {
         return false;
     };
     if let Some(payload) = body.strip_prefix("scriptevent cinnamatica:structure ") {
-        return payload.len() <= 1500
+        return command.len() <= 1000
+            && !payload.is_empty()
             && payload.bytes().all(|byte| (0x20..0x7f).contains(&byte))
             && ["setblock", "fill"]
                 .into_iter()
                 .all(|name| granted.iter().any(|grant| grant == name));
+    }
+    if let Some(tail) = body.strip_prefix("execute unless block ")
+        && let Some((condition, edit)) = tail.split_once(" run setblock ")
+    {
+        return condition == edit.strip_suffix(" replace").unwrap_or_default()
+            && ["setblock", "fill"]
+                .into_iter()
+                .all(|name| granted.iter().any(|grant| grant == name))
+            && command.len() <= 1000
+            && command.bytes().all(|byte| (0x20..0x7f).contains(&byte));
     }
     let name = body.split(' ').next().unwrap_or_default();
     command.len() <= MAX_COMMAND_BYTES
@@ -635,7 +646,8 @@ impl cinnabar::extension::gameplay::Host for State {
         if self.snapshot.is_none() {
             return Ok(Err("commands require a current gameplay frame".into()));
         }
-        if (command.starts_with("/scriptevent cinnamatica:structure ")
+        if ((command.starts_with("/scriptevent cinnamatica:structure ")
+            || command.starts_with("/execute unless block "))
             && !self.gameplay_facts.operator_paste)
             || !command_allowed(&command, &self.grants.commands)
         {

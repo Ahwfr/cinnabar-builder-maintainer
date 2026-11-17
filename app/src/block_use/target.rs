@@ -52,12 +52,16 @@ pub(super) fn observe_bridge_target(
                 .strict_state
                 .then(|| super::orientation::air_place_face(offer))
                 .flatten();
+            let half = super::orientation::planned_placement_half(offer);
             let prefer_air = offer.name.ends_with("_stairs") && air_face == Some(1);
             let mut best = None;
             let mut score = f32::NEG_INFINITY;
             for face in 0..6 {
                 let support = placement_cell(offer.position, face ^ 1);
-                if prefer_air || world.is_air(support).unwrap_or(true) {
+                if prefer_air
+                    || (offer.name.ends_with("_door") && face != 1)
+                    || world.is_air(support).unwrap_or(true)
+                {
                     continue;
                 }
                 for aim in super::orientation::support_directions(support, face, eye_f32) {
@@ -77,7 +81,15 @@ pub(super) fn observe_bridge_target(
                     else {
                         continue;
                     };
-                    if hit.block_pos != support || hit.face != face || hit.overlay.is_some() {
+                    if hit.block_pos != support
+                        || hit.face != face
+                        || hit.overlay.is_some()
+                        || !super::orientation::support_produces_half(
+                            half,
+                            face,
+                            hit.hit_local.y as f32,
+                        )
+                    {
                         continue;
                     }
                     let point = [
@@ -100,8 +112,11 @@ pub(super) fn observe_bridge_target(
             if best.is_some() {
                 return Ok(best);
             }
-            for face in (0..6).filter(|_| !prefer_air) {
-                let Some(hit) = super::orientation::hidden_support_hit(world, offer.position, face)
+            for face in
+                (0..6).filter(|&face| !prefer_air && (!offer.name.ends_with("_door") || face == 1))
+            {
+                let Some(hit) =
+                    super::orientation::hidden_support_hit(world, offer.position, face, half)
                 else {
                     continue;
                 };

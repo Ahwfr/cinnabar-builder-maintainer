@@ -9,6 +9,10 @@ impl Viewer {
     }
 
     pub(super) fn publish_label(&mut self, placement_cell: Option<[i32; 3]>) {
+        if let Some((message, _)) = &self.paste_notice {
+            self.show_label(&message.clone());
+            return;
+        }
         if !self.options.assist {
             self.show_label("");
             return;

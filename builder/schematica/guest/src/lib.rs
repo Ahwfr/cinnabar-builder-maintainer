@@ -398,6 +398,8 @@ struct Viewer {
     auto_place: bool,
     dirty: bool,
     paste_confirm: bool,
+    paste_notice: Option<(String, f32)>,
+    cancel_structure: Option<(u64, i32)>,
     paste: Option<paste::Paste>,
     last_label: String,
 }
@@ -458,6 +460,8 @@ impl Viewer {
             auto_place: loaded,
             dirty: false,
             paste_confirm: false,
+            paste_notice: None,
+            cancel_structure: None,
             paste: None,
             last_label: String::new(),
         }
@@ -594,8 +598,21 @@ impl Viewer {
             let _ = item_use::set_placement_lock(true);
         }
         self.paste_confirm = false;
+        if let Some(scope) = self.cancel_structure.take()
+            && self.world == Some(scope)
+            && gameplay::request_command("/scriptevent cinnamatica:structure cancel")
+                .is_err_and(|error| error == "command rate limit reached")
+        {
+            self.cancel_structure = Some(scope);
+        }
         if self.paste_step() {
             return;
+        }
+        if let Some((_, seconds)) = &mut self.paste_notice {
+            *seconds -= keys.seconds;
+            if *seconds <= 0.0 {
+                self.paste_notice = None;
+            }
         }
         let caps = drawing::capabilities();
         if !caps.contains(drawing::Permissions::WORLD_DRAW) {

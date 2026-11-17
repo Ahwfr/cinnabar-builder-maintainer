@@ -14,7 +14,7 @@ system.runInterval(() => {
     }
 }, 100);
 
-function placeSection(player, payload) {
+function* placeSection(player, result, payload) {
     const [origin, size, replace, palette, runs] = JSON.parse(payload);
     const isTriplet = (value, test) => Array.isArray(value) && value.length === 3 &&
         value.every(number => Number.isSafeInteger(number) && test(number));
@@ -26,15 +26,18 @@ function placeSection(player, payload) {
     const [sx, sy, sz] = size;
     const volume = sx * sy * sz;
     if (palette.length > volume || runs.length > volume) throw new Error("oversized section");
-    const compiled = palette.map(([type, states]) => {
+    const compiled = [];
+    for (const [type, states] of palette) {
+        if (results.get(player.id) !== result) return 0;
         if (!/^minecraft:[a-z0-9_]+$/.test(type) || !states || typeof states !== "object" ||
             Array.isArray(states) || Object.entries(states).some(([name, value]) =>
                 !/^[a-z0-9_:]+$/.test(name) ||
                 !["number", "boolean", "string"].includes(typeof value))) {
             throw new Error("invalid template palette");
         }
-        return { type, states, permutation: BlockPermutation.resolve(type, states) };
-    });
+        compiled.push({ type, states, permutation: BlockPermutation.resolve(type, states) });
+        yield;
+    }
 
     const dimension = player.dimension;
     const manager = world.structureManager;
@@ -51,6 +54,8 @@ function placeSection(player, payload) {
             end = start + length;
             const { type, states, permutation } = compiled[index];
             for (let cell = start; cell < end; cell++) {
+                if (results.get(player.id) !== result || player.dimension.id !== dimension.id) return 0;
+                if ((cell & 15) === 0) yield;
                 const x = cell % sx;
                 const y = Math.floor(cell / (sx * sz));
                 const z = Math.floor(cell / sx) % sz;
@@ -61,12 +66,37 @@ function placeSection(player, payload) {
                 changed++;
             }
         }
-        if (changed > 0) {
+        if (changed > 0 && results.get(player.id) === result && player.dimension.id === dimension.id) {
             manager.place(structure, dimension, { x: origin[0], y: origin[1], z: origin[2] }, { includeEntities: false });
         }
         return changed;
     } finally {
         manager.delete(structure);
+    }
+}
+
+function report(player, result) {
+    if (result.pending !== 0 || !result.finished || results.get(player.id) !== result) return;
+    results.delete(player.id);
+    player.sendMessage("Cinnamatica | Structure Paste: " + result.changed +
+        " blocks placed, " + result.skipped + " sections skipped");
+}
+
+function newResult() {
+    return { changed: 0, skipped: 0, pending: 0, finished: false, tick: system.currentTick };
+}
+
+function* processSection(player, result, payload) {
+    try {
+        result.changed += yield* placeSection(player, result, payload);
+    } catch (error) {
+        result.skipped++;
+        if (results.get(player.id) === result) {
+            player.sendMessage("Cinnamatica | Structure section skipped: " + error.message);
+        }
+    } finally {
+        result.pending--;
+        report(player, result);
     }
 }
 
@@ -76,15 +106,21 @@ system.afterEvents.scriptEventReceive.subscribe(event => {
         player.getGameMode() !== GameMode.Creative) return;
     if (event.message === "begin") {
         uploads.delete(player.id);
-        results.set(player.id, { changed: 0, skipped: 0, tick: system.currentTick });
+        results.set(player.id, newResult());
+        return;
+    }
+    if (event.message === "cancel") {
+        uploads.delete(player.id);
+        results.delete(player.id);
         return;
     }
     if (event.message === "done") {
         uploads.delete(player.id);
-        const result = results.get(player.id) ?? { changed: 0, skipped: 0 };
-        results.delete(player.id);
-        player.sendMessage("Cinnamatica | Structure Paste: " + result.changed +
-            " blocks placed, " + result.skipped + " sections skipped");
+        const result = results.get(player.id);
+        if (result) {
+            result.finished = true;
+            report(player, result);
+        }
         return;
     }
     const part = /^(\d{1,3}) ([01]) (.+)$/.exec(event.message);
@@ -106,14 +142,14 @@ system.afterEvents.scriptEventReceive.subscribe(event => {
     upload.fragments.push(part[3]);
     if (part[2] === "1") {
         uploads.delete(player.id);
-        const result = results.get(player.id) ?? { changed: 0, skipped: 0 };
-        result.tick = system.currentTick;
-        results.set(player.id, result);
-        try {
-            result.changed += placeSection(player, upload.fragments.join(""));
-        } catch (error) {
+        const result = results.get(player.id);
+        if (!result || result.finished) return;
+        if (result.pending >= 8) {
             result.skipped++;
-            player.sendMessage("Cinnamatica | Structure section skipped: " + error.message);
+            return;
         }
+        result.tick = system.currentTick;
+        result.pending++;
+        system.runJob(processSection(player, result, upload.fragments.join("")));
     }
 }, { namespaces: ["cinnamatica"] });

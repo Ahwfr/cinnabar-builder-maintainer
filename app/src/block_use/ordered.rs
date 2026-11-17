@@ -85,7 +85,14 @@ pub(crate) fn press(
                 .as_ref()
                 .and_then(|policy| policy.offer.as_ref())
                 .is_some_and(|offer| {
-                    placement_cell(hit.target.position, hit.target.face) == offer.position
+                    (!offer.correct_aim || !offer.name.ends_with("_door") || hit.target.face == 1)
+                        && (!offer.strict_state
+                            || super::orientation::support_produces_half(
+                                super::orientation::planned_placement_half(offer),
+                                hit.target.face,
+                                hit.target.relative_hit[1],
+                            ))
+                        && placement_cell(hit.target.position, hit.target.face) == offer.position
                 })
         });
         if !on_planned_face

@@ -1,6 +1,6 @@
 //! Explicit operator paste through Bedrock's advertised editing commands.
 
-use crate::{Viewer, gameplay, overlay, structure_paste::StructurePaste, terrain};
+use crate::{Viewer, gameplay, structure_paste::StructurePaste};
 use schematica_core::{BlockState, Placement, Schematic, StateValue};
 use std::collections::HashMap;
 
@@ -19,10 +19,13 @@ pub(super) struct Paste {
 
 impl Viewer {
     pub(super) fn paste_button(&mut self) {
-        if self.paste.take().is_some() {
+        if let Some(run) = self.paste.take() {
+            if run.structure.is_some() {
+                self.cancel_structure = Some(run.scope);
+            }
             self.paste_confirm = false;
             let _ = crate::panel::close();
-            self.show_label("Paste canceled | Completed blocks were kept");
+            self.paste_result("Paste canceled | Completed blocks were kept".into());
             return;
         }
         let Some((scope, placement)) = self.world.zip(self.placement) else {
@@ -47,17 +50,23 @@ impl Viewer {
         let _ = crate::panel::close();
     }
 
+    fn paste_result(&mut self, message: String) {
+        self.show_label(&message);
+        self.paste_notice = Some((message, 6.0));
+    }
+
     pub(super) fn paste_step(&mut self) -> bool {
         let Some(mut run) = self.paste.take() else {
             return false;
         };
         if self.world != Some(run.scope) || self.placement != Some(run.placement) {
-            self.show_label("Paste canceled because the world or placement changed");
+            self.paste_result("Paste canceled because the world or placement changed".into());
             return true;
         }
         if !gameplay::can_paste_blocks() {
-            self.show_label(
-                "Paste needs Creative, operator cheats, and setblock and fill mod permissions",
+            self.paste_result(
+                "Paste needs Creative, operator cheats, and setblock and fill mod permissions"
+                    .into(),
             );
             return true;
         }
@@ -67,8 +76,10 @@ impl Viewer {
                     self.show_label(&progress);
                     self.paste = Some(run);
                 }
-                Ok(None) => self.show_label("Structure sent | The host reports placement in chat"),
-                Err(error) => self.show_label(&format!("Structure paste stopped | {error}")),
+                Ok(None) => {
+                    self.paste_result("Structure sent | The host reports placement in chat".into())
+                }
+                Err(error) => self.paste_result(format!("Structure paste stopped | {error}")),
             }
             return true;
         }
@@ -88,64 +99,6 @@ impl Viewer {
                     run.cursor += 1;
                     continue;
                 }
-                let mut line_end = width as i32 - 1;
-                if run.destroy {
-                    let last = (local[0] + 31).min(line_end);
-                    let [a, b] = [local, [last, local[1], local[2]]]
-                        .map(|cell| run.placement.local_to_world(self.schematic.size(), cell));
-                    let min: [i32; 3] = std::array::from_fn(|i| a[i].min(b[i]));
-                    let max: [i32; 3] = std::array::from_fn(|i| a[i].max(b[i]) + 1);
-                    let point = |[x, y, z]: [i32; 3]| terrain::Position { x, y, z };
-                    let sample = terrain::read_region(
-                        terrain::RegionQuery {
-                            min: point(min),
-                            max: point(max),
-                            geometry: terrain::Geometry::empty(),
-                        },
-                        None,
-                    );
-                    let region = match sample {
-                        Ok(terrain::ReadResult::Changed(region)) => region,
-                        Ok(_) | Err(terrain::ReadError::BudgetExhausted) => {
-                            self.paste = Some(run);
-                            return true;
-                        }
-                        Err(_) => {
-                            self.show_label("Paste stopped | Move closer to the destination");
-                            return true;
-                        }
-                    };
-                    let block = run
-                        .placement
-                        .transform_state(&self.schematic.palette()[palette_index as usize]);
-                    let expected =
-                        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(
-                            &overlay::canonical(&block),
-                        )
-                        .unwrap();
-                    let eligible = |x| {
-                        let world = run
-                            .placement
-                            .local_to_world(self.schematic.size(), [x, local[1], local[2]]);
-                        let cell =
-                            ((world[0] - min[0]) * (max[2] - min[2]) + world[2] - min[2]) as usize;
-                        needs_replace(&region, cell, &block.name, &expected)
-                    };
-                    if !eligible(local[0]) {
-                        run.cursor += 1;
-                        continue;
-                    }
-                    line_end = local[0];
-                    while line_end < last
-                        && self
-                            .schematic
-                            .palette_index([line_end + 1, local[1], local[2]])
-                            == Some(palette_index)
-                        && eligible(line_end + 1)
-                    {
-                        line_end += 1;
-                    }
-                }
                 let formatted = run.palette.entry(palette_index).or_insert_with(|| {
                     format_state(
                         &run.placement
@@ -164,7 +117,6 @@ impl Viewer {
                     palette_index,
                     formatted,
                     run.destroy,
-                    line_end,
                 );
                 let Some(command) = command else {
                     run.cursor += 1;
@@ -182,14 +134,14 @@ impl Viewer {
                         return true;
                     }
                     Err(error) => {
-                        self.show_label(&format!("Paste stopped | {error}"));
+                        self.paste_result(format!("Paste stopped | {error}"));
                         return true;
                     }
                 }
             }
             if run.cursor == volume {
-                self.show_label(&format!(
-                    "Paste sent {} cells | {} skipped",
+                self.paste_result(format!(
+                    "Paste sent {} cells | {} unsupported. See chat for server results.",
                     run.sent, run.skipped
                 ));
                 return true;
@@ -216,14 +168,19 @@ fn command(
     index: u32,
     state: &str,
     destroy: bool,
-    line_end: i32,
 ) -> (Option<String>, usize) {
-    let mode = if destroy { "replace" } else { "keep" };
     let [x, y, z] = local;
     let size = schematic.size();
     let start = placement.local_to_world(size, local);
+    if destroy {
+        let [x, y, z] = start;
+        let block = format!("{x} {y} {z} {state}");
+        let edit = format!("/execute unless block {block} run setblock {block} replace");
+        return ((edit.len() <= 1000).then_some(edit), 1);
+    }
+    let mode = "keep";
     let mut end = x;
-    while end < line_end && schematic.palette_index([end + 1, y, z]) == Some(index) {
+    while end + 1 < size[0] && schematic.palette_index([end + 1, y, z]) == Some(index) {
         end += 1;
     }
     if end > x {
@@ -238,44 +195,6 @@ fn command(
     let [x, y, z] = start;
     let setblock = format!("/setblock {x} {y} {z} {state} {mode}");
     ((setblock.len() <= COMMAND_BYTES).then_some(setblock), 1)
-}
-
-/// Never replace an unreadable cell or a matching state. Omitted or
-/// neighbor-derived properties do not make an otherwise correct block wrong.
-fn needs_replace(
-    region: &terrain::Region,
-    cell: usize,
-    name: &str,
-    expected: &serde_json::Map<String, serde_json::Value>,
-) -> bool {
-    if !region
-        .loaded
-        .get(cell / 64)
-        .is_some_and(|mask| mask & (1 << (cell % 64)) != 0)
-    {
-        return false;
-    }
-    let Some(block) = region
-        .states
-        .get(cell)
-        .and_then(|&index| region.palette.get(index as usize))
-    else {
-        return false;
-    };
-    let Some(actual_name) = block.identifier.as_deref() else {
-        return false;
-    };
-    if actual_name != name {
-        return true;
-    }
-    let Some(actual) = block.canonical_state.as_deref().and_then(|data| {
-        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(data).ok()
-    }) else {
-        return false;
-    };
-    expected.iter().any(|(property, value)| {
-        placement_property(property) && actual.get(property) != Some(value)
-    })
 }
 
 pub(super) fn placement_property(name: &str) -> bool {

@@ -1,4 +1,10 @@
-# Cinnamatica 0.3.22
+# Cinnamatica 0.3.23
+
+- Send Structure Paste fragments within the Bedrock command packet limit. Schedule section preparation as bounded server jobs and cancel queued sections when the user cancels.
+- Check Setblock replacement against the actual server block, and keep paste feedback visible.
+- Target the floor under V2 doors and select real support faces suited to upper slabs and upside-down stairs. Unsupported upper placements remain subject to stock Bedrock placement rules.
+
+## 0.3.22
 
 - Choose Setblock or Structure under Controls. Structure converts the guide into native Bedrock templates and loads sections on the host. Cinnamatica-managed Bedrock worlds activate the host pack at startup.
 - Replace wrong blocks preserves correct blocks and leaves schematic air alone. An active paste offers Cancel Paste.

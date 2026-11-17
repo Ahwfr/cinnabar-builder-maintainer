@@ -99,18 +99,14 @@ pub(super) fn correction(
     let planned = placement_properties(expected)?;
     let stair = planned.contains_key("weirdo_direction");
     let planned_upper = planned_upper(&planned);
+    let door = expected.name.ends_with("_door");
     let matches = |candidate: &FrozenBlockObservation, view: LocalViewPose| {
-        if let Some(want_upper) = planned_upper {
-            let [_, y, _] = candidate.target.relative_hit;
-            let upper = match candidate.target.face {
-                0 => true,
-                1 => false,
-                _ if (y - 0.5).abs() > 0.01 => y > 0.5,
-                _ => return false,
-            };
-            if upper != want_upper {
-                return false;
-            }
+        if !support_produces_half(
+            planned_upper,
+            candidate.target.face,
+            candidate.target.relative_hit[1],
+        ) {
+            return false;
         }
         if stair && !stable_stair_yaw(view.rotation()) {
             return false;
@@ -127,7 +123,7 @@ pub(super) fn correction(
         {
             return false;
         }
-        predicted_placement(
+        let prediction = predicted_placement(
             &context.collisions,
             stream,
             &world,
@@ -135,8 +131,24 @@ pub(super) fn correction(
             candidate,
             &surroundings,
             view,
-        )
-        .is_some_and(|placement| {
+        );
+        if door && prediction.is_none() {
+            return door_matches_facing(expected, view.rotation())
+                && surroundings
+                    .destination(candidate.target.position, candidate.target.face)
+                    .0
+                    == expected.position
+                && paired_item_fits(
+                    &context.collisions,
+                    stream,
+                    &world,
+                    held,
+                    candidate,
+                    &surroundings,
+                    view,
+                );
+        }
+        prediction.is_some_and(|placement| {
             placement.position == expected.position
                 && context.collisions.block_identifier(mode, placement.block)
                     == Some(expected.name.as_str())
@@ -181,7 +193,7 @@ pub(super) fn correction(
     let mut best_dot = f32::NEG_INFINITY;
     let mut separate = None;
     let mut separate_dot = f32::NEG_INFINITY;
-    for face in 0..6 {
+    for face in (0..6).filter(|&face| !door || face == 1) {
         let clicked = placement_cell(expected.position, face ^ 1);
         if world.is_air(clicked).unwrap_or(true) {
             continue;
@@ -253,7 +265,7 @@ pub(super) fn correction(
     best.or(separate)
         .or_else(|| {
             if bridge || expected.strict_state {
-                for face in 0..6 {
+                for face in (0..6).filter(|&face| !door || face == 1) {
                     for height in [0.25, 0.75, 0.5] {
                         let Some(hit) =
                             hidden_support_hit_at(&world, expected.position, face, height)
@@ -346,6 +358,19 @@ fn separate_facing(rotation: Quat, mut matches: impl FnMut(Quat) -> bool) -> Opt
         .into_iter()
         .map(|offset| Quat::from_euler(EulerRot::YXZ, cardinal + offset, pitch, 0.0))
         .find(|&candidate| matches(candidate))
+}
+
+/// DoorItem uses a quarter-turn offset from the reported horizontal facing.
+pub(super) fn door_matches_facing(offer: &CreativePlacementOffer, rotation: Quat) -> bool {
+    let Some(planned) = placement_properties(offer) else {
+        return false;
+    };
+    let yaw = wire_facing(rotation)[1];
+    let quadrant = (yaw / 90.0 + 0.5).floor().rem_euclid(4.0) as usize;
+    let direction = ["west", "north", "east", "south"][quadrant];
+    planned
+        .get("minecraft:cardinal_direction")
+        .is_none_or(|state| state["value"].as_str() == Some(direction))
 }
 
 /// Stock Bedrock resolves a click into air as a top-face placement.
@@ -597,14 +622,29 @@ pub(super) fn support_hit(
 }
 
 /// Samples the real support's selection shape from the adjacent empty destination.
+/// Height-sensitive blocks must be clicked on a support face producing their intended half.
+pub(super) fn planned_placement_half(offer: &CreativePlacementOffer) -> Option<bool> {
+    placement_properties(offer).as_ref().and_then(planned_upper)
+}
+
+pub(super) fn support_produces_half(upper: Option<bool>, face: u8, y: f32) -> bool {
+    upper.is_none_or(|want_upper| match face {
+        0 => want_upper,
+        1 => !want_upper,
+        _ => (y - 0.5).abs() > 0.01 && (y > 0.5) == want_upper,
+    })
+}
+
 pub(super) fn hidden_support_hit(
     world: &PaletteWorld<'_>,
     ghost: [i32; 3],
     face: u8,
+    upper: Option<bool>,
 ) -> Option<sim::BlockHit> {
     [0.5, 0.25, 0.75]
         .into_iter()
-        .find_map(|height| hidden_support_hit_at(world, ghost, face, height))
+        .filter_map(|height| hidden_support_hit_at(world, ghost, face, height))
+        .find(|hit| support_produces_half(upper, hit.face, hit.hit_local.y as f32))
 }
 
 fn hidden_support_hit_at(

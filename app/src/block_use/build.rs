@@ -185,8 +185,8 @@ fn prepare(
         if let Some(expected) = &attempt.expected {
             let mode = stream.network_id_mode();
             let supported_door = placement.is_none()
-                && !expected.strict_state
                 && expected.name.ends_with("_door")
+                && (!expected.strict_state || super::orientation::door_matches_facing(expected, attempt.view.rotation()))
                 && paired_fits
                 && paired.and_then(|block| context.collisions.block_identifier(mode, block)) == Some(expected.name.as_str())
                 && surroundings.destination(observed.target.position, observed.target.face).0 == expected.position;
