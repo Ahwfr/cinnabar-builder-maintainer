@@ -812,6 +812,13 @@ impl Viewer {
                     self.tiles[next].prefetch();
                 }
             }
+            if whole
+                && let Some(focus) = self.tile_focus
+                && budget::remaining_fuel() >= 650_000
+            {
+                self.whole
+                    .scan_distant(&self.preview, &self.schematic, focus);
+            }
             if whole && budget::remaining_fuel() >= 250_000 {
                 self.whole.flush();
                 if self.whole.failed {

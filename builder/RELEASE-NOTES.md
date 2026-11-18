@@ -1,4 +1,9 @@
-# Cinnamatica 0.3.27
+# Cinnamatica 0.3.28
+
+- Verify distant loaded blocks in the full textured preview so already placed blocks lose their ghost outlines, even outside the nearby scan window.
+- Predict vertical iron-chain air placement using the normal Bedrock item-use path.
+
+## 0.3.27
 
 - Fix a render-pipeline validation crash when a saved textured ghost appears. Both shader stages now enable the outline coordinates.
 

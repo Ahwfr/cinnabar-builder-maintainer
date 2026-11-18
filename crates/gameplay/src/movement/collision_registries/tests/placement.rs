@@ -173,6 +173,29 @@ fn oriented_and_half_block_items_produce_local_predictions_immediately() {
 }
 
 #[test]
+fn iron_chain_predicts_a_vertical_placement_in_air() {
+    for mode in [NetworkIdMode::Sequential, NetworkIdMode::Hashed] {
+        let store = store(mode);
+        let mut around = surroundings();
+        around.clicked = block_fact("minecraft:air");
+        let mut click = context(&around);
+        click.clicked = [8, 12, 8];
+        let result = predict("minecraft:iron_chain", &store, mode, &click).unwrap();
+        assert_eq!(result.position, click.clicked);
+        assert_eq!(
+            result.block,
+            id(
+                record(
+                    "minecraft:iron_chain",
+                    &[("pillar_axis", serde_json::json!("y"))]
+                ),
+                mode
+            )
+        );
+    }
+}
+
+#[test]
 fn cobweb_prediction_keeps_independent_support_in_both_identity_modes() {
     for mode in [NetworkIdMode::Sequential, NetworkIdMode::Hashed] {
         let store = store(mode);

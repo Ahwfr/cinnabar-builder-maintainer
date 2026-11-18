@@ -3,6 +3,8 @@ use schematica_core::{BlockState, CellStatus, LayerMode, Placement, Schematic, S
 use serde_json::{Map, json};
 use std::collections::BTreeMap;
 
+mod coverage;
+
 const SMALL_TILE_EDGE: i32 = 4;
 const LARGE_TILE_EDGE: i32 = 5;
 const MAX_VISIBLE_TILES: i32 = 128;
@@ -113,21 +115,15 @@ impl Preview {
     }
 
     pub fn tiles(&self, size: [i32; 3], focus: Option<[i32; 3]>) -> Vec<Tile> {
-        let (min, bounds_max) = self.bounds(size);
-        let edge = tile_edge(min, bounds_max);
-        let (start, end) = if let Some(focus) = focus {
-            let start = [0, 1, 2].map(|i| min[i] + focus[i] * edge);
-            let end = [0, 1, 2].map(|i| (start[i] + WINDOW_TILES * edge).min(bounds_max[i]));
-            (start, end)
-        } else {
-            (min, bounds_max)
-        };
+        let (min, max) = self.bounds(size);
+        let edge = tile_edge(min, max);
+        let (start, end) = self.scan_window(size, focus);
         let mut tiles = Vec::new();
         for x in (start[0]..end[0]).step_by(edge as usize) {
             for z in (start[2]..end[2]).step_by(edge as usize) {
                 for y in (start[1]..end[1]).step_by(edge as usize) {
                     let lo = [x, y, z];
-                    let hi = [0, 1, 2].map(|i| (lo[i] + edge).min(bounds_max[i]));
+                    let hi = [0, 1, 2].map(|i| (lo[i] + edge).min(end[i]));
                     tiles.push(Tile {
                         lo,
                         hi,
@@ -137,6 +133,18 @@ impl Preview {
             }
         }
         tiles
+    }
+
+    fn scan_window(&self, size: [i32; 3], focus: Option<[i32; 3]>) -> ([i32; 3], [i32; 3]) {
+        let (min, bounds_max) = self.bounds(size);
+        let edge = tile_edge(min, bounds_max);
+        if let Some(focus) = focus {
+            let start = [0, 1, 2].map(|i| min[i] + focus[i] * edge);
+            let end = [0, 1, 2].map(|i| (start[i] + WINDOW_TILES * edge).min(bounds_max[i]));
+            (start, end)
+        } else {
+            (min, bounds_max)
+        }
     }
 }
 
@@ -238,6 +246,7 @@ pub struct Tile {
 #[derive(Default)]
 pub struct WholeGhost {
     packed: Vec<u32>,
+    distant: coverage::DistantScan,
     hidden: Vec<bool>,
     changes: BTreeMap<[u32; 3], u32>,
     pair: Option<DrawPair>,
@@ -383,13 +392,17 @@ impl WholeGhost {
                     }
                     let pos = [0, 1, 2].map(|axis| (world[axis] - lo[axis]) as u32);
                     let index = (pos[0] as usize * sz + pos[2] as usize) * sy + pos[1] as usize;
-                    let hidden = ghost_hidden(status, self.hidden[index]);
-                    if hidden != self.hidden[index] {
-                        self.hidden[index] = hidden;
-                        self.changes.insert(pos, if hidden { 0 } else { id + 1 });
-                    }
+                    self.apply_observation(index, pos, id, status);
                 }
             }
+        }
+    }
+
+    fn apply_observation(&mut self, index: usize, pos: [u32; 3], id: u32, status: CellStatus) {
+        let hidden = ghost_hidden(status, self.hidden[index]);
+        if hidden != self.hidden[index] {
+            self.hidden[index] = hidden;
+            self.changes.insert(pos, if hidden { 0 } else { id + 1 });
         }
     }
 

@@ -213,8 +213,11 @@ pub fn predicted_placement(
     let placed_id =
         collisions.block_state_runtime_id(mode, I::Compiled(placed_identity), &states)?;
     let placed_fact = collisions.block_facts(mode, placed_id);
+    // Stock Bedrock accepts an iron chain in an empty cell without support.
+    // Its compiled support is unresolved even though its placement axis is known.
+    let iron_chain = identifier == Some("minecraft:iron_chain") && placed_fact.placement == R::Axis;
     // Stacking existing snow skips the first-placement support check.
-    let requirement = if full_cell || trip_wire {
+    let requirement = if full_cell || trip_wire || iron_chain {
         SupportRequirement::Independent
     } else if ground_redstone {
         SupportRequirement::Face(0)
