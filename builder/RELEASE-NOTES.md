@@ -1,4 +1,8 @@
-# Cinnamatica 0.3.26
+# Cinnamatica 0.3.27
+
+- Fix a render-pipeline validation crash when a saved textured ghost appears. Both shader stages now enable the outline coordinates.
+
+## 0.3.26
 
 - Draw thinner outlines along the rendered faces of partial ghost blocks, including stairs, fences, walls, slabs, and anvils. Blended models and sloped liquid faces use their geometry too.
 

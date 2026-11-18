@@ -422,6 +422,17 @@ fn a_wash_alone_selects_the_recoloured_opaque_block_variant() {
             .unwrap()
             .depth_write_enabled;
         Specialization.specialize(key, &mut descriptor).unwrap();
+        // The outline varying is shared by the vertex and fragment stages.
+        let outline = "MOD_BLOCK_OUTLINE".into();
+        assert!(descriptor.vertex.shader_defs.contains(&outline));
+        assert!(
+            descriptor
+                .fragment
+                .as_ref()
+                .unwrap()
+                .shader_defs
+                .contains(&outline)
+        );
         // Opaque ghosts keep terrain's depth writes and gain the shading binding.
         let depth = descriptor.depth_stencil.unwrap();
         assert_eq!(depth.depth_write_enabled, writes);

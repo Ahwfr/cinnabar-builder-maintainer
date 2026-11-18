@@ -67,7 +67,9 @@ impl Specializer<RenderPipeline> for Specialization {
             let fragment = descriptor.fragment.as_mut().unwrap();
             fragment.shader_defs.push("MOD_BLOCK_TINT".into());
             if key.outlined {
-                fragment.shader_defs.push("MOD_BLOCK_OUTLINE".into());
+                let outline = "MOD_BLOCK_OUTLINE";
+                descriptor.vertex.shader_defs.push(outline.into());
+                fragment.shader_defs.push(outline.into());
             }
             descriptor.layout.push(opacity_layout());
         }
