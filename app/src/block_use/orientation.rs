@@ -90,7 +90,14 @@ pub(super) fn correction(
         pick,
     )
     .with_cell_overlays(&overlays);
-    if !world.is_air(expected.position).ok()? {
+    if !world.is_air(expected.position).ok()?
+        && !(gameplay::placement_plants::supported(&expected.name)
+            && gameplay::placement_plants::replaceable(
+                context
+                    .collisions
+                    .block_facts(mode, world.primary_runtime_id(expected.position).ok()?),
+            ))
+    {
         return None;
     }
     let planned = placement_properties(expected)?;
@@ -482,11 +489,13 @@ fn placement_properties(
     let trapdoor = offer.name.ends_with("trapdoor");
     let gate = offer.name.ends_with("fence_gate");
     let door = offer.name.ends_with("_door");
+    let soil_plant = gameplay::placement_plants::supported(&offer.name);
     planned.retain(|key, _| {
         !((wall && (key == "wall_post_bit" || key.starts_with("wall_connection_type_")))
             || ((pane || wire || fence) && key.starts_with("minecraft:connection_"))
             || ((trapdoor || gate || door) && key == "open_bit")
             || (door && key == "door_hinge_bit")
+            || (soil_plant && key == "age_bit")
             || (gate && key == "in_wall_bit")
             || (leaves && matches!(key.as_str(), "persistent_bit" | "update_bit"))
             || (redstone && key.starts_with("redstone_"))

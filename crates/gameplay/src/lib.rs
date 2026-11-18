@@ -15,6 +15,7 @@ mod placement_facing;
 mod placement_multiface;
 #[cfg(test)]
 mod placement_oracle;
+pub mod placement_plants;
 mod placement_prediction;
 mod placement_signs;
 mod placement_stacking;

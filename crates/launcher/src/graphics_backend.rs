@@ -19,6 +19,13 @@ pub fn fallback_notice(
     platform: Platform,
     reason: &str,
 ) -> String {
+    if reason == PREVIOUS_FAILURE_REASON {
+        return format!(
+            "{} was skipped because it failed during a previous launch. This launch uses {}. To retry it, change Graphics API in Video settings.",
+            requested.label(platform),
+            chosen.label(platform)
+        );
+    }
     format!(
         "{} could not start, so this launch uses {}. Update your graphics driver or choose another Graphics API in Video settings. Reason: {}",
         requested.label(platform),

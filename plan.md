@@ -2118,6 +2118,14 @@ acceptance, including device-loss recovery on affected hardware, remains incompl
   reject those requests or resolve them to lower states. Live moving placement, partial
   lantern supports, large-guide callback budgets and crash-without-report acceptance
   remain incomplete; deterministic checks alone do not establish their live behavior.
+  Common-soil flowers, grasses, normal saplings and paired tall plants now have an
+  explicitly registry-checked prediction subset, with loaded replaceable-cell and
+  headroom checks. Species outside the subset, lighting-dependent survival and full
+  substrate parity remain incomplete. Stock 1.26.60.6 Survival probes establish selected
+  flower/grass/sapling and tall-plant cases, not every supported species/soil combination.
+  Trapdoor reconciliation bypasses post-placement hold suppression only for a fresh,
+  validated explicit interaction. Saved-backend notices distinguish earlier failures;
+  no Vulkan retry or unreported-crash repair is claimed without live evidence.
   Server Experience block storage and player focus use bound world instances, with opening
   generations that invalidate stale callback work and migration from dimension-keyed stores.
   Server WIT 0.8 adds registered world definitions, instance creation/unload, typed scoped state,

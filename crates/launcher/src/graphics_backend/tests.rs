@@ -1,5 +1,18 @@
 use super::*;
 
+#[test]
+fn remembered_renderer_failure_does_not_claim_a_new_driver_failure() {
+    let message = fallback_notice(
+        Backend::Vulkan,
+        Backend::Dx12,
+        Platform::Windows,
+        PREVIOUS_FAILURE_REASON,
+    );
+    assert!(message.contains("previous launch") && message.contains("DX12"));
+    assert!(message.contains("Graphics API in Video settings"));
+    assert!(!message.contains("Update your graphics driver"));
+}
+
 /// Creates synthetic hardware with a version string, without loading a driver.
 fn adapter(vendor: u32, integrated: bool) -> Adapter {
     Adapter {

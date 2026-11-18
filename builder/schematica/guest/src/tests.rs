@@ -297,6 +297,26 @@ fn material_page_counts_finish_over_multiple_frames() {
 }
 
 #[test]
+fn aiming_at_a_tall_plant_upper_half_places_the_matching_pair() {
+    use schematica_core::{BlockState, StateValue};
+    let mut viewer = reference_viewer();
+    viewer.schematic = Schematic::new("Plant", [1, 2, 1]);
+    viewer.placement = Some(Placement::new([0; 3]));
+    let plant = BlockState::new("minecraft:sunflower");
+    viewer.schematic.set(
+        [0, 0, 0],
+        plant.clone().with("upper_block_bit", StateValue::Byte(0)),
+    );
+    viewer.schematic.set(
+        [0, 1, 0],
+        plant.with("upper_block_bit", StateValue::Byte(1)),
+    );
+    let (block, pos) = viewer.placement_block([0, 1, 0]).unwrap();
+    assert_eq!(pos, [0, 0, 0]);
+    assert_eq!(block.states["upper_block_bit"], StateValue::Byte(0));
+}
+
+#[test]
 fn ghost_lightness_loads_bounded_and_ignores_older_settings() {
     use serde_json::json;
     assert_eq!(DEFAULT_LIGHTNESS, 15);

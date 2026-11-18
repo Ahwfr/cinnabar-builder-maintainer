@@ -1,4 +1,15 @@
-# Cinnamatica 0.3.30
+# Cinnamatica 0.3.31
+
+- Predict common flowers, grasses, ferns and saplings on the supported normal soils. Keep specialized crops/aquatic plants unresolved rather than inventing their survival rules.
+- Place supported tall plants as one item producing lower and upper cells; aiming at the upper ghost resolves to the lower placement. Reject blocked headroom and water/lava.
+- Allow supported plants to replace loaded replaceable vegetation and guard against placing an already correct plant again while the guide verifier catches up.
+- Fix the held-use suppression that could prevent an explicitly requested trapdoor open/close interaction immediately after placement. Recheck the target and interaction before sending so reconciliation cannot place the held block by mistake.
+- Distinguish a remembered Vulkan failure from a failure in the current launch and explain the existing Video setting retry route. Keep the working DX12 fallback.
+- Preserve the 0.3.30 Hold to Place, log orientation, lantern and large-guide budget changes.
+
+Stock Bedrock 1.26.60.6 Survival probes accepted normal-soil flowers and paired tall plants and rejected flowers on stone. Air clicks on trapdoors resolved to the same closed bottom-half state regardless of the tested face; arbitrary unsupported upper placement remains unresolved. The earlier exit without a completed crash report still has no confirmed cause. All live user checks remain open; see TEST-CHECKLIST.md.
+
+## 0.3.30
 
 - Opt-in Hold to Place uses a 50 ms assisted attempt interval and starts ready hotbar requests in the same frame. Inventory and reported-facing confirmation remain required.
 - Keep assisted holds from falling back to the wrong held block when a ghost changes or temporarily disappears; ordinary placement remains available outside the guide after releasing the gesture.

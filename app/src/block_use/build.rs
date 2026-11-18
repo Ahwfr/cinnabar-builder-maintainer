@@ -15,6 +15,7 @@ pub(crate) struct BuildInput {
     pub clock: RepeatClock,
     view: LocalViewPose,
     pub(super) expected: Option<mod_host::CreativePlacementOffer>,
+    pub(super) interaction: Option<mod_host::CreativePlacementOffer>,
     pub(super) air_place: bool,
 }
 
@@ -55,6 +56,7 @@ impl BuildInput {
             clock,
             view,
             expected: None,
+            interaction: None,
             air_place: false,
         }
     }
@@ -72,6 +74,9 @@ pub(super) fn held_placement_block(
         let mode = stream.network_id_mode();
         if let Some(block) = gameplay::block_use::paired_item_block(collisions, mode, &identifier) {
             return Some(block);
+        }
+        if gameplay::placement_plants::supported(&identifier) {
+            return collisions.block_default_runtime_id(mode, &identifier);
         }
         let name = match identifier.as_ref() {
             "minecraft:cauldron" => "minecraft:cauldron",
@@ -152,6 +157,27 @@ fn prepare(
         if !ready && local_use != LocalUse::Interact {
             local_use = LocalUse::Nothing;
         }
+        if let Some(expected) = &attempt.interaction {
+            let mode = stream.network_id_mode();
+            let block = world.primary_runtime_id(observed.target.position).ok()?;
+            if local_use != LocalUse::Interact || observed.target.position != expected.position
+                || !super::orientation::needs_toggle(expected,
+                    context.collisions.block_identifier(mode, block),
+                    context.collisions.block_canonical_state(mode, block)) {
+                return None;
+            }
+        }
+        if let Some(expected) = attempt.expected.as_ref()
+            .filter(|expected| gameplay::placement_plants::supported(&expected.name)) {
+            let mode = stream.network_id_mode();
+            let current = world.primary_runtime_id(expected.position).ok()?;
+            if context.collisions.block_identifier(mode, current) == Some(expected.name.as_str())
+                && context.collisions.block_canonical_state(mode, current)
+                    .is_some_and(|state| super::orientation::strict_state_matches(expected, state)) {
+                // Inventory confirmation may outlive a server update for this cell.
+                return None;
+            }
+        }
         // Door and bed items are not block items; native `DoorItem` and `BedItem` place through
         // the item's own use and report the same success, which starts the repeat delay.
         let paired = paired_item_block(&context.collisions, stream, &observed.selection.item);
@@ -204,7 +230,10 @@ fn prepare(
             let actual_states = context.collisions.block_canonical_state(mode, placement.block);
             if !matches!(game_mode, Some(PlayerGameMode::Creative | PlayerGameMode::Survival))
                 || observed.selection.item.count() == 0
-                || !world.is_air(expected.position).ok()?
+                || (!world.is_air(expected.position).ok()?
+                    && !(gameplay::placement_plants::supported(&expected.name)
+                        && gameplay::placement_plants::replaceable(context.collisions.block_facts(mode,
+                            world.primary_runtime_id(expected.position).ok()?))))
                 || placement.position != expected.position
                 || actual_name != Some(expected.name.as_str())
                 || ((expected.strict_state || expected.correct_aim)
@@ -240,6 +269,7 @@ fn prepare(
         // this thread. Do not turn that same press into a container interaction with the block
         // we just placed; adjacent held placements remain eligible for bridging.
         if attempt.trigger == ItemUseTrigger::SimulationTick
+            && attempt.interaction.is_none()
             && local_use == LocalUse::Interact
             && runtime
                 .intention

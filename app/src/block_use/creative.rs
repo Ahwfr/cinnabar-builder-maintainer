@@ -214,21 +214,41 @@ pub(super) fn try_start(
                 .collisions
                 .block_canonical_state(stream.network_id_mode(), observed.target.runtime_id),
         );
+    let destination = PaletteWorld::new(
+        stream.collision_store(),
+        context.collisions.registry(stream.network_id_mode()),
+        stream.current_dimension(),
+        Default::default(),
+    )
+    .observe(|world| world.primary_runtime_id(offer.position).ok())
+    .ok()
+    .and_then(|observed| observed.value);
+    let mode = stream.network_id_mode();
+    if gameplay::placement_plants::supported(&offer.name)
+        && destination.is_some_and(|block| {
+            context.collisions.block_identifier(mode, block) == Some(offer.name.as_str())
+                && context
+                    .collisions
+                    .block_canonical_state(mode, block)
+                    .is_some_and(|state| super::orientation::strict_state_matches(&offer, state))
+        })
+    {
+        // The tile verifier can lag behind the server. Do not replace an already
+        // correct plant or let the same held gesture fall back to vanilla.
+        return true;
+    }
     if !interacting
-        && !PaletteWorld::new(
-            stream.collision_store(),
-            context.collisions.registry(stream.network_id_mode()),
-            stream.current_dimension(),
-            Default::default(),
-        )
-        .observe(|world| world.is_air(offer.position).unwrap_or(false))
-        .is_ok_and(|observed| observed.value)
+        && !destination.is_some_and(|block| {
+            let fact = context.collisions.block_facts(mode, block);
+            fact.traits.contains(assets::registry::BlockTraits::AIR)
+                || (gameplay::placement_plants::supported(&offer.name)
+                    && gameplay::placement_plants::replaceable(fact))
+        })
     {
         bevy::log::debug!(ghost = ?offer.position, "Fast Place: destination is occupied or not loaded");
         return false;
     }
     let ledger = player.inventory.ledger();
-    let mode = stream.network_id_mode();
     let quality = |stack: &NetworkItemStack| {
         let block = super::build::held_placement_block(
             &context.collisions,
@@ -272,8 +292,16 @@ pub(super) fn try_start(
         && bridge
         && observed.target.runtime_id == stream.air_block_id()
         && observed.target.position == offer.position;
+    let replacing_plant = gameplay::placement_plants::supported(&offer.name)
+        && observed.target.position == offer.position
+        && gameplay::placement_plants::replaceable(
+            context
+                .collisions
+                .block_facts(mode, observed.target.runtime_id),
+        );
     if observed.target.face > 5
         || (!use_air
+            && !replacing_plant
             && placement_cell(observed.target.position, observed.target.face) != offer.position)
     {
         bevy::log::info!(
@@ -637,6 +665,8 @@ pub(super) fn resume(
     build.air_place = pending.offer.strict_state && use_air;
     if !pending.interacting {
         build.expected = Some(pending.offer);
+    } else {
+        build.interaction = Some(pending.offer);
     }
     bevy::log::debug!(
         slot = pending.slot,

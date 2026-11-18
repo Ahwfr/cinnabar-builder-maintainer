@@ -71,6 +71,7 @@ pub fn predicted_placement(
     let identity = fact.identity?;
     let canonical = collisions.block_canonical_state(mode, held)?;
     let identifier = collisions.block_identifier(mode, held);
+    let plant = identifier.and_then(|name| crate::placement_plants::states(name, canonical));
     let trip_wire = identifier == Some("minecraft:trip_wire");
     let ground_redstone = matches!(
         identifier,
@@ -143,7 +144,8 @@ pub fn predicted_placement(
     }
     // A retained click must still refer to readable world data when it is admitted.
     let existing = world.primary_runtime_id(position).ok()?;
-    if fact.placement == R::Candle
+    if plant.is_some()
+        || fact.placement == R::Candle
         || fact.placement == R::SeaPickle
         || fact.placement == R::Vine
         || fact.traits.contains(T::MULTIFACE)
@@ -162,6 +164,8 @@ pub fn predicted_placement(
             .block_facts(mode, existing)
             .traits
             .contains(T::AIR)
+        && !(plant.is_some()
+            && crate::placement_plants::replaceable(collisions.block_facts(mode, existing)))
     {
         return None;
     }
@@ -204,6 +208,8 @@ pub fn predicted_placement(
     let (placed_identity, mut states, full_cell) =
         if let Some((_, name, states, full_cell)) = merged {
             (name, states, full_cell)
+        } else if let Some((states, _)) = &plant {
+            (identity, states.clone(), false)
         } else if let Some((name, states)) =
             crate::placement_signs::sign_states(fact, canonical, context.input)
         {
@@ -252,7 +258,17 @@ pub fn predicted_placement(
     // Its compiled support is unresolved even though its placement axis is known.
     let iron_chain = identifier == Some("minecraft:iron_chain") && placed_fact.placement == R::Axis;
     // Stacking existing snow skips the first-placement support check.
-    let requirement = if full_cell || trip_wire || iron_chain {
+    let requirement = if plant.is_some() {
+        let below = placement_cell(position, 0);
+        let ground = world.primary_runtime_id(below).ok()?;
+        if !collisions
+            .block_identifier(mode, ground)
+            .is_some_and(crate::placement_plants::accepts_soil)
+        {
+            return None;
+        }
+        SupportRequirement::Independent
+    } else if full_cell || trip_wire || iron_chain {
         SupportRequirement::Independent
     } else if ground_redstone {
         SupportRequirement::Face(0)
@@ -282,6 +298,29 @@ pub fn predicted_placement(
     crate::placement_stairs::corner_states(placed_fact, &mut states, position, read)?;
     let block = collisions.block_state_runtime_id(mode, I::Compiled(placed_identity), &states)?;
     let mut neighbors = Vec::new();
+    if plant.as_ref().is_some_and(|(_, double)| *double) {
+        let above = placement_cell(position, 1);
+        if !context.build_height.contains(&above[1])
+            || !crate::placement_plants::replaceable(
+                collisions.block_facts(mode, world.primary_runtime_id(above).ok()?),
+            )
+        {
+            return None;
+        }
+        let upper = crate::placement_plants::upper(&states)?;
+        {
+            use sim::CollisionWorld;
+            if world.block_physics(above).ok()?.layers.iter().any(|layer| {
+                layer.flags.contains(sim::BlockPhysicsFlags::WATER)
+                    || layer.flags.contains(sim::BlockPhysicsFlags::LAVA)
+            }) {
+                return None;
+            }
+        }
+        let upper_id =
+            collisions.block_state_runtime_id(mode, I::Compiled(placed_identity), &upper)?;
+        neighbors.push((above, upper_id));
+    }
     let door = placed_fact.traits.contains(T::DOOR);
     if door {
         if context.input.face != 1 {
@@ -337,7 +376,7 @@ pub fn predicted_placement(
     }
     neighbors.push((position, block));
     for &(cell, runtime_id) in &neighbors {
-        if cell != position && !door {
+        if cell != position && !door && !plant.as_ref().is_some_and(|(_, double)| *double) {
             continue;
         }
         let shapes = world

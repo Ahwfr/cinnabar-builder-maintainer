@@ -196,6 +196,69 @@ fn iron_chain_predicts_a_vertical_placement_in_air() {
 }
 
 #[test]
+fn soil_plants_predict_single_and_paired_cells_on_valid_ground() {
+    for mode in [NetworkIdMode::Sequential, NetworkIdMode::Hashed] {
+        let mut ground = store(mode);
+        ground
+            .update_block(
+                SubChunkKey::new(0, 0, 0, 0),
+                BlockUpdate::new(8, 8, 8, 0, id(record("minecraft:grass_block", &[]), mode)),
+                id(record("minecraft:air", &[]), mode),
+            )
+            .unwrap();
+        let mut around = surroundings();
+        around.clicked = block_fact("minecraft:grass_block");
+        for (name, paired) in [
+            ("minecraft:poppy", false),
+            ("minecraft:short_grass", false),
+            ("minecraft:oak_sapling", false),
+            ("minecraft:tall_grass", true),
+            ("minecraft:sunflower", true),
+        ] {
+            let prediction = predict(name, &ground, mode, &context(&around)).expect(name);
+            assert_eq!(prediction.position, [8, 9, 8]);
+            assert_eq!(prediction.additional.len(), usize::from(paired));
+            if paired {
+                let (position, upper) = prediction.additional[0];
+                assert_eq!(position, [8, 10, 8]);
+                let state: serde_json::Value =
+                    serde_json::from_str(fixtures().1.block_canonical_state(mode, upper).unwrap())
+                        .unwrap();
+                assert_eq!(state["upper_block_bit"]["value"], 1);
+            }
+            assert!(
+                predict(name, &store(mode), mode, &context(&surroundings())).is_none(),
+                "{name} must not grow on stone"
+            );
+        }
+        ground
+            .update_block(
+                SubChunkKey::new(0, 0, 0, 0),
+                BlockUpdate::new(8, 10, 8, 0, id(record("minecraft:stone", &[]), mode)),
+                id(record("minecraft:air", &[]), mode),
+            )
+            .unwrap();
+        assert!(predict("minecraft:tall_grass", &ground, mode, &context(&around)).is_none());
+        assert!(predict("minecraft:poppy", &ground, mode, &context(&around)).is_some());
+        ground
+            .update_block(
+                SubChunkKey::new(0, 0, 0, 0),
+                BlockUpdate::new(8, 9, 8, 0, id(record("minecraft:short_grass", &[]), mode)),
+                id(record("minecraft:air", &[]), mode),
+            )
+            .unwrap();
+        let mut replacing = surroundings();
+        replacing.clicked = block_fact("minecraft:short_grass");
+        let mut click = context(&replacing);
+        click.clicked = [8, 9, 8];
+        assert!(
+            predict("minecraft:poppy", &ground, mode, &click).is_some(),
+            "a flower can replace loaded short grass on valid ground"
+        );
+    }
+}
+
+#[test]
 fn cobweb_prediction_keeps_independent_support_in_both_identity_modes() {
     for mode in [NetworkIdMode::Sequential, NetworkIdMode::Hashed] {
         let store = store(mode);

@@ -1,5 +1,11 @@
 # Installing and updating Builder
 
+0.3.31 adds a supported common-plant placement path and paired tall plants, tightens
+trapdoor state reconciliation, and clarifies the saved Vulkan failure notice. Test on
+valid soil; it does not enable floating plants or specialized crop/aquatic survival
+rules. Keep the working graphics API unless deliberately retrying it in Video settings.
+Use TEST-CHECKLIST.md to report passes/failures before closing the tracked issues.
+
 0.3.30 includes the previously staged large-guide/material budget fixes. Hold to Place now
 requests assisted placement at 50 ms intervals; server inventory and facing confirmation
 can still limit throughput. Auto Orientation validates the predicted state, rather than

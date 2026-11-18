@@ -222,6 +222,7 @@ pub(super) fn maintain_block_use(
                 break;
             }
             let strict = offer.strict_state;
+            let assisted_hold = offer.repeat_while_held;
             let native = observed.as_ref().filter(|hit| {
                 (!offer.correct_aim || !offer.name.ends_with("_door") || hit.target.face == 1)
                     && (!offer.strict_state
@@ -272,7 +273,7 @@ pub(super) fn maintain_block_use(
                 );
                 break;
             }
-            if strict || native.is_some() || bridge.is_some() {
+            if strict || assisted_hold || native.is_some() || bridge.is_some() {
                 break;
             }
         }

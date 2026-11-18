@@ -1005,16 +1005,14 @@ impl Viewer {
             .then_some(block)
     }
 
-    /// One door item places a pair. Aim at either ghost half to place from the lower cell.
+    /// A paired item (door or tall plant) starts from its lower ghost cell.
     fn placement_block(&self, pos: [i32; 3]) -> Option<(&schematica_core::BlockState, [i32; 3])> {
         use schematica_core::StateValue;
         let block = self.planned_block(pos)?;
-        if !block.name.ends_with("_door")
-            || !matches!(
-                block.states.get("upper_block_bit"),
-                Some(StateValue::Bool(true) | StateValue::Byte(1) | StateValue::Int(1))
-            )
-        {
+        if !matches!(
+            block.states.get("upper_block_bit"),
+            Some(StateValue::Bool(true) | StateValue::Byte(1) | StateValue::Int(1))
+        ) {
             return Some((block, pos));
         }
         let [x, y, z] = pos;

@@ -50,7 +50,11 @@ pub(super) fn observe_bridge_target(
                     offer,
                     context.collisions.block_identifier(mode, block),
                     context.collisions.block_canonical_state(mode, block),
-                ) {
+                ) && !(gameplay::placement_plants::supported(&offer.name)
+                    && gameplay::placement_plants::replaceable(
+                        context.collisions.block_facts(mode, block),
+                    ))
+                {
                     return Ok(None);
                 }
                 let hit = world.block_interaction_ray_current(eye, forward, reach)?;
