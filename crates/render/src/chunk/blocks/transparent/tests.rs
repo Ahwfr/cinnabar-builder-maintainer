@@ -23,7 +23,9 @@ fn fixture() -> (App, bevy::render::view::RetainedViewEntity) {
     }));
     // A previous pose must not determine the current phase distance.
     placement.matrix = Mat4::from_translation(Vec3::new(0., 0., 100.));
+    placement.active = true;
     let mut resources = (*resources).clone();
+    let grid = resources.instances[&id].geometry;
     resources.connection = 1;
     resources
         .instances
@@ -69,6 +71,7 @@ fn fixture() -> (App, bevy::render::view::RetainedViewEntity) {
             ..default()
         })
         .insert_resource(Blocks {
+            native: BTreeMap::from([(grid, Arc::clone(&placement.native))]),
             placements: BTreeMap::from([((view, id), placement)]),
             ..default()
         })

@@ -21,7 +21,10 @@ pub(super) fn queue(
     views: Query<(Entity, &ExtractedView, &MainEntity)>,
 ) {
     let Blocks {
-        placements, draws, ..
+        native,
+        placements,
+        draws,
+        ..
     } = &mut *blocks;
     draws.clear();
     if frame.connection == 0 || panorama.is_some_and(|scene| !scene.game_visible()) {
@@ -33,7 +36,10 @@ pub(super) fn queue(
             continue;
         };
         for (&(view_entity, id), placement) in placements.iter() {
-            if view_entity != entity || !frame.live_owners.contains(&(id.owner, id.generation)) {
+            if view_entity != entity
+                || !placement.active
+                || !frame.live_owners.contains(&(id.owner, id.generation))
+            {
                 continue;
             }
             let Some(order) = &placement.order else {
@@ -48,8 +54,8 @@ pub(super) fn queue(
                 })
                 .find_map(|resources| {
                     let instance = resources.instances.get(&id)?;
-                    let geometry = resources.geometry.get(&instance.geometry)?;
-                    (Arc::ptr_eq(geometry, &placement.native.geometry)
+                    let resident = native.get(&instance.geometry)?;
+                    (Arc::ptr_eq(resident, &placement.native)
                         && instance.clip.is_none()
                         && instance.depth != Depth::Always
                         && instance.tint[3] == 1.)

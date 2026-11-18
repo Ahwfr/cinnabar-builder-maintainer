@@ -277,10 +277,13 @@ pub(crate) fn install(app: &mut App) {
         .init_resource::<Blocks>()
         .add_render_command::<Transparent3d, transparent::DrawCommands>()
         .add_systems(RenderStartup, bevy::render::init_gpu_resource::<Pipelines>)
-        .add_systems(Render, transparent::queue.in_set(RenderSystems::Queue))
+        // Queue transparency against the same resident generation that the
+        // opaque pass uses this frame.
         .add_systems(
             Render,
-            prepare::prepare.in_set(RenderSystems::PrepareBindGroups),
+            (prepare::prepare, transparent::queue)
+                .chain()
+                .in_set(RenderSystems::Queue),
         );
     install_graph(render.world_mut());
 }
