@@ -84,7 +84,19 @@ fn import_bytes(data: &[u8], name: String, ext: &str) -> Result<Schematic> {
                 }
                 let key = state.to_string();
                 if !translations.contains_key(&key) {
-                    let source = blockpedia::BlockState::parse(&key)
+                    // Flattened Java exports before 1.20.3 called short grass
+                    // `grass`. The classic decoder already maps numeric turf
+                    // to `grass_block`.
+                    let renamed_chain;
+                    let java_state = if key == "minecraft:grass" {
+                        "minecraft:short_grass"
+                    } else if state.get_name() == "minecraft:chain" {
+                        renamed_chain = key.replacen("minecraft:chain", "minecraft:iron_chain", 1);
+                        &renamed_chain
+                    } else {
+                        &key
+                    };
+                    let source = blockpedia::BlockState::parse(java_state)
                         .map_err(|e| anyhow!("cannot parse {key}: {e}"))?;
                     let translated = source
                         .to_bedrock()
@@ -231,6 +243,25 @@ fn list(tag: &NbtValue) -> Result<&[NbtValue]> {
 mod tests {
     use super::*;
     use nucleation::{UniversalSchematic, formats::mcstructure};
+
+    #[test]
+    fn old_java_grass_imports_as_short_grass() -> Result<()> {
+        let mut source = UniversalSchematic::new("old grass".into());
+        source.metadata.mc_version = Some(3578);
+        assert!(source.set_block_str(0, 0, 0, "minecraft:grass"));
+        assert!(source.set_block_str(1, 0, 0, "minecraft:grass_block"));
+        let bytes = litematic::to_litematic(&source)?;
+        let imported = import_bytes(&bytes, "old grass".into(), "litematic")?;
+        assert_eq!(
+            imported.get([0, 0, 0]).unwrap().name,
+            "minecraft:short_grass"
+        );
+        assert_eq!(
+            imported.get([1, 0, 0]).unwrap().name,
+            "minecraft:grass_block"
+        );
+        Ok(())
+    }
 
     #[test]
     fn import_preserves_asymmetric_coordinates_and_states() -> Result<()> {

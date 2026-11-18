@@ -1116,6 +1116,9 @@ fn display_name(identifier: &str) -> String {
 #[derive(Default)]
 pub(super) struct MaterialPageCounts {
     materials: [Option<usize>; ROWS],
+    palette_identity: (usize, usize),
+    palette_cursor: usize,
+    palette_indices: [Vec<usize>; ROWS],
     needed: [u64; ROWS],
     cursor: usize,
 }
@@ -1123,8 +1126,21 @@ pub(super) struct MaterialPageCounts {
 impl Viewer {
     pub(super) fn material_counts_pending(&self) -> bool {
         self.browser_tab == Tab::Materials
-            && self.browser_counts.borrow().cursor < self.tiles.len()
-            && self.material_scan_available()
+            && (self.material_names_pending()
+                || (self.browser_counts.borrow().cursor < self.tiles.len()
+                    && self.material_scan_available()))
+    }
+
+    fn material_names_pending(&self) -> bool {
+        !self.materials.is_empty()
+            && self
+                .browser_names
+                .borrow()
+                .as_ref()
+                .is_none_or(|(signature, rows)| {
+                    signature.1 != self.materials.as_ptr() as usize
+                        || rows.len() < self.materials.len()
+                })
     }
 
     fn material_scan_available(&self) -> bool {
@@ -1138,22 +1154,21 @@ impl Viewer {
         let search = self.browser_search.trim().to_lowercase();
         let signature = (self.materials.len(), self.materials.as_ptr() as usize);
         let mut cache = self.browser_names.borrow_mut();
-        if cache
-            .as_ref()
-            .is_none_or(|(cached, _)| *cached != signature)
-        {
-            let mut names: Vec<_> = self
-                .materials
-                .iter()
-                .enumerate()
-                .map(|(index, line)| {
-                    let name = display_name(&line.name);
-                    let lower = name.to_lowercase();
-                    (index, std::rc::Rc::<str>::from(name), lower)
-                })
-                .collect();
-            names.sort_by(|a, b| a.1.cmp(&b.1));
-            *cache = Some((signature, names));
+        let (cached_signature, names) = cache.get_or_insert_with(|| (signature, Vec::new()));
+        if *cached_signature != signature {
+            *cached_signature = signature;
+            names.clear();
+        }
+        let start = names.len();
+        let end = (start + 64).min(self.materials.len());
+        for index in start..end {
+            let name = std::rc::Rc::<str>::from(display_name(&self.materials[index].name));
+            let offset = names.partition_point(|line| line.1 <= name);
+            let lower = name.to_lowercase();
+            names.insert(offset, (index, name, lower));
+        }
+        if end < self.materials.len() {
+            return Vec::new();
         }
         cache.as_ref().map_or_else(Vec::new, |(_, names)| {
             names
@@ -1266,35 +1281,36 @@ impl Viewer {
         if !scanned {
             return materials.map(|index| index.map(|index| self.materials[index].total));
         }
-        let identity = (
-            self.materials.as_ptr() as usize,
-            self.materials.len(),
-            self.preview.palette_identity(),
-        );
-        let mut cache = self.browser_indices.borrow_mut();
-        if cache.as_ref().is_none_or(|(cached, _)| *cached != identity) {
-            let names: Vec<&str> = self
-                .materials
-                .iter()
-                .map(|line| line.name.as_str())
-                .collect();
-            let (_, table) = self.preview.material_index_table(&names);
-            *cache = Some((identity, table));
-        }
-        let (_, table) = cache.as_ref().unwrap();
+        let identity = self.preview.palette_identity();
         let mut counts = self.browser_counts.borrow_mut();
-        if counts.materials != materials {
+        if counts.materials != materials || counts.palette_identity != identity {
             *counts = MaterialPageCounts {
                 materials,
+                palette_identity: identity,
                 ..Default::default()
             };
+        }
+        let start = counts.palette_cursor;
+        let end = (start + 64).min(identity.1);
+        let names = materials.map(|line| line.map(|index| self.materials[index].name.as_str()));
+        for (offset, name) in self.preview.palette_names(start, end).enumerate() {
+            for (row, expected) in names.iter().enumerate() {
+                if *expected == Some(name) {
+                    counts.palette_indices[row].push(start + offset);
+                }
+            }
+        }
+        counts.palette_cursor = end;
+        if end < identity.1 {
+            return [None; ROWS];
         }
         // Keep the UI open while a large schematic's visible rows are counted.
         let end = (counts.cursor + 4).min(self.tiles.len());
         for tile in &self.tiles[counts.cursor..end] {
             for (row, material) in materials.iter().enumerate() {
-                if let Some(index) = material {
-                    counts.needed[row] += u64::from(tile.material_counts(&table[*index])[0]);
+                if material.is_some() {
+                    counts.needed[row] +=
+                        u64::from(tile.material_counts(&counts.palette_indices[row])[0]);
                 }
             }
         }
@@ -1395,9 +1411,17 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
     let pages = lines.len().div_ceil(ROWS).max(1);
     let page = viewer.material_page.min(pages - 1);
     let first = page * ROWS;
+    let preparing = viewer.material_names_pending();
     let empty = !viewer.materials.is_empty() && lines.is_empty();
     out.insert("#bw_empty_visible".into(), json!(empty));
-    out.insert("#bw_empty".into(), json!("No matching materials"));
+    out.insert(
+        "#bw_empty".into(),
+        json!(if preparing {
+            "Preparing materials…"
+        } else {
+            "No matching materials"
+        }),
+    );
     out.insert(
         "#bw_page".into(),
         json!(if lines.is_empty() {

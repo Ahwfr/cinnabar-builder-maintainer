@@ -4,6 +4,7 @@ use serde_json::{Map, json};
 use std::collections::BTreeMap;
 
 mod coverage;
+pub(crate) use coverage::on_distant_scan_frame;
 
 const SMALL_TILE_EDGE: i32 = 4;
 const LARGE_TILE_EDGE: i32 = 5;
@@ -59,21 +60,10 @@ impl Preview {
         self.palette.len() == schematic.palette().len()
     }
 
-    /// Each of `names`' palette indices, from one pass over the palette. Identifies the
-    /// palette it was built from, which changes whenever the preview is rebuilt.
-    pub fn material_index_table(&self, names: &[&str]) -> ((usize, usize), Vec<Vec<usize>>) {
-        let position: std::collections::HashMap<&str, usize> = names
+    pub(super) fn palette_names(&self, start: usize, end: usize) -> impl Iterator<Item = &str> {
+        self.palette[start..end]
             .iter()
-            .enumerate()
-            .map(|(index, name)| (*name, index))
-            .collect();
-        let mut table = vec![Vec::new(); names.len()];
-        for (index, block) in self.palette.iter().enumerate() {
-            if let Some(&material) = position.get(block.name.as_str()) {
-                table[material].push(index);
-            }
-        }
-        (self.palette_identity(), table)
+            .map(|block| block.name.as_str())
     }
 
     /// The palette's storage and length, which change whenever it is rebuilt.

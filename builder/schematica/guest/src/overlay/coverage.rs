@@ -1,7 +1,14 @@
 use super::*;
 use std::collections::HashMap;
 
-const SCAN_EDGE: i32 = 8;
+const SCAN_EDGE: i32 = 4;
+const FAR_SCAN_PERIOD: u8 = 6;
+
+pub(crate) fn on_distant_scan_frame(phase: &mut u8) -> bool {
+    let distant = *phase >= FAR_SCAN_PERIOD - 2;
+    *phase = (*phase + 1) % FAR_SCAN_PERIOD;
+    distant
+}
 
 #[derive(Default)]
 pub(super) struct DistantScan {
@@ -52,7 +59,7 @@ impl WholeGhost {
         let mut compared = HashMap::new();
         while self.distant.cell < count {
             let cell = self.distant.cell;
-            if cell % 8 == 0 && budget::remaining_fuel() < 350_000 {
+            if budget::remaining_fuel() < 425_000 {
                 return;
             }
             self.distant.cell += 1;
@@ -138,5 +145,17 @@ fn coverage_reaches_beyond_the_local_camera_window() {
             .map(|(lo, hi)| (0..3).map(|i| hi[i] - lo[i]).product::<i32>())
             .sum::<i32>(),
         size.iter().product::<i32>()
+    );
+}
+
+#[test]
+fn distant_queries_get_two_adjacent_frames_to_deliver_a_sample() {
+    let mut phase = 0;
+    let samples = std::array::from_fn::<_, 12, _>(|_| on_distant_scan_frame(&mut phase));
+    assert_eq!(
+        samples,
+        [
+            false, false, false, false, true, true, false, false, false, false, true, true
+        ]
     );
 }

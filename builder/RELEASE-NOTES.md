@@ -1,4 +1,10 @@
-# Cinnamatica 0.3.28
+# Cinnamatica 0.3.29
+
+- Scan distant blocks in smaller batches on dedicated frames, with fuel reserved for edits and other guide work. This avoids the guest restarts that made large guides disappear.
+- Prepare material names and palette counts in batches so opening Materials on a large guide stays within its frame budget.
+- Import legacy Java grass and chain names, including the Wizard Tower schematic.
+
+## 0.3.28
 
 - Verify distant loaded blocks in the full textured preview so already placed blocks lose their ghost outlines, even outside the nearby scan window.
 - Predict vertical iron-chain air placement using the normal Bedrock item-use path.
