@@ -383,7 +383,7 @@ impl WholeGhost {
                     }
                     let pos = [0, 1, 2].map(|axis| (world[axis] - lo[axis]) as u32);
                     let index = (pos[0] as usize * sz + pos[2] as usize) * sy + pos[1] as usize;
-                    let hidden = !matches!(status, CellStatus::Missing | CellStatus::Unloaded);
+                    let hidden = ghost_hidden(status, self.hidden[index]);
                     if hidden != self.hidden[index] {
                         self.hidden[index] = hidden;
                         self.changes.insert(pos, if hidden { 0 } else { id + 1 });
@@ -427,6 +427,23 @@ impl WholeGhost {
             _ => {}
         }
     }
+}
+
+/// A temporarily unavailable terrain sample leaves the last observed ghost visibility intact.
+fn ghost_hidden(status: CellStatus, was_hidden: bool) -> bool {
+    match status {
+        CellStatus::Unloaded => was_hidden,
+        CellStatus::Missing => false,
+        _ => true,
+    }
+}
+
+#[test]
+fn a_terrain_gap_does_not_restore_a_previously_hidden_ghost() {
+    let placed = ghost_hidden(CellStatus::Correct, false);
+    assert!(ghost_hidden(CellStatus::Unloaded, placed));
+    assert!(!ghost_hidden(CellStatus::Unloaded, false));
+    assert!(!ghost_hidden(CellStatus::Missing, placed));
 }
 
 pub(super) struct DrawPair {
