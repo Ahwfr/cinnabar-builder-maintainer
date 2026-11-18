@@ -8,7 +8,9 @@ import render::chunk_bindings::{
 import render::material::{MaterialGpu, materials, positional_material_id, texture_layer, texture_page, material_uv_flags, texture_model_uv, texture_gradient_scale};
 @if(ENHANCED_SHADOW)
 import render::enhanced::caster::caster_clip;
-import render::world_projection::{section_camera_offset, camera_offset_clip, apply_block_tint};
+import render::world_projection::{section_camera_offset, camera_offset_clip, apply_shape_tint};
+@if(MOD_BLOCK_OUTLINE)
+import render::world_projection::quad_border;
 import render::biome_tint::{blended_biome_tint, blended_biome_tint_gamma};
 import render::lighting::{light_ao_factor, light_colour, material_ambient_occlusion, material_face_shade, tint_to_gamma, tint_to_linear, terrain_light_levels, terrain_light_colour};
 @if(ALPHA_TO_COVERAGE)
@@ -43,6 +45,8 @@ struct VertexOutput {
     @location(14) native_ao_face: f32,
     @location(10) @interpolate(flat) world_origin: vec3<f32>,
     @location(12) world_position: vec3<f32>,
+    @if(MOD_BLOCK_OUTLINE)
+    @location(15) @interpolate(perspective, centroid) outline_edges: vec4<f32>,
     @if(ENHANCED)
     @location(13) @interpolate(flat) surface_class: u32,
     @if(!ENHANCED)
@@ -473,6 +477,11 @@ fn model_vertex(vertex_index: u32, instance_index: u32) -> VertexOutput {
     let frame = animation_sample(material);
     let light_sample = model_light_sample(quad, corner);
     var out: VertexOutput;
+    @if(MOD_BLOCK_OUTLINE)
+    out.outline_edges = quad_border(template_position, array(
+        model_corner_position(quad, 0u), model_corner_position(quad, 1u),
+        model_corner_position(quad, 2u), model_corner_position(quad, 3u),
+    ));
     let world = vec3<f32>(quad.chunk_origin.xyz) + local_position;
     let camera_offset = section_camera_offset(quad.chunk_origin.xyz, local_position, view.world_position);
     out.clip_position = camera_offset_clip(view.clip_from_world, view.world_position, camera_offset);
@@ -861,11 +870,18 @@ fn fragment(
         in.surface_class,
     );
     @if(!OPAQUE_OVERDRAW && ENHANCED)
-    return apply_block_tint(vec4(apply_distance_fog(shaded, in.world_position), output_alpha), in.world_position);
+    return tint_model_face(vec4(apply_distance_fog(shaded, in.world_position), output_alpha), in);
     @if(!OPAQUE_OVERDRAW && !ENHANCED)
     let colour = ordinary_world_model_colour(in, sampled);
     @if(!OPAQUE_OVERDRAW && !ENHANCED)
-    return apply_block_tint(vec4(colour.rgb, output_alpha), in.world_position);
+    return tint_model_face(vec4(colour.rgb, output_alpha), in);
+}
+
+fn tint_model_face(colour: vec4<f32>, in: VertexOutput) -> vec4<f32> {
+    @if(MOD_BLOCK_OUTLINE)
+    return apply_shape_tint(colour, in.outline_edges);
+    @if(!MOD_BLOCK_OUTLINE)
+    return apply_shape_tint(colour, vec4(1.0));
 }
 
 @fragment

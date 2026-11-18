@@ -255,6 +255,12 @@ fn retained_block_outline_shader_validates() {
     ] {
         for defines in [
             &["MOD_BLOCKS", "MOD_BLOCK_TINT", "MOD_BLOCK_OUTLINE"][..],
+            &[
+                "MOD_BLOCKS",
+                "MOD_BLOCK_TINT",
+                "MOD_BLOCK_OUTLINE",
+                "MOD_BLOCK_OPACITY",
+            ][..],
             &["MOD_BLOCKS", "MOD_BLOCK_TINT"][..],
         ] {
             let source = shader_source::composed(raw, defines);

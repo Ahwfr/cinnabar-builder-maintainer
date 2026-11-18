@@ -8,7 +8,9 @@ import render::chunk_bindings::{
     TRANSPARENT_WATER_RECORD_FLAG,
 };
 import render::material::{MaterialGpu, materials, positional_material_id, texture_layer, texture_page, texture_uv_scale, texture_gradient_scale};
-import render::world_projection::{section_camera_offset, camera_offset_clip, apply_block_tint};
+import render::world_projection::{section_camera_offset, camera_offset_clip, apply_shape_tint};
+@if(MOD_BLOCK_OUTLINE)
+import render::world_projection::quad_border;
 import render::biome_tint::blended_biome_tint;
 import render::lighting::{light_ao_factor, light_colour, face_shade, tint_to_gamma, tint_to_linear, terrain_light_levels, terrain_light_colour};
 @if(ENHANCED)
@@ -59,6 +61,8 @@ struct VertexOutput {
     @location(7) ambient_occlusion: f32,
     @location(8) @interpolate(flat) depth_write_route: u32,
     @location(9) world_position: vec3<f32>,
+    @if(MOD_BLOCK_OUTLINE)
+    @location(15) outline_edges: vec4<f32>,
     @location(12) native_light_levels: vec2<f32>,
     @location(13) @interpolate(flat) native_face_shade: f32,
     @location(14) @interpolate(flat) two_sided: u32,
@@ -311,6 +315,16 @@ fn vertex_for_record(record_index: u32, vertex_index: u32) -> VertexOutput {
     out.depth_write_route = packed_material >> 31u;
     out.two_sided = u32((packed_material & LIQUID_TWO_SIDED_BIT) != 0u);
     out.world_position = world_position;
+    @if(MOD_BLOCK_OUTLINE) {
+        let geometry = geometry_streams[record_index * 4u];
+        let heights = geometry_streams[record_index * 4u + 1u];
+        out.outline_edges = quad_border(local_position, array(
+            liquid_corner(geometry, heights, 0u, packed_material),
+            liquid_corner(geometry, heights, 1u, packed_material),
+            liquid_corner(geometry, heights, 2u, packed_material),
+            liquid_corner(geometry, heights, 3u, packed_material),
+        ));
+    }
     @if(ENHANCED)
     out.normal = face_normal(face);
     @if(ENHANCED)
@@ -479,7 +493,14 @@ fn fragment_depth(in: VertexOutput, @builtin(front_facing) front_facing: bool) -
         in.surface_class,
     );
     @if(ENHANCED)
-    return apply_block_tint(vec4(apply_distance_fog(lit, in.world_position), 1.0), in.world_position);
+    return tint_liquid_face(vec4(apply_distance_fog(lit, in.world_position), 1.0), in);
     @if(!ENHANCED)
-    return apply_block_tint(tint_to_linear(vec4(native_liquid_colour(sampled.rgb, vec3(1.0), in), 1.0)), in.world_position);
+    return tint_liquid_face(tint_to_linear(vec4(native_liquid_colour(sampled.rgb, vec3(1.0), in), 1.0)), in);
+}
+
+fn tint_liquid_face(colour: vec4<f32>, in: VertexOutput) -> vec4<f32> {
+    @if(MOD_BLOCK_OUTLINE)
+    return apply_shape_tint(colour, in.outline_edges);
+    @if(!MOD_BLOCK_OUTLINE)
+    return apply_shape_tint(colour, vec4(1.0));
 }

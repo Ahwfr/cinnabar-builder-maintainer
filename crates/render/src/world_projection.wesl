@@ -31,19 +31,51 @@ fn washed_block_colour(colour: vec3<f32>) -> vec3<f32> {
     return mix(colour * block_shading.tint.rgb, block_shading.wash.rgb, block_shading.wash.a);
 }
 
-fn apply_block_tint(colour: vec4<f32>, world_position: vec3<f32>) -> vec4<f32> {
+// Greedy terrain faces can span several full blocks. Keep a border for each cell.
+@if(MOD_BLOCK_OUTLINE)
+fn block_grid_edge(world_position: vec3<f32>) -> f32 {
+    let fraction = fract(world_position);
+    let edge = min(fraction, vec3(1.0) - fraction);
+    return min(max(edge.x, edge.y), min(max(edge.y, edge.z), max(edge.z, edge.x)));
+}
+
+@if(MOD_BLOCK_OUTLINE)
+fn line_distance(point: vec3<f32>, a: vec3<f32>, b: vec3<f32>) -> f32 {
+    let segment = b - a;
+    let length_squared = dot(segment, segment);
+    if (length_squared < 1e-10) { return 1.0; }
+    return length(cross(point - a, segment)) * inverseSqrt(length_squared);
+}
+
+// Interpolate distances to the four geometric edges separately. Taking the
+// minimum in the fragment covers the whole perimeter without a triangle diagonal.
+@if(MOD_BLOCK_OUTLINE)
+fn quad_border(point: vec3<f32>, corners: array<vec3<f32>, 4>) -> vec4<f32> {
+    return vec4(
+        line_distance(point, corners[0], corners[1]),
+        line_distance(point, corners[1], corners[2]),
+        line_distance(point, corners[2], corners[3]),
+        line_distance(point, corners[3], corners[0]),
+    );
+}
+
+fn apply_shape_tint(colour: vec4<f32>, edges: vec4<f32>) -> vec4<f32> {
     @if(MOD_BLOCK_TINT && MOD_BLOCK_OUTLINE) {
-        let fraction = fract(world_position);
-        let edge = min(fraction, vec3(1.0) - fraction);
-        // Two close boundaries form an edge. One close boundary is a face interior.
-        let distance_to_edge = min(max(edge.x, edge.y), min(max(edge.y, edge.z), max(edge.z, edge.x)));
-        let line = 1.0 - smoothstep(0.008, 0.0175, distance_to_edge);
+        let distance_to_edge = min(min(edges.x, edges.y), min(edges.z, edges.w));
+        let line = 1.0 - smoothstep(0.005, 0.011, distance_to_edge);
         return vec4(mix(washed_block_colour(colour.rgb), vec3(0.10, 0.67, 0.91), line), colour.a);
     }
     @if(MOD_BLOCK_TINT && !MOD_BLOCK_OUTLINE)
     return vec4(washed_block_colour(colour.rgb), colour.a);
     @if(!MOD_BLOCK_TINT)
     return colour;
+}
+
+fn apply_block_tint(colour: vec4<f32>, world_position: vec3<f32>) -> vec4<f32> {
+    @if(MOD_BLOCK_OUTLINE)
+    return apply_shape_tint(colour, vec4(block_grid_edge(world_position)));
+    @if(!MOD_BLOCK_OUTLINE)
+    return apply_shape_tint(colour, vec4(1.0));
 }
 
 fn apply_block_opacity(colour: vec4<f32>) -> vec4<f32> {

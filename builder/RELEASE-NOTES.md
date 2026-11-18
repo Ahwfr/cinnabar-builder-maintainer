@@ -1,4 +1,8 @@
-# Cinnamatica 0.3.25
+# Cinnamatica 0.3.26
+
+- Draw thinner outlines along the rendered faces of partial ghost blocks, including stairs, fences, walls, slabs, and anvils. Blended models and sloped liquid faces use their geometry too.
+
+## 0.3.25
 
 - Publish each complete ghost mesh with its glass and other translucent faces ready to draw. Keep using the existing sort when a camera update cannot allocate a new one.
 - Retain the last known ghost visibility when a terrain sample is temporarily unavailable.

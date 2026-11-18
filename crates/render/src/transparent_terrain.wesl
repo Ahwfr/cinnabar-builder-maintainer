@@ -5,10 +5,10 @@
 // refs. Both paths run the liquid and model programs' own vertex and shading functions on their
 // own outputs, so the picture matches drawing each family through its own pipeline.
 import render::chunk_bindings::{TRANSPARENT_WATER_DRAW_FLAG, transparent_refs};
-import render::liquid::{VertexOutput as LiquidOutput, liquid_record, vertex_for_record, shade_liquid};
-import render::model::{VertexOutput as ModelOutput, model_vertex, shade_blend};
+import render::liquid::{VertexOutput as LiquidOutput, liquid_record, vertex_for_record, shade_liquid, tint_liquid_face};
+import render::model::{VertexOutput as ModelOutput, model_vertex, shade_blend, tint_model_face};
 
-import render::world_projection::{apply_block_opacity, apply_block_tint};
+import render::world_projection::{apply_block_opacity};
 
 struct VertexOutput {
     // Invariant like both families' outputs, so shared edges keep identical positions.
@@ -40,6 +40,8 @@ struct VertexOutput {
     @location(12) water_tint: vec4<f32>,
     // Centroid sampling stays separate from the liquid's ordinary UV interpolation.
     @location(13) @interpolate(perspective, centroid) model_uv: vec2<f32>,
+    @if(MOD_BLOCK_OUTLINE)
+    @location(15) @interpolate(perspective, centroid) outline_edges: vec4<f32>,
 }
 
 @vertex
@@ -63,6 +65,8 @@ fn terrain_vertex(vertex_index: u32, instance_index: u32) -> VertexOutput {
         out.frame_face.x = liquid.frame_blend;
         out.routing.y = liquid.two_sided;
         out.world_position = liquid.world_position;
+        @if(MOD_BLOCK_OUTLINE)
+        out.outline_edges = liquid.outline_edges;
         @if(ENHANCED)
         out.lighting = liquid.lighting;
         @if(ENHANCED)
@@ -89,6 +93,8 @@ fn terrain_vertex(vertex_index: u32, instance_index: u32) -> VertexOutput {
     out.frame_face.x = model.frame_blend;
     out.routing.y = model.visibility.y;
     out.world_position = model.world_position;
+    @if(MOD_BLOCK_OUTLINE)
+    out.outline_edges = model.outline_edges;
     @if(ENHANCED)
     out.lighting = model.lighting;
     @if(ENHANCED)
@@ -144,6 +150,8 @@ fn liquid_output(in: VertexOutput) -> LiquidOutput {
     liquid.native_light_levels = in.native_light_ao.xy;
     liquid.depth_write_route = in.routing.z;
     liquid.world_position = in.world_position;
+    @if(MOD_BLOCK_OUTLINE)
+    liquid.outline_edges = in.outline_edges;
     liquid.native_face_shade = in.frame_face.y;
     liquid.two_sided = in.routing.y;
     return liquid;
@@ -181,6 +189,8 @@ fn model_output(in: VertexOutput) -> ModelOutput {
     model.world_origin = in.world_origin;
     model.visibility.y = in.routing.y;
     model.world_position = in.world_position;
+    @if(MOD_BLOCK_OUTLINE)
+    model.outline_edges = in.outline_edges;
     return model;
 }
 
@@ -193,7 +203,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front_facing: bool) -> @loc
     let model_dy = dpdy(in.model_uv);
     if (in.routing.x != 0u) {
         // Packed liquid corners wind clockwise; this pipeline's front face is counter-clockwise.
-        return apply_block_tint(apply_block_opacity(shade_liquid(liquid_output(in), !front_facing, liquid_dx, liquid_dy)), in.world_position);
+        let liquid = liquid_output(in);
+        return tint_liquid_face(apply_block_opacity(shade_liquid(liquid, !front_facing, liquid_dx, liquid_dy)), liquid);
     }
-    return apply_block_tint(apply_block_opacity(shade_blend(model_output(in), front_facing, model_dx, model_dy)), in.world_position);
+    let model = model_output(in);
+    return tint_model_face(apply_block_opacity(shade_blend(model, front_facing, model_dx, model_dy)), model);
 }
