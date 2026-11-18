@@ -3,7 +3,7 @@ use mod_api::drawing::DrawingPermissions;
 use mod_render::retained::{self, GeometrySpec, Instance, Store};
 
 /// Creates a grid and a live placement using the real retained-resource contract.
-fn grid_scene() -> (Store, DrawingHandle, DrawingHandle, Instance) {
+pub(super) fn grid_scene() -> (Store, DrawingHandle, DrawingHandle, Instance) {
     let mut store = Store::default();
     let grid = store
         .create_geometry(GeometrySpec::Blocks(retained::blocks::BlockGrid {

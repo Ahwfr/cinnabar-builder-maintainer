@@ -23,7 +23,6 @@ fn fixture() -> (App, bevy::render::view::RetainedViewEntity) {
     }));
     // A previous pose must not determine the current phase distance.
     placement.matrix = Mat4::from_translation(Vec3::new(0., 0., 100.));
-    placement.active = true;
     let mut resources = (*resources).clone();
     let grid = resources.instances[&id].geometry;
     resources.connection = 1;
@@ -133,4 +132,18 @@ fn retained_depth_always_transparency_stays_out_of_the_world_depth_sort() {
     }
     app.update();
     assert!(app.world().resource::<Blocks>().draws.is_empty());
+}
+
+#[test]
+fn resident_transparency_is_queued_while_its_replacement_is_pending() {
+    let (mut app, _) = fixture();
+    let (pending, grid, _, _) = super::super::tests::grid_scene();
+    let mut scene = app.world_mut().resource_mut::<ModRenderScene>();
+    let resources = Arc::make_mut(&mut scene.retained[0]);
+    let handle = resources.instances.values().next().unwrap().geometry;
+    resources
+        .geometry
+        .insert(handle, Arc::clone(&pending.snapshot().geometry[&grid]));
+    app.update();
+    assert_eq!(app.world().resource::<Blocks>().draws.len(), 2);
 }
