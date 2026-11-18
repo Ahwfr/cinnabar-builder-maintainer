@@ -10,6 +10,23 @@ use assets::{
 };
 use sim::PaletteWorld;
 
+/// A lantern attaches at the shared block boundary, not halfway into a slab.
+fn lantern_attachment_height(face: u8, local_y: f64) -> bool {
+    match face {
+        0 => (local_y - 1.0).abs() < 1.0e-5,
+        1 => local_y.abs() < 1.0e-5,
+        _ => false,
+    }
+}
+
+#[test]
+fn lantern_support_must_reach_the_attachment_boundary() {
+    assert!(lantern_attachment_height(0, 1.0));
+    assert!(lantern_attachment_height(1, 0.0));
+    assert!(!lantern_attachment_height(0, 0.5));
+    assert!(!lantern_attachment_height(1, 0.5));
+}
+
 use crate::{
     block_use::{BoxBounds, UseSurroundings, overlaps, placement_cell},
     movement::PhysicsCollisionRegistries,
@@ -149,9 +166,27 @@ pub fn predicted_placement(
         return None;
     }
     let support = std::array::from_fn(|face| {
-        let block = world
-            .primary_runtime_id(placement_cell(position, face as u8))
-            .ok()?;
+        let supporting = placement_cell(position, face as u8);
+        let block = world.primary_runtime_id(supporting).ok()?;
+        // Lanterns attach to the center of partial vertical supports too. Full-cube
+        // admission cannot describe chains, fences or the flush side of a slab.
+        if fact.placement == R::Lantern && face <= 1 {
+            let origin = sim::Vec3::new(
+                position[0] as f64 + 0.5,
+                position[1] as f64 + 0.5,
+                position[2] as f64 + 0.5,
+            );
+            let direction = sim::Vec3::new(0.0, if face == 0 { -1.0 } else { 1.0 }, 0.0);
+            let hit = world
+                .block_interaction_ray_current(origin, direction, 1.5)
+                .ok()?;
+            return Some(hit.is_some_and(|hit| {
+                hit.block_pos == supporting
+                    && hit.face == (face as u8 ^ 1)
+                    && hit.overlay.is_none()
+                    && lantern_attachment_height(face as u8, hit.hit_local.y)
+            }));
+        }
         support_acceptance(
             fact,
             collisions.block_facts(mode, block),

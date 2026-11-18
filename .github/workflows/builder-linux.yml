@@ -1,0 +1,116 @@
+name: Cinnamatica Linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Attach the AppImage to the cinnamatica-v<version> release (created if missing)
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: builder-linux-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  appimage:
+    if: github.repository == 'Ahwfr/cinnamatica'
+    # The oldest supported runner sets the glibc floor for the AppImage (2.35).
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    env:
+      # Runs AppImages without FUSE.
+      APPIMAGE_EXTRACT_AND_RUN: 1
+      APPIMAGETOOL_URL: https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+      APPIMAGETOOL_SHA256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+      APPIMAGE_RUNTIME_URL: https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
+      APPIMAGE_RUNTIME_SHA256: 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+      CINNABAR_BUILD_COMMIT: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache-dependency-path: |
+            go.work.sum
+            core/go.sum
+            tools/localserver/go.sum
+      - name: Cache Rust dependencies and build state
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git
+            target/release/.fingerprint
+            target/release/build
+            target/release/deps
+            target/builder-importer
+          key: builder-linux-v1-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'builder/schematica/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            builder-linux-v1-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'builder/schematica/Cargo.lock') }}-
+            builder-linux-v1-
+      - name: Install build and packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libwayland-dev libxkbcommon-dev libasound2-dev libudev-dev
+          fetch() {
+            curl --fail --location --silent --show-error --output "$1" "$2"
+            echo "$3  $1" | sha256sum --check --strict
+          }
+          fetch "$RUNNER_TEMP/appimagetool" "$APPIMAGETOOL_URL" "$APPIMAGETOOL_SHA256"
+          fetch "$RUNNER_TEMP/appimage-runtime" "$APPIMAGE_RUNTIME_URL" "$APPIMAGE_RUNTIME_SHA256"
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
+          echo "APPIMAGE_RUNTIME=$RUNNER_TEMP/appimage-runtime" >> "$GITHUB_ENV"
+      - name: Build the runtime binaries
+        run: make package-binaries
+      - name: Build the schematic importer and guest
+        run: builder/linux/build-builder.sh --importer-only
+      - name: Package the AppImage
+        id: package
+        run: |
+          image="$(builder/linux/build-appimage.sh "$RUNNER_TEMP/dist" | tail -n 1)"
+          version="$(cat "$RUNNER_TEMP/dist/Cinnamatica.AppDir/App/builder-version.txt")"
+          (cd "$(dirname "$image")" && sha256sum "$(basename "$image")" > SHA256SUMS-linux.txt)
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Smoke-test the packaged launcher
+        run: |
+          appdir="$RUNNER_TEMP/dist/Cinnamatica.AppDir"
+          ldd "$appdir/App/bin/cinnabar" | (! grep 'not found')
+          "$appdir/Cinnamatica" demo "$RUNNER_TEMP/demo.scb"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cinnamatica-linux-x86_64
+          path: |
+            ${{ steps.package.outputs.image }}
+            ${{ runner.temp }}/dist/SHA256SUMS-linux.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish to the release
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.package.outputs.version }}
+          IMAGE: ${{ steps.package.outputs.image }}
+        run: |
+          tag="cinnamatica-v$VERSION"
+          sums="$RUNNER_TEMP/dist/SHA256SUMS-linux.txt"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$tag" "$IMAGE" "$sums" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            if ! head -n 1 builder/RELEASE-NOTES.md | grep -qxF "# Cinnamatica $VERSION"; then
+              echo "Update builder/RELEASE-NOTES.md to match $VERSION before publishing." >&2
+              exit 1
+            fi
+            gh release create "$tag" "$IMAGE" "$sums" --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --title "Cinnamatica v$VERSION" --notes-file builder/RELEASE-NOTES.md
+          fi

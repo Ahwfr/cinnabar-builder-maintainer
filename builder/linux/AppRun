@@ -1,0 +1,7 @@
+#!/bin/sh
+# Starts the Cinnamatica launcher. The image is read-only, so worlds, login, options and the
+# schematic library live in the user's data folder unless CINNABAR_USER_ROOT names another.
+HERE="$(dirname "$(readlink -f "$0")")"
+: "${CINNABAR_USER_ROOT:=${XDG_DATA_HOME:-$HOME/.local/share}/Cinnamatica}"
+export CINNABAR_USER_ROOT
+exec "$HERE/Cinnamatica" "$@"

@@ -464,6 +464,26 @@ impl BlockUseRuntime {
         _tick: u64,
         clock: RepeatClock,
     ) -> Option<(ItemUseTrigger, Duration)> {
+        self.due_interval(held, clock, None)
+    }
+
+    /// Opt-in assisted holds admit at most twenty attempts per second, without
+    /// catching up old deadlines or changing ordinary vanilla repeat timing.
+    pub fn due_assisted(
+        &self,
+        held: bool,
+        clock: RepeatClock,
+    ) -> Option<(ItemUseTrigger, Duration)> {
+        self.due_interval(held, clock, Some(50))
+            .map(|(trigger, _)| (trigger, clock.now))
+    }
+
+    fn due_interval(
+        &self,
+        held: bool,
+        clock: RepeatClock,
+        assisted: Option<u64>,
+    ) -> Option<(ItemUseTrigger, Duration)> {
         if self.waiting_for_authority {
             return None;
         }
@@ -473,16 +493,23 @@ impl BlockUseRuntime {
         if !held {
             return None;
         }
-        let interval = repeat_interval_millis(
-            clock.sneaking,
-            self.slow_repeat || self.intention.unlined(),
-            clock.speed,
-            clock.survival,
-        );
+        let interval = assisted.unwrap_or_else(|| {
+            repeat_interval_millis(
+                clock.sneaking,
+                self.slow_repeat || self.intention.unlined(),
+                clock.speed,
+                clock.survival,
+            )
+        });
         let due = self.last_use.map_or(Duration::ZERO, |last| {
             last.saturating_add(Duration::from_millis(interval))
         });
-        (clock.now > due).then_some((ItemUseTrigger::SimulationTick, due))
+        (if assisted.is_some() {
+            clock.now >= due
+        } else {
+            clock.now > due
+        })
+        .then_some((ItemUseTrigger::SimulationTick, due))
     }
 
     /// Whether the use press resolved on `tick` interacted with a block.

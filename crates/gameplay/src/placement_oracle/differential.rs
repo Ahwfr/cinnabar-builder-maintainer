@@ -346,7 +346,9 @@ fn exhaustive_state_solvers_preserve_pinned_placement_decisions() {
                     &record.canonical_state,
                     [0; 3],
                     0.0,
-                    |_| Some(neighbor.fact),
+                    // This fixture supplies the same neighbor on both sides, so
+                    // equal solidity counts cannot change the hinge tie.
+                    |_| Some((neighbor.fact, false)),
                 );
                 if old != new {
                     differences.record("door neighbor pairs", neighbor.count, || {

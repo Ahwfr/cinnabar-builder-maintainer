@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Cinnamatica
+Comment=Minecraft Bedrock client with schematic building
+Exec=Cinnamatica
+Icon=cinnamatica
+Categories=Game;
+Terminal=false

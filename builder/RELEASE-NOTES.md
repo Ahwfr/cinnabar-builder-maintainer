@@ -1,4 +1,17 @@
-# Cinnamatica 0.3.29
+# Cinnamatica 0.3.30
+
+- Opt-in Hold to Place uses a 50 ms assisted attempt interval and starts ready hotbar requests in the same frame. Inventory and reported-facing confirmation remain required.
+- Keep assisted holds from falling back to the wrong held block when a ghost changes or temporarily disappears; ordinary placement remains available outside the guide after releasing the gesture.
+- Scope Placement Lock to non-air schematic destinations.
+- Choose log support faces by the planned pillar axis, allow corrections while moving, and require predicted orientation to match whenever Auto Orientation is enabled.
+- Reconcile a wooden trapdoor's open/closed state by normal interaction after its placement state matches.
+- Predict lantern attachment from the center of loaded vertical support geometry, including flush partial supports; unresolved or absent support is not invented.
+- Keep ghost verification running during Paste with a reserved frame budget.
+- Include ThsSilentKnight's Linux AppImage packaging and portable Linux runtime layout (b7abe3237 and 134eec312). No AppImage publication or Windows placement fixes were included in those commits.
+
+Unsupported upper slabs/stairs and upper trapdoors still require a real suitable support on stock Bedrock. Isolated server probes rejected the requested upper state or resolved an air click to the lower state. This update does not claim to bypass that server behavior. Live in-world responsiveness and the earlier crash without a completed report still need acceptance evidence.
+
+## 0.3.29 (previously staged)
 
 - Scan distant blocks in smaller batches on dedicated frames, with fuel reserved for edits and other guide work. This avoids the guest restarts that made large guides disappear.
 - Prepare material names and palette counts in batches so opening Materials on a large guide stays within its frame budget.

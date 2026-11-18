@@ -87,7 +87,7 @@ impl Viewer {
         let volume = width * height * depth;
         for _ in 0..4 {
             while run.cursor < volume {
-                if crate::budget::remaining_fuel() < 500_000 {
+                if crate::budget::remaining_fuel() < 850_000 {
                     self.paste = Some(run);
                     return true;
                 }

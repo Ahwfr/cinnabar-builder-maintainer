@@ -1,5 +1,11 @@
 # Installing and updating Builder
 
+0.3.30 includes the previously staged large-guide/material budget fixes. Hold to Place now
+requests assisted placement at 50 ms intervals; server inventory and facing confirmation
+can still limit throughput. Auto Orientation validates the predicted state, rather than
+placing a wrong-facing block when correction fails. Placement Lock applies only inside
+the guide. Upper air-placement states remain a confirmed stock-server limitation.
+
 On Windows, run the setup EXE from a versioned release, then open **Cinnamatica** from Start. Setup installs for the current user. The portable ZIP also works when extracted into a writable folder.
 
 For the next release, close Builder and extract the new package into the same folder. Keep **profile/**. It contains your worlds, account data, settings, mods and library. The launcher checks that the template matches the package revision, upgrades the library code and backs up the previous component. Confirm the release version and guest hash in the Cinnamatica header or Mods page.

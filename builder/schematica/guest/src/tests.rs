@@ -1,6 +1,27 @@
 use super::*;
 
 #[test]
+fn placement_lock_is_scoped_to_non_air_guide_cells() {
+    let mut viewer = reference_viewer();
+    viewer.options.placement_lock = true;
+    viewer.options.fast_place = true;
+    viewer.shown = true;
+    viewer.render_all = true;
+    viewer.schematic = Schematic::new("Lock", [3, 1, 1]);
+    viewer.schematic.set(
+        [1, 0, 0],
+        schematica_core::BlockState::new("minecraft:stone"),
+    );
+    viewer.placement = Some(Placement::new([10, 64, 20]));
+    assert!(viewer.lock_destination(Some([11, 64, 20])));
+    assert!(!viewer.lock_destination(Some([10, 64, 20])));
+    assert!(!viewer.lock_destination(Some([14, 64, 20])));
+    assert!(!viewer.lock_destination(None));
+    viewer.shown = false;
+    assert!(!viewer.lock_destination(Some([11, 64, 20])));
+}
+
+#[test]
 fn looking_from_inside_a_ghost_starts_at_the_next_voxel() {
     let mut crossed = Vec::new();
     let chosen = next_guide_cell([0.1, 0.5, 0.5], [1.0, 0.0, 0.0], 6., |cell| {

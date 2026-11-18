@@ -110,6 +110,23 @@ pub(super) fn maintain_block_use(
     ) {
         return;
     }
+    if let Some(policy) = context.creative.as_deref_mut() {
+        if !use_phase.held {
+            policy.hold_active = false;
+        } else if policy
+            .offer
+            .as_ref()
+            .is_some_and(|offer| offer.repeat_while_held)
+        {
+            policy.hold_active = true;
+        }
+        // A completed/temporarily unavailable ghost must not turn a held assisted
+        // gesture into ordinary placement of whatever happens to be selected.
+        if policy.hold_active && policy.offer.is_none() {
+            runtime.clear_press();
+            return;
+        }
+    }
     if !runtime.observe_use(
         use_phase.held,
         use_phase.pressed,
@@ -150,7 +167,17 @@ pub(super) fn maintain_block_use(
         picks
     };
     for pick in picks {
-        let Some((trigger, due)) = runtime.due(use_phase.held, tick, clock) else {
+        let assisted = context
+            .creative
+            .as_ref()
+            .and_then(|policy| policy.offer.as_ref())
+            .is_some_and(|offer| offer.repeat_while_held);
+        let due = if assisted {
+            runtime.due_assisted(use_phase.held, clock)
+        } else {
+            runtime.due(use_phase.held, tick, clock)
+        };
+        let Some((trigger, due)) = due else {
             break;
         };
         if trigger == ItemUseTrigger::SimulationTick && !simulates_tick {
@@ -229,9 +256,23 @@ pub(super) fn maintain_block_use(
                     trigger,
                 )
             {
+                // Ready hotbar items can be admitted now; do not add a render-frame
+                // delay before inventory and facing are examined.
+                creative::resume(
+                    &mut player_runtime,
+                    &mut context,
+                    &mut runtime,
+                    &mut item_use,
+                    &mut swings,
+                    &mut movement,
+                    Some(pick),
+                    use_phase.held,
+                    input_mode,
+                    input_authority,
+                );
                 break;
             }
-            if strict || (native.is_some() && creative::requires_exact_log(&context)) {
+            if strict || native.is_some() || bridge.is_some() {
                 break;
             }
         }

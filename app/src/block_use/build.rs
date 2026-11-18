@@ -207,7 +207,7 @@ fn prepare(
                 || !world.is_air(expected.position).ok()?
                 || placement.position != expected.position
                 || actual_name != Some(expected.name.as_str())
-                || (expected.strict_state
+                || ((expected.strict_state || expected.correct_aim)
                     && !actual_states.is_some_and(|actual| {
                         super::orientation::strict_state_matches(expected, actual)
                     }))

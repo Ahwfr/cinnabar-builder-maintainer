@@ -1,7 +1,7 @@
 //! A Creative catalog selection may outlive its press while the server confirms inventory.
 
 use super::*;
-use bevy::prelude::{Quat, Resource, Vec3};
+use bevy::prelude::{Resource, Vec3};
 use inventory::inventory_ledger::{
     CellGesture, CreativeDestination, InventoryTarget, PLAYER_INVENTORY_SLOT_COUNT,
     PlayerInventorySlot,
@@ -16,12 +16,14 @@ use std::time::Duration;
 pub(crate) struct CreativePlacement {
     pub offer: Option<CreativePlacementOffer>,
     pub locked: bool,
+    pub hold_active: bool,
     pending: Option<Pending>,
 }
 
 type StackKey = (i32, u32, i32);
 
 struct Pending {
+    interacting: bool,
     game_mode: PlayerGameMode,
     offer: CreativePlacementOffer,
     support: ([i32; 3], u8, u32),
@@ -43,16 +45,11 @@ struct Pending {
 
 #[derive(Clone, Copy)]
 struct TemporaryAim {
-    player_view: Quat,
     placement: super::orientation::PlacementAim,
     tick: u64,
 }
 
 impl TemporaryAim {
-    fn still_current(self, view: &LocalViewPose) -> bool {
-        view.rotation().dot(self.player_view).abs() >= 0.999
-    }
-
     fn written(self, movement: &MovementTicker) -> bool {
         let [pitch, yaw] = super::orientation::wire_facing(self.placement.rotation);
         movement
@@ -180,20 +177,6 @@ fn support(observed: &FrozenBlockObservation) -> ([i32; 3], u8, u32) {
     )
 }
 
-/// Stops fallback vanilla placement from substituting a different log while Fast Place is on.
-pub(super) fn requires_exact_log(context: &BlockUseContext) -> bool {
-    context
-        .creative
-        .as_ref()
-        .and_then(|policy| policy.offer.as_ref())
-        .is_some_and(|offer| {
-            offer.name.ends_with("_log")
-                || offer.name.ends_with("_wood")
-                || offer.name.ends_with("_stem")
-                || offer.name.ends_with("_hyphae")
-        })
-}
-
 /// Starts an assisted item selection, leaving ordinary placement available otherwise.
 pub(super) fn try_start(
     player: &mut client_state::PlayerRuntime,
@@ -221,14 +204,25 @@ pub(super) fn try_start(
     else {
         return false;
     };
-    if !PaletteWorld::new(
-        stream.collision_store(),
-        context.collisions.registry(stream.network_id_mode()),
-        stream.current_dimension(),
-        Default::default(),
-    )
-    .observe(|world| world.is_air(offer.position).unwrap_or(false))
-    .is_ok_and(|observed| observed.value)
+    let interacting = observed.target.position == offer.position
+        && super::orientation::needs_toggle(
+            &offer,
+            context
+                .collisions
+                .block_identifier(stream.network_id_mode(), observed.target.runtime_id),
+            context
+                .collisions
+                .block_canonical_state(stream.network_id_mode(), observed.target.runtime_id),
+        );
+    if !interacting
+        && !PaletteWorld::new(
+            stream.collision_store(),
+            context.collisions.registry(stream.network_id_mode()),
+            stream.current_dimension(),
+            Default::default(),
+        )
+        .observe(|world| world.is_air(offer.position).unwrap_or(false))
+        .is_ok_and(|observed| observed.value)
     {
         bevy::log::debug!(ghost = ?offer.position, "Fast Place: destination is occupied or not loaded");
         return false;
@@ -247,6 +241,33 @@ pub(super) fn try_start(
         })
     };
     let selected = observed.selection.slot;
+    policy.hold_active |= offer.repeat_while_held;
+    if interacting {
+        policy.pending = Some(Pending {
+            interacting: true,
+            game_mode,
+            offer,
+            support: support(observed),
+            scope: (
+                stream.authority().actor_session_id(),
+                stream.current_dimension(),
+            ),
+            input_generation: observed.frame.input_authority_generation,
+            position_generation: observed.frame.position_authority_generation,
+            expires: context.time.elapsed() + Duration::from_secs(2),
+            slot: selected,
+            original_slot: selected,
+            key: (0, 0, 0),
+            request: None,
+            catalog: None,
+            replacement: None,
+            selecting: true,
+            aim: None,
+            bridge,
+            trigger,
+        });
+        return true;
+    }
     let use_air = offer.strict_state
         && bridge
         && observed.target.runtime_id == stream.air_block_id()
@@ -341,6 +362,7 @@ pub(super) fn try_start(
     bevy::log::info!(block = %offer.name, slot, ?request, ?catalog, ?game_mode, item_network_id = key.0,
         metadata = key.1, item_block_runtime_id = key.2, "Fast Place waiting for inventory and selection");
     policy.pending = Some(Pending {
+        interacting: false,
         game_mode,
         offer,
         support: support(observed),
@@ -372,6 +394,7 @@ pub(super) fn clear(
     movement: &mut MovementTicker,
 ) {
     if let Some(policy) = policy {
+        policy.hold_active = false;
         if policy
             .pending
             .take()
@@ -416,7 +439,7 @@ pub(super) fn resume(
             .inventory
             .ledger_mut()
             .request_background_personal_close();
-        return false;
+        return true;
     }
     let Some(stream) = context.client_world.stream.as_ref() else {
         movement.end_placement_facing();
@@ -448,12 +471,9 @@ pub(super) fn resume(
         return true;
     }
     if let Some(aim) = pending.aim {
-        if !movement.placement_facing_active()
-            || !aim.still_current(&context.view)
-            || context.input.movement() != [0.0; 2]
-        {
+        if !movement.placement_facing_active() {
             movement.end_placement_facing();
-            return false;
+            return true;
         }
         if !aim.written(movement) {
             policy.pending = Some(pending);
@@ -479,7 +499,7 @@ pub(super) fn resume(
         policy.pending = Some(pending);
         return true;
     }
-    if ledger.backing_stack(pending.slot).map(key) != Some(pending.key) {
+    if !pending.interacting && ledger.backing_stack(pending.slot).map(key) != Some(pending.key) {
         movement.end_placement_facing();
         bevy::log::info!(block = %pending.offer.name, slot = pending.slot, "Fast Place inventory did not confirm the requested block");
         return true;
@@ -551,7 +571,8 @@ pub(super) fn resume(
         bevy::log::info!(block = %pending.offer.name, "Fast Place support changed before placement");
         return true;
     }
-    if pending.offer.correct_aim
+    if !pending.interacting
+        && pending.offer.correct_aim
         && pending.aim.is_none()
         && let Some(placement) = super::orientation::correction(
             player,
@@ -562,11 +583,7 @@ pub(super) fn resume(
             pending.bridge,
         )
         .or_else(|| {
-            if !pending.bridge
-                || context.input.movement() != [0.0; 2]
-                || state.displacement[0].abs() > 0.01
-                || state.displacement[2].abs() > 0.01
-            {
+            if !pending.bridge {
                 return None;
             }
             let eye = Vec3::from_array(observed.ray.origin);
@@ -584,7 +601,6 @@ pub(super) fn resume(
         )
     {
         let aim = TemporaryAim {
-            player_view: context.view.rotation(),
             placement,
             tick: movement.next_tick(),
         };
@@ -619,7 +635,9 @@ pub(super) fn resume(
     let mut build =
         build::BuildInput::new(observed, state, pending.trigger, clock.now, clock, view);
     build.air_place = pending.offer.strict_state && use_air;
-    build.expected = Some(pending.offer);
+    if !pending.interacting {
+        build.expected = Some(pending.offer);
+    }
     bevy::log::debug!(
         slot = pending.slot,
         "Fast Place: equipment admitted, resuming native placement"

@@ -1,6 +1,44 @@
 use super::*;
 use crate::block_use::PlacementTarget;
 
+#[test]
+fn assisted_hold_is_fast_without_changing_vanilla_or_catching_up() {
+    let mut runtime = BlockUseRuntime::default();
+    let start = clock(1_000, 0.0);
+    runtime.record(
+        ItemUseTrigger::PlayerInput,
+        start.now,
+        1,
+        LocalUse::Place,
+        false,
+        start,
+    );
+    let early = RepeatClock {
+        now: start.now + Duration::from_millis(49),
+        ..start
+    };
+    assert!(runtime.due_assisted(true, early).is_none());
+    let next = RepeatClock {
+        now: start.now + Duration::from_millis(51),
+        ..start
+    };
+    assert!(runtime.due(true, 2, next).is_none());
+    assert_eq!(
+        runtime.due_assisted(true, next),
+        Some((ItemUseTrigger::SimulationTick, next.now))
+    );
+    assert!(runtime.due_assisted(false, next).is_none());
+    runtime.record(
+        ItemUseTrigger::SimulationTick,
+        next.now,
+        2,
+        LocalUse::Place,
+        false,
+        next,
+    );
+    assert!(runtime.due_assisted(true, next).is_none());
+}
+
 /// The first eligible repeat keeps its forward support rather than waiting another tick.
 #[test]
 fn a_fractional_deadline_preserves_the_forward_placement_opportunity() {

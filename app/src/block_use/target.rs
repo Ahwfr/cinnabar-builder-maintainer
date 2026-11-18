@@ -44,7 +44,23 @@ pub(super) fn observe_bridge_target(
         (input_mode, reach, authority, position_generation),
         |world, eye, forward, reach| {
             if !world.is_air(offer.position)? {
-                return Ok(None);
+                let block = world.primary_runtime_id(offer.position)?;
+                let mode = stream.network_id_mode();
+                if !super::orientation::needs_toggle(
+                    offer,
+                    context.collisions.block_identifier(mode, block),
+                    context.collisions.block_canonical_state(mode, block),
+                ) {
+                    return Ok(None);
+                }
+                let hit = world.block_interaction_ray_current(eye, forward, reach)?;
+                return Ok(hit.filter(|hit| {
+                    let admitted = hit.block_pos == offer.position && hit.overlay.is_none();
+                    if admitted {
+                        direction = Some([forward.x as f32, forward.y as f32, forward.z as f32]);
+                    }
+                    admitted
+                }));
             }
             let eye_f32 = Vec3::new(eye.x as f32, eye.y as f32, eye.z as f32);
             let forward = Vec3::new(forward.x as f32, forward.y as f32, forward.z as f32);
@@ -60,6 +76,7 @@ pub(super) fn observe_bridge_target(
                 let support = placement_cell(offer.position, face ^ 1);
                 if prefer_air
                     || (offer.name.ends_with("_door") && face != 1)
+                    || !super::orientation::support_produces_axis(offer, face)
                     || world.is_air(support).unwrap_or(true)
                 {
                     continue;
@@ -112,9 +129,11 @@ pub(super) fn observe_bridge_target(
             if best.is_some() {
                 return Ok(best);
             }
-            for face in
-                (0..6).filter(|&face| !prefer_air && (!offer.name.ends_with("_door") || face == 1))
-            {
+            for face in (0..6).filter(|&face| {
+                !prefer_air
+                    && (!offer.name.ends_with("_door") || face == 1)
+                    && super::orientation::support_produces_axis(offer, face)
+            }) {
                 let Some(hit) =
                     super::orientation::hidden_support_hit(world, offer.position, face, half)
                 else {

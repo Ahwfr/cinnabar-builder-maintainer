@@ -2111,6 +2111,13 @@ acceptance, including device-loss recovery on affected hardware, remains incompl
   and queue overflow visibly stops the affected part.
   Full rendered development-loop, complete server-helper delivery and personal-renderer port acceptance remain incomplete;
   see [mod projects](docs/modding/src/appendix/paired-projects.md).
+  Cinnamatica assisted holds have an opt-in 50 ms attempt schedule, confirmed inventory
+  and facing, axis-aware support selection, scoped placement locking and wooden-trapdoor
+  state reconciliation. Guide verification also runs during command paste. Unsupported
+  upper-half air placement remains incomplete: isolated stock Bedrock 1.26.60.6 probes
+  reject those requests or resolve them to lower states. Live moving placement, partial
+  lantern supports, large-guide callback budgets and crash-without-report acceptance
+  remain incomplete; deterministic checks alone do not establish their live behavior.
   Server Experience block storage and player focus use bound world instances, with opening
   generations that invalidate stale callback work and migration from dimension-keyed stores.
   Server WIT 0.8 adds registered world definitions, instance creation/unload, typed scoped state,

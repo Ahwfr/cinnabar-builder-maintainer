@@ -9,6 +9,9 @@ impl Viewer {
     }
 
     pub(super) fn publish_label(&mut self, placement_cell: Option<[i32; 3]>) {
+        if self.paste.is_some() {
+            return;
+        }
         if let Some((message, _)) = &self.paste_notice {
             self.show_label(&message.clone());
             return;

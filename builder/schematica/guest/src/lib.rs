@@ -605,14 +605,6 @@ impl Viewer {
             self.menu_armed = false;
             return;
         }
-        if self.options.placement_lock
-            && self.options.fast_place
-            && self.shown
-            && self.render_all
-            && self.placement.is_some()
-        {
-            let _ = item_use::set_placement_lock(true);
-        }
         self.paste_confirm = false;
         if let Some(scope) = self.cancel_structure.take()
             && self.world == Some(scope)
@@ -621,9 +613,9 @@ impl Viewer {
         {
             self.cancel_structure = Some(scope);
         }
-        if self.paste_step() {
-            return;
-        }
+        // Pasting and verification share the frame; never suspend world observations
+        // until the entire command stream has finished.
+        let pasting = self.paste_step();
         if let Some((_, seconds)) = &mut self.paste_notice {
             *seconds -= keys.seconds;
             if *seconds <= 0.0 {
@@ -687,35 +679,52 @@ impl Viewer {
             .is_some_and(|cell| self.planned_block(cell).is_some() && self.may_need_block(cell));
         let use_held = keys.keys_held.iter().any(|key| key == "MouseRight")
             || native_bindings::is_held("use", &keys);
-        let placement_cell = if self.options.fast_place && self.shown && self.placement.is_some() {
-            let native = item_use::read_placement_cell()
-                .ok()
-                .flatten()
-                .map(|(x, y, z)| [x, y, z])
-                .filter(|pos| self.planned_block(*pos).is_some() && self.may_need_block(*pos));
-            if self.options.hold_place {
-                // A held click must acquire each new ghost on the current crosshair ray.
-                // Nearby assist may choose an off-ray cell only in the single-click mode.
-                aimed
-            } else if self.options.strict_place || inside_ghost {
-                aimed
-                    .or_else(|| native.filter(|pos| Some(*pos) != eye_cell))
-                    .or_else(|| {
-                        self.options
-                            .bridge_place
+        let native_cell = item_use::read_placement_cell()
+            .ok()
+            .flatten()
+            .map(|(x, y, z)| [x, y, z]);
+        if self.lock_destination(native_cell) {
+            let _ = item_use::set_placement_lock(true);
+        }
+        let toggle_cell = world_target
+            .filter(|cell| {
+                self.planned_block(*cell).is_some_and(|block| {
+                    block.name.ends_with("trapdoor") && block.name != "minecraft:iron_trapdoor"
+                })
+            })
+            .filter(|cell| {
+                self.tiles.iter().find_map(|tile| tile.status_at(*cell))
+                    == Some(schematica_core::CellStatus::WrongState)
+            });
+        let placement_cell =
+            if !pasting && self.options.fast_place && self.shown && self.placement.is_some() {
+                let native = native_cell
+                    .filter(|pos| self.planned_block(*pos).is_some() && self.may_need_block(*pos));
+                if toggle_cell.is_some() && self.options.correct_aim {
+                    toggle_cell
+                } else if self.options.hold_place {
+                    // A held click must acquire each new ghost on the current crosshair ray.
+                    // Nearby assist may choose an off-ray cell only in the single-click mode.
+                    aimed
+                } else if self.options.strict_place || inside_ghost {
+                    aimed
+                        .or_else(|| native.filter(|pos| Some(*pos) != eye_cell))
+                        .or_else(|| {
+                            self.options
+                                .bridge_place
+                                .then(|| self.bridge_ghost(world_target, use_held))
+                                .flatten()
+                        })
+                } else {
+                    native.or_else(|| {
+                        (self.options.correct_aim && self.options.bridge_place)
                             .then(|| self.bridge_ghost(world_target, use_held))
                             .flatten()
                     })
+                }
             } else {
-                native.or_else(|| {
-                    (self.options.correct_aim && self.options.bridge_place)
-                        .then(|| self.bridge_ghost(world_target, use_held))
-                        .flatten()
-                })
-            }
-        } else {
-            None
-        };
+                None
+            };
         if let Some(placement) = self.placement
             && let Some((block, [x, y, z])) =
                 placement_cell.and_then(|pos| self.placement_block(pos))
@@ -843,7 +852,9 @@ impl Viewer {
                 }
             }
         }
-        if self.options.textured && !textured && self.placement.is_some() {
+        if pasting {
+            // Keep progress/cancellation feedback produced by paste_step.
+        } else if self.options.textured && !textured && self.placement.is_some() {
             self.show_label("Cinnamatica | Textures need render_material");
         } else {
             self.publish_label(placement_cell);
@@ -1055,6 +1066,15 @@ impl Viewer {
             self.tiles.iter().find_map(|tile| tile.status_at(pos)),
             None | Some(CellStatus::Missing | CellStatus::Unloaded)
         )
+    }
+
+    /// Lock only ordinary placement into planned blocks, leaving the rest of the world usable.
+    fn lock_destination(&self, cell: Option<[i32; 3]>) -> bool {
+        self.options.placement_lock
+            && self.options.fast_place
+            && self.shown
+            && self.render_all
+            && cell.is_some_and(|cell| self.planned_block(cell).is_some())
     }
 
     fn aimed_next_ghost(&self, obstruction: Option<[i32; 3]>) -> Option<[i32; 3]> {

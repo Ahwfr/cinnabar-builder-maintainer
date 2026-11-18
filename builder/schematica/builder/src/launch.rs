@@ -73,6 +73,18 @@ mod tests {
     use super::*;
     use wasm_encoder::{Component, ConstExpr, DataSection, Module, ModuleSection};
 
+    /// The installed Linux client resolves its resources from `<prefix>/bin/../share/cinnabar`.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn portable_linux_client_runs_from_a_bin_folder_inside_app() {
+        let root = env::temp_dir().join(format!("cinnamatica-portable-{}", std::process::id()));
+        fs::create_dir_all(root.join("App")).unwrap();
+        let package = Package::portable(&root);
+        fs::remove_dir_all(&root).unwrap();
+        assert_eq!(package.client, root.join("App/bin/cinnabar"));
+        assert_eq!(package.working_dir, root.join("App/bin"));
+    }
+
     #[test]
     fn nested_component_keeps_the_entire_imported_library_payload() -> Result<()> {
         let first = super::super::encode_blueprint(&super::super::demo())?;
@@ -241,6 +253,14 @@ fn prune_deleted(
     entries.len() != before
 }
 
+/// The `App/` folder holding the client and its sibling runtime executables. An installed Linux
+/// client needs `<prefix>/bin` beside its `<prefix>/share/cinnabar` resources.
+const PORTABLE_RUNTIME: &str = if cfg!(target_os = "linux") {
+    "bin"
+} else {
+    "runtime"
+};
+
 /// Where one build keeps the client, its working folder, guest template and build stamp.
 pub struct Package {
     pub client: PathBuf,
@@ -258,9 +278,10 @@ impl Package {
         } else {
             root.to_path_buf()
         };
+        let runtime = package.join(PORTABLE_RUNTIME);
         Self {
-            client: package.join(format!("runtime/cinnabar{}", env::consts::EXE_SUFFIX)),
-            working_dir: package.join("runtime"),
+            client: runtime.join(format!("cinnabar{}", env::consts::EXE_SUFFIX)),
+            working_dir: runtime,
             template: package.join("schematica-guest-template.bin"),
             revision: package.join("builder-commit.txt"),
             missing: "Keep the Cinnamatica launcher with the App folder from the same download.",

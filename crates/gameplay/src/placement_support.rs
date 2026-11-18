@@ -117,8 +117,11 @@ pub(crate) fn attachment_states(
         set_state(&mut states, P::ButtonPressedBit.name(), Value::from(0))?;
     } else if known_keys(canonical, &[P::Hanging.name()]) {
         state_bit(canonical, P::Hanging.name())?;
-        let below = supports[0]?;
-        let hanging = !below || (input.face == 0 && supports[1]?);
+        let hanging = if input.face == 0 && supports[1] == Some(true) {
+            true
+        } else {
+            !supports[0]?
+        };
         if hanging && !supports[1]? {
             return None;
         }
@@ -303,6 +306,34 @@ mod tests {
     }
     use serde_json::json;
     use std::{collections::HashSet, sync::OnceLock};
+
+    #[test]
+    fn hanging_lantern_does_not_require_the_unrelated_floor_to_be_loaded() {
+        let states = registered_states(
+            registry()
+                .iter()
+                .find(|record| record.name.as_ref() == "minecraft:lantern")
+                .unwrap(),
+        );
+        let input = input(0);
+        let placed = attachment_states(
+            "minecraft:lantern",
+            &states,
+            input,
+            [None, Some(true), None, None, None, None],
+        )
+        .unwrap();
+        assert_eq!(state_bit(&placed, P::Hanging.name()), Some(true));
+        assert!(
+            attachment_states(
+                "minecraft:lantern",
+                &states,
+                input,
+                [Some(false), Some(false), None, None, None, None]
+            )
+            .is_none()
+        );
+    }
 
     /// Loads the committed palette once, including its real typed state envelopes.
     fn registry() -> &'static [assets::RegistryRecord] {

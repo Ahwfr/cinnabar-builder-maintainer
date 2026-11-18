@@ -55,9 +55,6 @@ pub(super) fn correction(
             expected.name.as_str(),
             "minecraft:cauldron" | "minecraft:trip_wire"
         )
-        || context.input.movement() != [0.0; 2]
-        || state.displacement[0].abs() > 0.01
-        || state.displacement[2].abs() > 0.01
         || player.facts.mount_unique_id().is_some()
     {
         return None;
@@ -105,7 +102,8 @@ pub(super) fn correction(
             planned_upper,
             candidate.target.face,
             candidate.target.relative_hit[1],
-        ) {
+        ) || !support_produces_axis(expected, candidate.target.face)
+        {
             return false;
         }
         if stair && !stable_stair_yaw(view.rotation()) {
@@ -193,7 +191,8 @@ pub(super) fn correction(
     let mut best_dot = f32::NEG_INFINITY;
     let mut separate = None;
     let mut separate_dot = f32::NEG_INFINITY;
-    for face in (0..6).filter(|&face| !door || face == 1) {
+    for face in (0..6).filter(|&face| (!door || face == 1) && support_produces_axis(expected, face))
+    {
         let clicked = placement_cell(expected.position, face ^ 1);
         if world.is_air(clicked).unwrap_or(true) {
             continue;
@@ -265,7 +264,9 @@ pub(super) fn correction(
     best.or(separate)
         .or_else(|| {
             if bridge || expected.strict_state {
-                for face in (0..6).filter(|&face| !door || face == 1) {
+                for face in (0..6)
+                    .filter(|&face| (!door || face == 1) && support_produces_axis(expected, face))
+                {
                     for height in [0.25, 0.75, 0.5] {
                         let Some(hit) =
                             hidden_support_hit_at(&world, expected.position, face, height)
@@ -428,6 +429,34 @@ fn matches_planned_state(
 
 pub(super) fn strict_state_matches(offer: &CreativePlacementOffer, actual: &str) -> bool {
     placement_properties(offer).is_some_and(|planned| matches_planned_state(&planned, actual))
+}
+
+/// Only reconcile a wooden trapdoor whose placement state already matches.
+/// A predicted toggle immediately satisfies this predicate, preventing hold spam.
+pub(super) fn needs_toggle(
+    offer: &CreativePlacementOffer,
+    actual_name: Option<&str>,
+    actual: Option<&str>,
+) -> bool {
+    if !offer.correct_aim
+        || !offer.name.ends_with("trapdoor")
+        || offer.name == "minecraft:iron_trapdoor"
+        || actual_name != Some(offer.name.as_str())
+    {
+        return false;
+    }
+    let Some(actual) = actual else { return false };
+    let Ok(planned) = serde_json::from_str::<serde_json::Value>(&offer.states) else {
+        return false;
+    };
+    let Ok(current) = serde_json::from_str::<serde_json::Value>(actual) else {
+        return false;
+    };
+    let bits = planned["open_bit"]["value"]
+        .as_u64()
+        .zip(current["open_bit"]["value"].as_u64());
+    bits.is_some_and(|(want, have)| want <= 1 && have <= 1 && want != have)
+        && strict_state_matches(offer, actual)
 }
 
 /// Keeps placement-controlled properties, leaving connected geometry and trapdoor opening to gameplay.
@@ -627,6 +656,19 @@ pub(super) fn planned_placement_half(offer: &CreativePlacementOffer) -> Option<b
     placement_properties(offer).as_ref().and_then(planned_upper)
 }
 
+/// Pillars derive their axis from the clicked face, independently of reported yaw.
+pub(super) fn support_produces_axis(offer: &CreativePlacementOffer, face: u8) -> bool {
+    let Ok(states) = serde_json::from_str::<serde_json::Value>(&offer.states) else {
+        return false;
+    };
+    match states["pillar_axis"]["value"].as_str() {
+        Some("x") => matches!(face, 4 | 5),
+        Some("z") => matches!(face, 2 | 3),
+        Some("y") => matches!(face, 0 | 1),
+        _ => true,
+    }
+}
+
 pub(super) fn support_produces_half(upper: Option<bool>, face: u8, y: f32) -> bool {
     upper.is_none_or(|want_upper| match face {
         0 => want_upper,
@@ -714,6 +756,64 @@ fn face_samples(clicked: [i32; 3], face: u8, eye: Vec3) -> impl Iterator<Item = 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn offer(name: &str, states: serde_json::Value) -> CreativePlacementOffer {
+        CreativePlacementOffer {
+            position: [0; 3],
+            name: name.into(),
+            states: states.to_string(),
+            correct_aim: true,
+            strict_state: true,
+            repeat_while_held: true,
+        }
+    }
+
+    #[test]
+    fn stripped_log_axis_requires_a_matching_support_face() {
+        for (axis, faces) in [("x", [4, 5]), ("y", [0, 1]), ("z", [2, 3])] {
+            let planned = offer(
+                "minecraft:stripped_spruce_log",
+                serde_json::json!({"pillar_axis":{"type":"string","value":axis}}),
+            );
+            for face in 0..6 {
+                assert_eq!(support_produces_axis(&planned, face), faces.contains(&face));
+            }
+        }
+    }
+
+    #[test]
+    fn trapdoor_reconciliation_only_toggles_the_open_bit() {
+        let planned = offer(
+            "minecraft:spruce_trapdoor",
+            serde_json::json!({
+                "open_bit":{"type":"byte","value":1}, "direction":{"type":"int","value":2},
+                "upside_down_bit":{"type":"byte","value":0}
+            }),
+        );
+        let mut current: serde_json::Value = serde_json::from_str(&planned.states).unwrap();
+        current["open_bit"]["value"] = serde_json::json!(0);
+        assert!(needs_toggle(
+            &planned,
+            Some(&planned.name),
+            Some(&current.to_string())
+        ));
+        assert!(!needs_toggle(
+            &planned,
+            Some(&planned.name),
+            Some(&planned.states)
+        ));
+        current["direction"]["value"] = serde_json::json!(1);
+        assert!(!needs_toggle(
+            &planned,
+            Some(&planned.name),
+            Some(&current.to_string())
+        ));
+        assert!(!needs_toggle(
+            &planned,
+            Some("minecraft:stone"),
+            Some(&current.to_string())
+        ));
+    }
 
     #[test]
     fn bridge_can_sample_a_side_hidden_by_the_support_underfoot() {
