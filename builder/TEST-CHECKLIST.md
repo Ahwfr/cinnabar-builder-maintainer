@@ -1,4 +1,4 @@
-# Cinnamatica 0.3.31 user checks
+# Cinnamatica 0.3.32 user checks
 
 Reply with each number and **works / still broken**, plus the item/mode if it fails.
 These are acceptance checks, not claims that every item has been fixed.

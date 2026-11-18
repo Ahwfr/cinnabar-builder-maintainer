@@ -1,4 +1,10 @@
-# Cinnamatica 0.3.31
+# Cinnamatica 0.3.32
+
+- Include the 0.3.31 plant, trapdoor and startup-message changes.
+- Offer an occupied wrong-material guide cell at the real crosshair obstruction so the native predictor can replace existing vegetation. Solid blocks remain rejected by the native validator.
+- This guest update uses the unchanged native 0.3.31 runtime and the same mod API.
+
+## 0.3.31
 
 - Predict common flowers, grasses, ferns and saplings on the supported normal soils. Keep specialized crops/aquatic plants unresolved rather than inventing their survival rules.
 - Place supported tall plants as one item producing lower and upper cells; aiming at the upper ghost resolves to the lower placement. Reject blocked headroom and water/lava.

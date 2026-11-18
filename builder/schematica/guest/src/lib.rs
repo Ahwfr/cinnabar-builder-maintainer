@@ -696,12 +696,23 @@ impl Viewer {
                 self.tiles.iter().find_map(|tile| tile.status_at(*cell))
                     == Some(schematica_core::CellStatus::WrongState)
             });
+        // Existing vegetation is a real ray obstruction. Offer that guided cell
+        // before looking past it; the native predictor alone decides whether its
+        // current block is replaceable and the requested plant can survive.
+        let replacement_cell = world_target.filter(|cell| {
+            self.tiles
+                .iter()
+                .find_map(|tile| tile.status_at(*cell))
+                .is_some_and(|status| self.accepts_plant_replacement(*cell, status))
+        });
         let placement_cell =
             if !pasting && self.options.fast_place && self.shown && self.placement.is_some() {
                 let native = native_cell
                     .filter(|pos| self.planned_block(*pos).is_some() && self.may_need_block(*pos));
                 if toggle_cell.is_some() && self.options.correct_aim {
                     toggle_cell
+                } else if replacement_cell.is_some() {
+                    replacement_cell
                 } else if self.options.hold_place {
                     // A held click must acquire each new ghost on the current crosshair ray.
                     // Nearby assist may choose an off-ray cell only in the single-click mode.
@@ -1075,6 +1086,17 @@ impl Viewer {
             && cell.is_some_and(|cell| self.planned_block(cell).is_some())
     }
 
+    fn accepts_plant_replacement(
+        &self,
+        cell: [i32; 3],
+        status: schematica_core::CellStatus,
+    ) -> bool {
+        status == schematica_core::CellStatus::Wrong
+            && self
+                .planned_block(cell)
+                .is_some_and(|block| SOIL_PLANT_IDENTIFIERS.contains(&block.name.as_str()))
+    }
+
     fn aimed_next_ghost(&self, obstruction: Option<[i32; 3]>) -> Option<[i32; 3]> {
         let (eye, forward) = self.aim_ray()?;
         next_guide_cell(eye, forward, 6., |cell| {
@@ -1374,3 +1396,7 @@ fn nearby_ghost(
 
 #[cfg(test)]
 mod tests;
+
+// Generated from the native predictor, so target selection cannot silently drift
+// into offering wrong solid blocks or omitting a supported plant.
+include!(concat!(env!("OUT_DIR"), "/soil_plants.rs"));

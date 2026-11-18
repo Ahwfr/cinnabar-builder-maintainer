@@ -1,5 +1,8 @@
 # Installing and updating Builder
 
+0.3.32 completes the guest target selection for replacing existing vegetation. It
+uses the unchanged native runtime from 0.3.31; its mod API is identical.
+
 0.3.31 adds a supported common-plant placement path and paired tall plants, tightens
 trapdoor state reconciliation, and clarifies the saved Vulkan failure notice. Test on
 valid soil; it does not enable floating plants or specialized crop/aquatic survival

@@ -1,6 +1,24 @@
 use super::*;
 
 #[test]
+fn replacement_targeting_only_offers_wrong_plant_cells() {
+    use schematica_core::{BlockState, CellStatus};
+    let mut viewer = reference_viewer();
+    viewer.schematic = Schematic::new("Replacement", [2, 1, 1]);
+    viewer
+        .schematic
+        .set([0, 0, 0], BlockState::new("minecraft:poppy"));
+    viewer
+        .schematic
+        .set([1, 0, 0], BlockState::new("minecraft:stone"));
+    viewer.placement = Some(Placement::new([0; 3]));
+    assert!(viewer.accepts_plant_replacement([0, 0, 0], CellStatus::Wrong));
+    assert!(!viewer.accepts_plant_replacement([0, 0, 0], CellStatus::Correct));
+    assert!(!viewer.accepts_plant_replacement([1, 0, 0], CellStatus::Wrong));
+    assert!(!viewer.accepts_plant_replacement([3, 0, 0], CellStatus::Wrong));
+}
+
+#[test]
 fn placement_lock_is_scoped_to_non_air_guide_cells() {
     let mut viewer = reference_viewer();
     viewer.options.placement_lock = true;
