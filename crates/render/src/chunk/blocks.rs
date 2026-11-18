@@ -200,6 +200,7 @@ struct Native {
     geometry: Arc<mod_render::retained::Geometry>,
     terrain: PreparedResourceGeometry,
     faces: Arc<[Face]>,
+    initial_order: Option<Arc<Order>>,
     _charge: mod_render::GpuAllocation<()>,
 }
 struct Pending {
@@ -221,7 +222,7 @@ struct Placement {
         bevy::render::render_resource::BufferId,
     )>,
     native: Arc<Native>,
-    order: Option<Order>,
+    order: Option<Arc<Order>>,
     order_job: Option<Task<Option<Order>>>,
     sort_camera: Option<[u32; 6]>,
     pipelines: [CachedRenderPipelineId; 5],

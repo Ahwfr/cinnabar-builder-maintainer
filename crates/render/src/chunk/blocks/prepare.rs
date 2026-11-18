@@ -198,20 +198,48 @@ pub(super) fn prepare(
                 queue.clone(),
             );
             let retained = Arc::clone(&geometry);
+            let sort_view = scene
+                .retained
+                .iter()
+                .flat_map(|resources| resources.instances.values())
+                .find(|instance| instance.geometry == id)
+                .and_then(|instance| {
+                    views.iter().find_map(|(_, view, _, _)| {
+                        let resolved = resolve(instance, &frame, &view.world_from_view)?;
+                        matrix(view, &resolved)
+                    })
+                });
             let task = AsyncComputeTaskPool::get().spawn(async move {
                 let instances = instances(&mesh);
                 let terrain = PreparedResourceGeometry::build(
                     &instances,
                     assets.clone(),
-                    device,
-                    queue,
+                    device.clone(),
+                    queue.clone(),
                     None,
                 )?;
                 let faces = sorting::faces(&instances, &terrain, assets.assets())?;
+                // Publish a drawable transparent stream with the arena, then
+                // refine its ordering per view as the camera moves.
+                let initial_order = if faces.is_empty() {
+                    None
+                } else {
+                    let (camera, direction) =
+                        sort_view.map_or((Vec3::ZERO, Vec3::NEG_Z), |matrix| {
+                            (
+                                matrix.inverse().w_axis.truncate(),
+                                -matrix.row(2).truncate().normalize_or_zero(),
+                            )
+                        });
+                    Some(Arc::new(sorting::sort(
+                        &faces, camera, direction, device, queue, &ledger,
+                    )?))
+                };
                 Some(Native {
                     geometry,
                     terrain,
                     faces,
+                    initial_order,
                     _charge: charge,
                 })
             });
@@ -348,7 +376,7 @@ pub(super) fn prepare(
                         opaque_binding: None,
                         identity: None,
                         native: Arc::clone(&native),
-                        order: None,
+                        order: native.initial_order.clone(),
                         order_job: None,
                         sort_camera: None,
                         pipelines: ids.clone().try_into().unwrap(),
@@ -475,7 +503,14 @@ pub(super) fn prepare(
             (Arc::clone(&placement.native), device.clone(), queue.clone());
         placement.sort_camera = camera_key;
         placement.order_job = Some(AsyncComputeTaskPool::get().spawn(async move {
-            sorting::sort(native, local_camera, direction, device, queue, &ledger)
+            sorting::sort(
+                &native.faces,
+                local_camera,
+                direction,
+                device,
+                queue,
+                &ledger,
+            )
         }));
         blocks.sort_cursor = Some(key);
     }
@@ -548,7 +583,7 @@ pub(super) fn admit_triangles(scene: &ModRenderScene) {
 /// Releases completed sorting jobs independently of future drawing demand.
 pub(super) fn poll_orders(
     placements: &mut BTreeMap<(Entity, DrawingHandle), Placement>,
-    retired: &mut Vec<Order>,
+    retired: &mut Vec<Arc<Order>>,
 ) {
     for placement in placements.values_mut() {
         if let Some(job) = placement.order_job.as_mut()
@@ -556,12 +591,10 @@ pub(super) fn poll_orders(
         {
             placement.order_job = None;
             if let Some(order) = order {
-                if let Some(old) = placement.order.replace(order) {
+                if let Some(old) = placement.order.replace(Arc::new(order)) {
                     retired.push(old);
                 }
                 placement.identity = None;
-            } else {
-                fail(&placement.native.geometry, "block transparent order memory");
             }
         }
     }

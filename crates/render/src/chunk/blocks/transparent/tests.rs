@@ -5,7 +5,7 @@ fn fixture() -> (App, bevy::render::view::RetainedViewEntity) {
     let (mut app, (view, id), mut placement, resources) = super::super::tests::placement_fixture();
     let device = app.world().resource::<RenderDevice>();
     let ledger = mod_render::GpuLedger::new(1024);
-    placement.order = Some(Order {
+    placement.order = Some(Arc::new(Order {
         _buffer: ledger
             .allocate(16, || {
                 Some(device.create_buffer(&BufferDescriptor {
@@ -20,7 +20,7 @@ fn fixture() -> (App, bevy::render::view::RetainedViewEntity) {
         groups: (0..2)
             .map(|z| (SubChunkKey::new(0, 0, 0, z), z as u32..z as u32 + 1))
             .collect(),
-    });
+    }));
     // A previous pose must not determine the current phase distance.
     placement.matrix = Mat4::from_translation(Vec3::new(0., 0., 100.));
     let mut resources = (*resources).clone();

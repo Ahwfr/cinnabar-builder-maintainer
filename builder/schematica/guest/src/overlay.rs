@@ -226,6 +226,7 @@ pub struct Tile {
     pub mismatches: Vec<([i32; 3], CellStatus)>,
     markers: Option<DrawPair>,
     blocks: Option<DrawPair>,
+    blocks_ready: bool,
     pending_frames: u8,
     pub(super) ghost_dirty: bool,
     grid_palette: Vec<u32>,
@@ -501,6 +502,7 @@ impl Tile {
         }
         self.stamp = None;
         self.grid_cells.clear();
+        self.blocks_ready = false;
         self.statuses.clear();
         self.materials.clear();
         self.mismatches.clear();
@@ -542,18 +544,25 @@ impl Tile {
         lightness: Option<f32>,
         whole: bool,
     ) -> (bool, bool) {
-        if let Some(pair) = &self.blocks
-            && let Err(error) = draw::geometry_status(pair.geometry)
-        {
-            if error.code == draw::ErrorCode::BudgetExceeded {
-                return (false, false);
-            }
-            self.clear();
-            self.fallback = true;
-            self.error = Some(format!("Texture unavailable: {}", error.detail));
-        }
         if let (Some(pair), Some(lightness)) = (&mut self.blocks, lightness) {
             pair.set_shading(lightness, 1.);
+        }
+        if !self.blocks_ready
+            && let Some(pair) = &self.blocks
+        {
+            match draw::geometry_status(pair.geometry) {
+                Ok(draw::GeometryState::Ready) => self.blocks_ready = true,
+                Ok(draw::GeometryState::Pending) => {}
+                Err(error) => {
+                    // There is no resident textured tile yet. Let the same
+                    // observation draw the colored fallback.
+                    self.blocks.take().unwrap().remove();
+                    self.grid_cells.clear();
+                    self.stamp = None;
+                    self.fallback = true;
+                    self.error = Some(format!("Texture unavailable: {}", error.detail));
+                }
+            }
         }
         match terrain::read_region(self.query(), self.stamp) {
             Ok(terrain::ReadResult::Pending) => {
@@ -718,18 +727,6 @@ impl Tile {
             dimension,
             position: self.lo.into(),
         };
-        if !highlights.vertices.is_empty() {
-            match create(draw::GeometrySpec::Triangles(highlights), anchor, 0., true) {
-                Ok(pair) => {
-                    if let Some(previous) = self.markers.replace(pair) {
-                        previous.remove();
-                    }
-                }
-                Err(e) => self.error = Some(format!("Overlay: {}", e.detail)),
-            }
-        } else if let Some(previous) = self.markers.take() {
-            previous.remove();
-        }
         if let Some(lightness) = lightness.filter(|_| used_texture) {
             if let Some(pair) = &self.blocks {
                 let edits = self
@@ -754,28 +751,22 @@ impl Tile {
                         })
                     })
                     .collect::<Vec<_>>();
-                match draw::geometry_status(pair.geometry) {
-                    Ok(draw::GeometryState::Pending) if !edits.is_empty() => {
-                        self.stamp = None;
-                        self.statuses = statuses;
-                        self.materials = materials;
-                        self.tally = tally;
-                        return;
-                    }
-                    Ok(_)
-                        if edits.is_empty()
-                            || draw::update_blocks(pair.geometry, &edits).is_ok() =>
-                    {
-                        self.grid_cells = cells;
-                    }
-                    _ => {
-                        if let Some(pair) = self.blocks.take() {
-                            pair.remove();
+                if !edits.is_empty() {
+                    match draw::geometry_status(pair.geometry) {
+                        Ok(draw::GeometryState::Ready) => {
+                            if let Err(error) = draw::update_blocks(pair.geometry, &edits) {
+                                self.error = Some(format!("Texture update: {}", error.detail));
+                                return;
+                            }
                         }
-                        self.error = Some("Rebuilding tile mesh".into());
-                        return;
+                        Ok(draw::GeometryState::Pending) => return,
+                        Err(error) => {
+                            self.error = Some(format!("Texture update: {}", error.detail));
+                            return;
+                        }
                     }
                 }
+                self.grid_cells = cells;
             } else {
                 let palette = std::iter::once(draw::BlockState::Named(draw::NamedBlock {
                     name: "minecraft:air".into(),
@@ -807,6 +798,19 @@ impl Tile {
         } else if let Some(pair) = self.blocks.take() {
             pair.remove();
             self.grid_cells.clear();
+            self.blocks_ready = false;
+        }
+        if !highlights.vertices.is_empty() {
+            match create(draw::GeometrySpec::Triangles(highlights), anchor, 0., true) {
+                Ok(pair) => {
+                    if let Some(previous) = self.markers.replace(pair) {
+                        previous.remove();
+                    }
+                }
+                Err(e) => self.error = Some(format!("Overlay: {}", e.detail)),
+            }
+        } else if let Some(previous) = self.markers.take() {
+            previous.remove();
         }
         self.stamp = Some(region.stamp);
         self.statuses = statuses;

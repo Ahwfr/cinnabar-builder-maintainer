@@ -185,6 +185,7 @@ pub(super) fn placement_fixture() -> (
         )
         .unwrap(),
         faces: Arc::from([]),
+        initial_order: None,
         _charge: ledger.allocate(0, || Some(())).unwrap(),
     });
     let uniform = {
@@ -230,7 +231,7 @@ pub(super) fn placement_fixture() -> (
 }
 
 #[test]
-fn portal_resources_drain_completed_sorts_while_their_grid_is_offscreen() {
+fn failed_offscreen_sort_leaves_the_resident_block_grid_drawable() {
     let (_, key, mut placement, _) = placement_fixture();
     let pool = AsyncComputeTaskPool::get_or_init(bevy::tasks::TaskPool::default);
     let job = pool.spawn(async { None });
@@ -239,6 +240,15 @@ fn portal_resources_drain_completed_sorts_while_their_grid_is_offscreen() {
     let mut placements = BTreeMap::from([(key, placement)]);
     prepare::poll_orders(&mut placements, &mut Vec::new());
     assert!(placements[&key].order_job.is_none());
+    assert!(
+        placements[&key]
+            .native
+            .geometry
+            .blocks()
+            .unwrap()
+            .render_error()
+            .is_none()
+    );
 }
 
 #[test]

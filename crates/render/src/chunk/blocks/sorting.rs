@@ -76,14 +76,14 @@ pub(super) fn faces(
 
 /// Sorts outside the frame thread; unchanged camera positions never schedule it again.
 pub(super) fn sort(
-    native: Arc<Native>,
+    faces: &[Face],
     camera: Vec3,
     direction: Vec3,
     device: RenderDevice,
     queue: RenderQueue,
     ledger: &mod_render::GpuLedger,
 ) -> Option<Order> {
-    let (refs, groups) = references(&native.faces, camera, direction);
+    let (refs, groups) = references(faces, camera, direction);
     let count = refs.len() as u32;
     let bytes = refs.len().max(1) * std::mem::size_of::<[u32; 2]>();
     let buffer = ledger.allocate(bytes as u64, || {

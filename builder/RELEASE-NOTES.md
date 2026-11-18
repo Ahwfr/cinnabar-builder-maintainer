@@ -1,4 +1,9 @@
-# Cinnamatica 0.3.24
+# Cinnamatica 0.3.25
+
+- Publish each complete ghost mesh with its glass and other translucent faces ready to draw. Keep using the existing sort when a camera update cannot allocate a new one.
+- Keep fallback ghost tiles and status markers visible while textured edits wait for the renderer.
+
+## 0.3.24
 
 - Sync the Windows and Linux holograms with textured, solid light-blue ghosts, thinner outlines, and a Ghost lightness setting.
 - Reuse the schematic palette and unaffected section meshes when blocks change. Keep drawing the old guide until the complete replacement is ready.
