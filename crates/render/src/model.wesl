@@ -43,6 +43,7 @@ struct VertexOutput {
     @location(11) native_light_levels: vec2<f32>,
     @if(!ENHANCED)
     @location(14) native_ao_face: f32,
+    @if(ENHANCED)
     @location(10) @interpolate(flat) world_origin: vec3<f32>,
     @location(12) world_position: vec3<f32>,
     @if(MOD_BLOCK_OUTLINE)
@@ -86,6 +87,7 @@ fn invisible_vertex() -> VertexOutput {
     @if(!ENHANCED)
     invisible.tint_gamma = vec3(1.0);
     invisible.visibility.y = 0u;
+    @if(ENHANCED)
     invisible.world_origin = vec3(0.0);
     invisible.world_position = vec3(0.0);
     return invisible;
@@ -544,6 +546,7 @@ fn model_vertex(vertex_index: u32, instance_index: u32) -> VertexOutput {
     }
     out.visibility.y = select(0u, 1u, (quad_flags & 8u) != 0u);
     out.world_position = world;
+    @if(ENHANCED)
     out.world_origin = vec3<f32>(quad.chunk_origin.xyz);
     @if(!ENHANCED)
     out.tint_gamma = stem_colour(material.flags);
@@ -552,7 +555,7 @@ fn model_vertex(vertex_index: u32, instance_index: u32) -> VertexOutput {
     let tint_kind = material.flags & 0x30u;
     @if(!ENHANCED && !ENHANCED_SHADOW && !OPAQUE_OVERDRAW)
     if (tint_kind != 0u) {
-        out.tint_gamma = blended_biome_tint_gamma(tint_kind, material.flags, out.biome_record, block_position, out.world_origin).rgb;
+        out.tint_gamma = blended_biome_tint_gamma(tint_kind, material.flags, out.biome_record, block_position, vec3<f32>(quad.chunk_origin.xyz)).rgb;
     }
     @if(ENHANCED)
     out.surface_class = material_class(material_id);
