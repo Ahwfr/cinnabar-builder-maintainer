@@ -29,8 +29,8 @@ fn marketplace_browsing_is_hidden_for_empty_and_populated_libraries() {
                 assert!(!labels.concat().to_ascii_lowercase().contains("marketplace"));
                 assert!(hits.iter().all(|action| !matches!(action,
                     MenuAction::Mods(action) if !matches!(action,
-                        Action::Import | Action::ReloadAll | Action::ToggleActive
-                        | Action::ToggleAvailable | Action::ReadMore(_)
+                        Action::Import | Action::ImportSchematics | Action::ReloadAll
+                        | Action::ToggleActive | Action::ToggleAvailable | Action::ReadMore(_)
                     )
                 )));
                 assert_eq!(hits.contains(&command(Action::Import)), !busy);
