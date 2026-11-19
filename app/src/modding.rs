@@ -52,6 +52,7 @@ pub(crate) mod packets;
 mod pointer;
 pub(crate) mod registration;
 mod teleport_handler;
+pub(crate) use input::RESERVED_WHEEL;
 pub(crate) use teleport_handler::handle_move_player_rotation;
 mod terrain;
 

@@ -51,7 +51,9 @@ pub(super) fn collect(
             WindowEvent::MouseButtonInput(event) => {
                 event.window == window && !reserved(&format!("Mouse{:?}", event.button))
             }
-            WindowEvent::MouseWheel(event) => event.window == window,
+            WindowEvent::MouseWheel(event) => {
+                event.window == window && !reserved(crate::modding::RESERVED_WHEEL)
+            }
             WindowEvent::KeyboardFocusLost(_) => {
                 lost = true;
                 false

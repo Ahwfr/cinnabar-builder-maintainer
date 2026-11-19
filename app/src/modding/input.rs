@@ -30,7 +30,7 @@ pub(super) struct PanelInput<'w> {
     ordered_events: Option<Res<'w, Messages<WindowEvent>>>,
     clipboard: Option<ResMut<'w, client_shell::menu::MenuClipboard>>,
     mouse_events: Option<Res<'w, Messages<MouseButtonInput>>>,
-    scroll: Option<Res<'w, AccumulatedMouseScroll>>,
+    scroll: Option<ResMut<'w, AccumulatedMouseScroll>>,
     reserved: Option<ResMut<'w, super::ReservedControls>>,
 }
 
@@ -121,7 +121,7 @@ pub(super) fn prepare_mod_input(
         ordered_events,
         mut clipboard,
         mouse_events,
-        scroll,
+        mut scroll,
         mut reserved,
     } = input;
     if let Some(reserved) = reserved.as_mut() {
@@ -653,6 +653,11 @@ pub(super) fn prepare_mod_input(
     // could end the edit.
     extension.native_editing =
         ((editing || native_searching) && focused && !absorbed).then_some(owner);
+    let wheel_reserved = extension
+        .hosts
+        .reserved_keys()
+        .iter()
+        .any(|key| key == RESERVED_WHEEL);
     extension.controls = mod_host::ControlFrame {
         seconds: time
             .as_ref()
@@ -688,9 +693,10 @@ pub(super) fn prepare_mod_input(
                 )
             })
             .map(|[x, y]| (x, y)),
+        // A gameplay mod that reserves the wheel receives it in place of the hotbar.
         wheel: scroll
             .as_deref()
-            .filter(|_| open && focused && !absorbed)
+            .filter(|_| focused && !absorbed && (open || wheel_reserved))
             .map_or(0.0, wheel_notches),
     };
     field::sync_ime(
@@ -750,8 +756,15 @@ pub(super) fn prepare_mod_input(
             &subscriptions,
             reserved.as_deref_mut(),
         );
+        if subscriptions.iter().any(|key| key == RESERVED_WHEEL)
+            && let Some(scroll) = scroll.as_deref_mut()
+        {
+            scroll.delta = Vec2::ZERO;
+        }
     }
 }
+
+pub(crate) use mod_api::RESERVED_WHEEL;
 
 /// Applies shared pointer capture and input consumption for every native personal panel.
 /// One frame's wheel turn in notches, positive away from the player; a pixel-precise wheel

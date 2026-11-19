@@ -120,6 +120,12 @@ mod tests {
             repaired["mods"][0]["grants"]["commands"],
             serde_json::json!(["fill", "setblock"])
         );
+        assert_eq!(repaired["mods"][0]["grants"]["player_state"], true);
+        let declined = serde_json::json!({"version":2,"mods":[{"component":"/old/schematica-builder.wasm","enabled":true,"grants":{"player_state":false,"hud":true},"reload":0}]});
+        assert_eq!(
+            registered(Some(declined), installed)?["mods"][0]["grants"]["player_state"],
+            false
+        );
 
         let kept = serde_json::json!({"version":2,"request_id":"settings-7","mods":[]});
         assert_eq!(
@@ -382,6 +388,11 @@ fn registered(document: Option<serde_json::Value>, installed: &Path) -> Result<s
             for capability in ["wasi", "packets", "packet_delay"] {
                 grants.remove(capability);
             }
+            // The tool item reads the selected hotbar slot. This read-only grant is added
+            // to installs that predate it; a grant already set, on or off, is kept.
+            grants
+                .entry("player_state")
+                .or_insert(serde_json::json!(true));
             if let Some(commands) = grants
                 .get_mut("commands")
                 .and_then(serde_json::Value::as_array_mut)

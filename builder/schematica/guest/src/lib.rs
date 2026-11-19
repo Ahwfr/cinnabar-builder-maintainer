@@ -40,7 +40,7 @@ static GUEST_VERSION: [u8; env!("CARGO_PKG_VERSION").len()] = {
 };
 
 use cinnabar::{
-    extension::{budget, gameplay, hud, input, item_use, panel, settings, terrain},
+    extension::{budget, gameplay, hud, input, item_use, panel, player_state, settings, terrain},
     world_draw::drawing,
 };
 use overlay::{Preview, Tile, WholeGhost};
@@ -51,12 +51,16 @@ use std::{
     f32::consts::TAU,
 };
 
+mod capture;
 mod saved_placements;
+mod tool;
 
 thread_local! {
     static OPEN_AFTER_LOAD: Cell<bool> = const { Cell::new(false) };
+    /// Where the guide of a copied selection goes: the box's minimum corner.
+    static ADOPT_ORIGIN: Cell<Option<[i32; 3]>> = const { Cell::new(None) };
     static RUNTIME: RefCell<(Runtime, Vec<&'static [u8]>, Options, Option<usize>)> =
-        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, structure_paste: false, textured: true, assist: false, fast_place: false, strict_place: false, correct_aim: false, bridge_place: true, lightness: DEFAULT_LIGHTNESS, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new() }, None)) };
+        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, structure_paste: false, textured: true, assist: false, fast_place: false, strict_place: false, correct_aim: false, bridge_place: true, lightness: DEFAULT_LIGHTNESS, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new(), tool_item: true }, None)) };
 }
 
 /// The "Ghost lightness" cycle: percent the ghost blocks blend toward light blue.
@@ -96,6 +100,8 @@ struct Options {
     deleted_entries: Vec<usize>,
     remember_placement: bool,
     saved_placements: BTreeMap<String, serde_json::Value>,
+    /// The tool item (a stick) drives builder modes while held. On by default, as in Litematica.
+    tool_item: bool,
 }
 
 impl Options {
@@ -114,6 +120,7 @@ impl Options {
                 "bridge_place": self.bridge_place,
                 "remember_placement": self.remember_placement, "saved_placements": self.saved_placements,
                 "ghost_tint": self.lightness,
+                "tool_item_enabled": self.tool_item,
                 "library_revision": self.library_revision, "deleted_entries": self.deleted_entries,
             })
             .to_string(),
@@ -178,6 +185,8 @@ impl Guest for Schematica {
                     .take(blueprint::MAX_LIBRARY)
                     .collect();
                 options.lightness = saved_lightness(&value);
+                // Litematica enables the tool item by default.
+                options.tool_item = value["tool_item_enabled"].as_bool().unwrap_or(true);
             });
         }
         RUNTIME.with(|runtime| label(&runtime.borrow().2.menu_hint("Cinnamatica")));
@@ -232,6 +241,15 @@ impl Guest for Schematica {
                                 Ok(decoder) => *runtime = Runtime::Loading(decoder),
                                 Err(_) => invalidate(runtime),
                             }
+                        }
+                    } else if viewer.adopt.is_some() {
+                        if viewer.release_for_switch() {
+                            let _ = hud::set_item_highlights(&[]);
+                            viewer.remember_placement();
+                            *options = viewer.options.clone();
+                            *active_entry = None;
+                            let (schematic, totals) = viewer.adopt.take().unwrap();
+                            *runtime = Runtime::Finishing(schematic, totals);
                         }
                     } else {
                         viewer.frame();
@@ -418,6 +436,20 @@ struct Viewer {
     cancel_structure: Option<(u64, i32)>,
     paste: Option<paste::Paste>,
     last_label: String,
+    tool: tool::ToolState,
+    /// A copied selection waiting to replace the schematic.
+    adopt: Option<(Schematic, BTreeMap<String, u64>)>,
+    /// An M chord pressed another key, so releasing M does not open the window.
+    menu_chorded: bool,
+    /// The window tab an M chord asked for, applied once the window is open.
+    open_tab: Option<browser::Tab>,
+}
+
+/// What a key pressed while M is held did.
+enum Chord {
+    None,
+    Done,
+    Open(browser::Tab),
 }
 
 impl Viewer {
@@ -480,6 +512,10 @@ impl Viewer {
             cancel_structure: None,
             paste: None,
             last_label: String::new(),
+            tool: Default::default(),
+            adopt: None,
+            menu_chorded: false,
+            open_tab: None,
         }
     }
 
@@ -507,6 +543,12 @@ impl Viewer {
                     .flatten()
                     .map(|key| format!("{key:016x}/{}", scope.1));
                 self.restore_placement(entering_from_world);
+                if let Some(origin) = ADOPT_ORIGIN.take() {
+                    self.placement = Some(Placement::new(origin));
+                    self.auto_place = false;
+                    self.shown = true;
+                    self.dirty = true;
+                }
                 self.last_label.clear();
                 self.last_item_highlights.clear();
                 self.highlight_dirty = true;
@@ -548,6 +590,10 @@ impl Viewer {
                 return;
             }
             let mut changed = keys.wheel != 0. && self.browser_scroll(keys.wheel < 0.);
+            if let Some(tab) = self.open_tab.take() {
+                self.browser_tab = tab;
+                changed = true;
+            }
             for event in input::read_field_events().unwrap_or_default() {
                 if let input::FieldEvent::Change(text) | input::FieldEvent::Submit(text) = event {
                     changed |= self.browser_search_changed(&text.id, text.value);
@@ -602,7 +648,6 @@ impl Viewer {
                 self.publish_item_highlights();
                 self.highlight_delay = 5;
             }
-            self.menu_armed = false;
             return;
         }
         self.paste_confirm = false;
@@ -615,6 +660,9 @@ impl Viewer {
         }
         // Pasting and verification share the frame; never suspend world observations
         // until the entire command stream has finished.
+        if self.tool_frame(&keys) {
+            return;
+        }
         let pasting = self.paste_step();
         if let Some((_, seconds)) = &mut self.paste_notice {
             *seconds -= keys.seconds;
@@ -637,6 +685,13 @@ impl Viewer {
             for key in &keys.keys_pressed {
                 self.dirty |= self.control(key);
             }
+        }
+        // Litematica's block info overlay: hold I to read the aimed planned block.
+        if !alt
+            && keys.keys_held.iter().any(|key| key == "KeyI")
+            && let Some((block, pos)) = self.aimed_block()
+        {
+            self.paste_notice = Some((format!("{block} at {pos:?}"), 0.05));
         }
         if self.options.assist && alt && keys.keys_pressed.iter().any(|key| key == "KeyU") {
             let message = self.aimed_block().map_or_else(
@@ -706,7 +761,12 @@ impl Viewer {
                 .is_some_and(|status| self.accepts_plant_replacement(*cell, status))
         });
         let placement_cell =
-            if !pasting && self.options.fast_place && self.shown && self.placement.is_some() {
+            if !pasting
+                && !self.tool_active()
+                && self.options.fast_place
+                && self.shown
+                && self.placement.is_some()
+            {
                 let native = native_cell
                     .filter(|pos| self.planned_block(*pos).is_some() && self.may_need_block(*pos));
                 if toggle_cell.is_some() && self.options.correct_aim {
@@ -872,31 +932,75 @@ impl Viewer {
         }
     }
 
-    /// Resolve chords before opening the main menu on release of a standalone M.
+    /// Resolves Litematica's M chords: the menu opens when M is released on its own, and
+    /// M+T, M+R, M+G, M+L, M+P, M+C, M+V and M+Page Up/Down run their feature instead.
     /// Runs a pressed gameplay binding; returns whether it asks to open the window.
     fn builder_hotkey(&mut self, keys: &input::Controls, alt: bool, gameplay: bool) -> bool {
+        use native_bindings::Action;
+        if self.menu_armed {
+            let main = native_bindings::main_key();
+            if keys.keys_held.iter().any(|key| *key == main) {
+                for key in &keys.keys_pressed {
+                    if *key == main || !gameplay {
+                        continue;
+                    }
+                    match self.menu_chord(key) {
+                        Chord::None => {}
+                        Chord::Done => self.menu_chorded = true,
+                        Chord::Open(tab) => {
+                            self.menu_armed = false;
+                            self.open_tab = Some(tab);
+                            self.tool_reserve_for_menu();
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+            self.menu_armed = false;
+            self.tool_reserve_for_menu();
+            return !std::mem::take(&mut self.menu_chorded);
+        }
         let modified = alt
             || ["Control", "Shift", "Super"]
                 .iter()
                 .any(|modifier| keys.keys_held.iter().any(|key| key.starts_with(modifier)));
+        let action = native_bindings::action(keys, &mut false);
         if modified {
-            self.menu_armed = false;
+            // The tool rows may carry modifiers; the menu key keeps its chords plain.
+            match action {
+                Some(Action::Tool) if gameplay => self.toggle_tool(),
+                Some(Action::Execute) if gameplay => self.tool_execute(),
+                Some(Action::ToolNext) if gameplay && self.options.tool_item => {
+                    self.tool.cycle_mode(true);
+                    self.last_label.clear();
+                }
+                Some(Action::ToolPrevious) if gameplay && self.options.tool_item => {
+                    self.tool.cycle_mode(false);
+                    self.last_label.clear();
+                }
+                _ => {}
+            }
             return false;
         }
-        use native_bindings::Action;
-        match native_bindings::action(keys, &mut self.menu_armed) {
-            Some(Action::Main) => return true,
+        match action {
+            Some(Action::Main) => {
+                self.menu_armed = true;
+                self.menu_chorded = false;
+                self.tool_reserve_for_menu();
+                return false;
+            }
             None => return false,
             _ if !gameplay => return false,
-            Some(Action::Render) => {
-                self.render_all = !self.render_all;
-                self.dirty = true;
-                self.last_label.clear();
-                if !self.render_all {
-                    label("");
-                }
-            }
+            Some(Action::Render) => self.toggle_render_all(),
             Some(Action::Ghosts) => self.dirty |= self.control("KeyB"),
+            Some(Action::Tool) => self.toggle_tool(),
+            Some(Action::Execute) => self.tool_execute(),
+            Some(Action::ToolNext | Action::ToolPrevious) if self.options.tool_item => {
+                self.tool.cycle_mode(action == Some(Action::ToolNext));
+                self.last_label.clear();
+            }
+            Some(Action::ToolNext | Action::ToolPrevious) => {}
             Some(Action::NextMode) => self.dirty |= self.control("KeyL"),
             Some(Action::PreviousMode) => {
                 self.layer_mode = (self.layer_mode + 2) % 3;
@@ -906,6 +1010,35 @@ impl Viewer {
             Some(Action::PreviousLayer) => self.dirty |= self.control("BracketLeft"),
         }
         false
+    }
+
+    fn toggle_render_all(&mut self) {
+        self.render_all = !self.render_all;
+        self.dirty = true;
+        self.last_label.clear();
+        if !self.render_all {
+            label("");
+        }
+    }
+
+    /// One key pressed while the menu key is held, with Litematica's default meanings.
+    fn menu_chord(&mut self, key: &str) -> Chord {
+        match key {
+            "KeyT" => self.toggle_tool(),
+            "KeyR" => self.toggle_render_all(),
+            "KeyG" => self.dirty |= self.control("KeyH"),
+            "PageUp" => self.dirty |= self.control("KeyL"),
+            "PageDown" => {
+                self.layer_mode = (self.layer_mode + 2) % 3;
+                self.dirty = true;
+            }
+            "KeyL" | "KeyV" => return Chord::Open(browser::Tab::Materials),
+            "KeyP" => return Chord::Open(browser::Tab::Controls),
+            "KeyC" => return Chord::Open(browser::Tab::Settings),
+            "KeyS" => return Chord::Open(browser::Tab::Import),
+            _ => return Chord::None,
+        }
+        Chord::Done
     }
 
     fn control(&mut self, key: &str) -> bool {

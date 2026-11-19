@@ -110,7 +110,7 @@ record controls {
 | `keys-admitted` | `list<string>` | Held desktop keys/buttons admitted by the finalized gameplay router, including<br>modifiers. Uses keys-held names and bounds; excludes consumed, quarantined,<br>reserved and ineligible-device controls. Empty outside gameplay input ownership.<br>Match read-bindings chords against this list, respecting modifier precedence.<br>This is physical admission, never a resolved action or permission to act.<br>Same physical-name order as keys-held, independently truncated to MAX_CONTROL_KEYS.<br>Above that held-key cap, chord resolution can differ from the host's gate. |
 | `events` | `list<event>` |  |
 | `pointer` | `option<tuple<f32, f32>>` | Pointer position in the gameplay HUD root's GUI units from its top left, the space of<br>`hud.read-viewport`, while this mod's open panel owns input; none otherwise. A panel's<br>own fitting, such as a `reference_size` scaled to a small window, does not change it. |
-| `wheel` | `f32` | Wheel notches this frame while this mod's panel owns input; positive scrolls up. |
+| `wheel` | `f32` | Wheel notches this frame while this mod's panel owns input, or in gameplay while<br>this mod reserves `MouseWheel`; positive scrolls up. |
 
 Types: [`event`](panel.md#type-event).
 
@@ -353,3 +353,4 @@ reserve-keys: func(keys: list<string>) -> result<_, string>;
 ```
 
 Physical key names reserved before the ordinary gameplay router samples them.
+`MouseWheel` reserves the wheel: the hotbar ignores it and `wheel` reports it.

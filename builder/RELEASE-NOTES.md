@@ -1,4 +1,23 @@
-# Cinnamatica 0.3.32
+# Cinnamatica 0.3.33
+
+- Add Litematica's **tool item** (a stick), with its nine modes, controls and default keys taken from Litematica's source (26.2 branch). The tool is **on by default**, as in Litematica. **M+T** turns it off and on.
+- Modes, in Litematica's order: Area Selection, Schematic Placement, Fill, Replace Block, Paste Schematic, Grid Paste, Move, Delete and Rebuild. **Ctrl+scroll** cycles them, and the HUD shows the mode, the selection and what each control does.
+- With the stick held, **left/right click** set selection corner 1/2 in the area modes (Area Selection, Fill, Replace Block, Move, Delete) and move the guide to the aimed cell in the schematic modes. **Alt+scroll** nudges the selection or guide along the direction you look. The clicks and modified scrolling are withheld from the game, so they never break or place blocks or change the hotbar slot.
+- **Alt+middle click** picks the Fill/Replace block from the world, and **Shift+middle click** picks the block to replace.
+- **Execute Operation** runs Paste, Grid Paste, Fill, Replace Block and Delete. As in Litematica, it is **unbound by default**: bind **Cinnamatica Execute Operation** in Settings > Keyboard & Mouse. Fill, Replace and Delete send `/fill` in 32-block pieces.
+- **Ctrl+M** switches Paste between keeping and replacing existing blocks, and cycles the Grid Paste size (2x1 to 8x8). **Ctrl+Alt+S** copies the selection into the guide (at most 64 blocks a side, within 128 blocks).
+- **Move:** Alt+scroll moves the selected blocks one block at a time. It copies the area, clears the old and new boxes, then rebuilds the copy. A move stops if part of the area is not loaded.
+- **Rebuild:** with the stick put away, left-click removes the aimed guide block (both halves of a door or tall plant) and right-click sets it to the held block. These edits change the guide and Paste for this session only.
+- The selection is drawn as a white box, with corner 1 in red and corner 2 in blue.
+- Litematica's other default keys: the **M** menu now opens when M is released on its own, so M chords work. **M+R** toggles all rendering, **M+G** shows or hides the guide, **M+L**/**M+V** open Materials, **M+P** Controls, **M+C** Settings and **M+S** the library. **M+Page Up/Down** change the layer mode. **Page Up/Page Down** change the layer, which is the new default for those rows; they were ] and [. Hold **I** to read the aimed planned block.
+- New Keyboard settings rows, unbound like Litematica's: Cinnamatica Toggle Tool Item, Execute Operation, Next Tool Mode and Previous Tool Mode. The M chords are built in, because Bedrock's settings store one key with modifiers.
+- The client lets a mod reserve the mouse wheel (`MouseWheel`) during gameplay. The mod requests the read-only `player_state` grant to see the selected hotbar slot; the launcher adds it to existing installs and keeps a value you already set.
+- While the stick is not held, Fast Place, Paste, Placement Lock, Hold to Place and the ghost overlay work as in 0.3.32. Fast Place pauses while the stick is in your hand.
+- Not included: several selection boxes and the selection manager, saving a selection as a file, the schematic verifier screen, sub-regions, schematic projects, pick block from the guide, overlay-through-blocks, and Litematica's Rebuild direction/all modifiers.
+
+Verified: the guest, core, importer, input and keyboard-settings unit tests pass, and the client type-checks. Not verified: the WASM and client builds of this version, and every in-game behaviour above. See TEST-CHECKLIST.md.
+
+## 0.3.32
 
 - Include the 0.3.31 plant, trapdoor and startup-message changes.
 - Offer an occupied wrong-material guide cell at the real crosshair obstruction so the native predictor can replace existing vegetation. Solid blocks remain rejected by the native validator.

@@ -58,6 +58,12 @@ pub enum Action {
     SchematicUp,
     SchematicRotateLeft,
     SchematicRotateRight,
+    /// Turns the Cinnamatica tool item (a held stick) on and off.
+    SchematicTool,
+    /// Runs the tool mode's operation: paste, fill, replace, delete or move.
+    SchematicExecute,
+    SchematicToolNext,
+    SchematicToolPrevious,
 }
 
 impl Action {
@@ -118,10 +124,14 @@ impl Action {
             Self::SchematicUp => "schematic-up",
             Self::SchematicRotateLeft => "schematic-rotate-left",
             Self::SchematicRotateRight => "schematic-rotate-right",
+            Self::SchematicTool => "schematic-tool",
+            Self::SchematicExecute => "schematic-execute",
+            Self::SchematicToolNext => "schematic-tool-next",
+            Self::SchematicToolPrevious => "schematic-tool-previous",
         }
     }
 
-    pub const COUNT: usize = 54;
+    pub const COUNT: usize = 58;
 
     pub(crate) const ALL: [Self; Self::COUNT] = [
         Self::MoveForward,
@@ -178,6 +188,10 @@ impl Action {
         Self::SchematicUp,
         Self::SchematicRotateLeft,
         Self::SchematicRotateRight,
+        Self::SchematicTool,
+        Self::SchematicExecute,
+        Self::SchematicToolNext,
+        Self::SchematicToolPrevious,
     ];
 
     pub(crate) const fn is_ui_preview(self) -> bool {

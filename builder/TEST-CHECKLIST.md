@@ -1,4 +1,21 @@
-# Cinnamatica 0.3.32 user checks
+# Cinnamatica 0.3.33 tool item checks
+
+Reply with each number and **works / still broken**. None of these has been run in game yet.
+
+T1. **Menu key:** M opens the window when released. Holding M and pressing T, R or G must not open chat, reload shaders or the window.
+T2. **Toggle:** M+T shows "Tool item off", then "Tool item on". The stick then shows the Tool line on the HUD; another item restores normal clicks.
+T3. **Clicks and wheel withheld:** With the stick, left/right/middle click must not break, place or pick blocks. Ctrl+scroll and Alt+scroll must not change the hotbar slot; plain scrolling still does.
+T4. **Modes:** Ctrl+scroll cycles all nine modes in both directions; the HUD shows "Tool n/9".
+T5. **Area Selection:** Left/right click set the corners, drawn red and blue inside a white box. Alt+scroll moves the box; Ctrl+Alt+S copies it into the guide.
+T6. **Placement:** In Schematic Placement and Paste, left/right click move the guide next to the aimed block; Alt+scroll nudges it.
+T7. **Execute:** Bind Cinnamatica Execute Operation. Paste pastes once (Ctrl+M switches keep/replace). Grid Paste pastes the chosen grid (Ctrl+M cycles it).
+T8. **Fill/Replace/Delete:** Alt+middle picks the fill block, Shift+middle the block to replace; Execute fills, replaces or clears the box. Try a box larger than 32 blocks.
+T9. **Move:** Alt+scroll moves the selected blocks one step; the selection follows. A partly unloaded area must be refused.
+T10. **Rebuild:** Without the stick, left-click removes the aimed guide block (both door halves), right-click with a block sets it. Materials should follow.
+T11. **Info and layers:** Hold I over a ghost to read it. Page Up/Down change the layer; M+Page Up/Down change the layer mode.
+T12. **Regression:** Without the stick, Fast Place, Hold to Place, Placement Lock, paste modes and per-world placement memory still work.
+
+# Cinnamatica 0.3.32 user checks (still open)
 
 Reply with each number and **works / still broken**, plus the item/mode if it fails.
 These are acceptance checks, not claims that every item has been fixed.

@@ -142,6 +142,15 @@ bindings! {
         None, true, Some("Cinnamatica Rotate Build Left");
     SchematicRotateRight => "key.schematic-rotate-right", Some(Action::SchematicRotateRight), Some(DeviceRow::Action(36)), None,
         None, true, Some("Cinnamatica Rotate Build Right");
+    // Litematica's defaults for these are M+T and unbound; the M chords are built into the mod.
+    SchematicTool => "key.schematic-tool", Some(Action::SchematicTool), Some(DeviceRow::Action(37)), None,
+        None, false, Some("Cinnamatica Toggle Tool Item");
+    SchematicExecute => "key.schematic-execute", Some(Action::SchematicExecute), Some(DeviceRow::Action(38)), None,
+        None, false, Some("Cinnamatica Execute Operation");
+    SchematicToolNext => "key.schematic-tool-next", Some(Action::SchematicToolNext), Some(DeviceRow::Action(39)), None,
+        None, false, Some("Cinnamatica Next Tool Mode");
+    SchematicToolPrevious => "key.schematic-tool-previous", Some(Action::SchematicToolPrevious), Some(DeviceRow::Action(40)), None,
+        None, false, Some("Cinnamatica Previous Tool Mode");
     Inventory => "key.inventory", None, Some(DeviceRow::Extra(0, Some(PhysicalControl::KeyboardUsage(0x08)))), Some(DeviceRow::Extra(0, Some(PhysicalControl::GamepadButton(2)))),
         None, false, None;
     Chat => "key.chat", None, Some(DeviceRow::Extra(1, Some(PhysicalControl::KeyboardUsage(0x17)))), Some(DeviceRow::Extra(1, Some(PhysicalControl::GamepadButton(14)))),

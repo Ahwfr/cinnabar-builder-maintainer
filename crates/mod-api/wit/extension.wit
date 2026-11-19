@@ -481,7 +481,8 @@ interface input {
         /// `hud.read-viewport`, while this mod's open panel owns input; none otherwise. A panel's
         /// own fitting, such as a `reference_size` scaled to a small window, does not change it.
         pointer: option<tuple<f32, f32>>,
-        /// Wheel notches this frame while this mod's panel owns input; positive scrolls up.
+        /// Wheel notches this frame while this mod's panel owns input, or in gameplay while
+        /// this mod reserves `MouseWheel`; positive scrolls up.
         wheel: f32,
     }
     /// Current open container screen identity, requiring controls permission.
@@ -549,6 +550,7 @@ interface input {
     /// Navigation includes the modifiers sampled at that key edge; preedit stays host-local.
     read-field-events: func() -> result<list<field-event>, string>;
     /// Physical key names reserved before the ordinary gameplay router samples them.
+    /// `MouseWheel` reserves the wheel: the hotbar ignores it and `wheel` reports it.
     reserve-keys: func(keys: list<string>) -> result<_, string>;
 }
 

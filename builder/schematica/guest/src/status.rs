@@ -16,6 +16,10 @@ impl Viewer {
             self.show_label(&message.clone());
             return;
         }
+        if let Some(text) = self.tool_label() {
+            self.show_label(&text);
+            return;
+        }
         if !self.options.assist {
             self.show_label("");
             return;

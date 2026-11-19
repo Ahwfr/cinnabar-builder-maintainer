@@ -1,5 +1,11 @@
 # Installing and updating Builder
 
+0.3.33 adds Litematica's tool item with its default keys and nine modes. The tool is on by default
+(M+T toggles it), and the M menu now opens when M is released. Execute Operation is unbound, as in
+Litematica: bind it in Keyboard settings. It changes the guest, the launcher's mod registration (one
+new read-only `player_state` grant) and the native client (new keyboard rows, Page Up/Down layer
+defaults and mouse-wheel reservation). Existing saved key changes are kept.
+
 0.3.32 completes the guest target selection for replacing existing vegetation. It
 uses the unchanged native runtime from 0.3.31; its mod API is identical.
 

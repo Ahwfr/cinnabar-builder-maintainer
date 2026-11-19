@@ -448,9 +448,12 @@ impl Instance {
         let snapshot_seconds = snapshot.as_ref().map_or(0.0, |frame| frame.frame_seconds);
         let mut controls = controls;
         if !controls.panel_open {
-            // Pointer and wheel belong to the mod whose open panel owns input.
+            // Pointer and wheel belong to the mod whose open panel owns input, except that a mod
+            // which reserved the wheel during gameplay receives it in place of the hotbar.
             controls.pointer = None;
-            controls.wheel = 0.0;
+            if !self.reserved_keys().iter().any(|key| key == mod_api::RESERVED_WHEEL) {
+                controls.wheel = 0.0;
+            }
         }
         let state = self.store.data_mut();
         state.pressed = pressed;

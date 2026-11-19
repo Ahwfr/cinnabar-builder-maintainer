@@ -14,10 +14,16 @@ pub enum Action {
     PreviousMode,
     NextLayer,
     PreviousLayer,
+    /// Turns the tool item on and off.
+    Tool,
+    /// Litematica's Execute Operation; unbound by default.
+    Execute,
+    ToolNext,
+    ToolPrevious,
 }
 
 impl Action {
-    const ALL: [Action; 7] = [
+    const ALL: [Action; 11] = [
         Action::Main,
         Action::Render,
         Action::Ghosts,
@@ -25,6 +31,10 @@ impl Action {
         Action::PreviousMode,
         Action::NextLayer,
         Action::PreviousLayer,
+        Action::Tool,
+        Action::Execute,
+        Action::ToolNext,
+        Action::ToolPrevious,
     ];
 }
 
@@ -93,6 +103,10 @@ fn name(action: Action) -> &'static str {
         Action::PreviousMode => "schematic-previous-mode",
         Action::NextLayer => "schematic-next-layer",
         Action::PreviousLayer => "schematic-previous-layer",
+        Action::Tool => "schematic-tool",
+        Action::Execute => "schematic-execute",
+        Action::ToolNext => "schematic-tool-next",
+        Action::ToolPrevious => "schematic-tool-previous",
     }
 }
 
@@ -159,9 +173,38 @@ pub fn action(keys: &input::Controls, armed: &mut bool) -> Option<Action> {
     None
 }
 
+/// The physical key of the menu binding, or M while it is unbound.
+pub fn main_key() -> String {
+    CACHE.with(|cache| {
+        cache
+            .borrow()
+            .bindings
+            .iter()
+            .find(|binding| {
+                binding.action == name(Action::Main)
+                    && binding.context == input::BindingContext::Gameplay
+            })
+            .map_or_else(|| "KeyM".to_owned(), |binding| binding.key.clone())
+    })
+}
+
 /// Whether this frame pressed the window's menu key: its current binding, or M while unbound.
 pub fn menu_pressed(keys: &input::Controls) -> bool {
     action(keys, &mut false) == Some(Action::Main)
+}
+
+/// The bound key's caption, or `default` while the action is unbound.
+pub fn caption_or(action: Action, default: &str) -> String {
+    let bound = CACHE.with(|cache| {
+        cache.borrow().bindings.iter().any(|binding| {
+            binding.action == name(action) && binding.context == input::BindingContext::Gameplay
+        })
+    });
+    if bound {
+        caption(action)
+    } else {
+        default.to_owned()
+    }
 }
 
 pub fn caption(action: Action) -> String {
@@ -231,5 +274,43 @@ mod tests {
         keys.keys_pressed = vec!["KeyM".into()];
         assert!(action(&keys, &mut false) == Some(Action::Main));
         assert_eq!(caption(Action::Main), "M");
+    }
+
+    #[test]
+    fn tool_rows_work_only_once_bound_and_the_menu_key_follows_its_row() {
+        CACHE.with(|cache| cache.borrow_mut().bindings.clear());
+        let mut keys = input::Controls {
+            seconds: 0.,
+            focused: true,
+            gameplay: true,
+            panel_open: false,
+            keys_pressed: vec!["KeyK".into()],
+            keys_held: vec!["KeyK".into()],
+            keys_admitted: vec![],
+            events: vec![],
+            pointer: None,
+            wheel: 0.,
+        };
+        assert!(action(&keys, &mut false).is_none());
+        assert_eq!(main_key(), "KeyM");
+        let row = |action: &str, key: &str| input::ActionBinding {
+            action: action.into(),
+            context: input::BindingContext::Gameplay,
+            key: key.into(),
+            modifiers: input::BindingModifiers {
+                shift: false,
+                control: false,
+                alt: false,
+                super_key: false,
+            },
+        };
+        CACHE.with(|cache| {
+            cache.borrow_mut().bindings =
+                vec![row("schematic-execute", "KeyJ"), row("schematic-menu", "F4")]
+        });
+        keys.keys_pressed = vec!["KeyJ".into()];
+        assert!(action(&keys, &mut false) == Some(Action::Execute));
+        assert_eq!(main_key(), "F4");
+        CACHE.with(|cache| cache.borrow_mut().bindings.clear());
     }
 }

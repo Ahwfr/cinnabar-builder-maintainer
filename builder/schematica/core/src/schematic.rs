@@ -149,6 +149,21 @@ impl Schematic {
         i
     }
 
+    /// Adds `state` to the palette when it is new and returns its palette index.
+    pub fn intern_state(&mut self, state: BlockState) -> u32 {
+        self.intern(state)
+    }
+
+    /// Stores an existing palette index, such as one from `intern_state`.
+    pub fn set_index(&mut self, p: [i32; 3], index: u32) -> bool {
+        if !self.contains(p) || index as usize >= self.palette.len() {
+            return false;
+        }
+        let idx = self.index(p);
+        self.blocks[idx] = index;
+        true
+    }
+
     pub fn set(&mut self, p: [i32; 3], state: BlockState) -> bool {
         if !self.contains(p) {
             return false;

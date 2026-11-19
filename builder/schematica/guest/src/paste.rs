@@ -8,7 +8,12 @@ const COMMAND_BYTES: usize = 440;
 
 pub(super) struct Paste {
     scope: (u64, i32),
+    /// The placement the player confirmed; a change to it cancels the whole run.
+    base: Placement,
+    /// The copy being pasted now. Equal to `base` unless a grid paste is under way.
     placement: Placement,
+    /// Grid copies still to paste after this one; empty for an ordinary paste.
+    queue: Vec<Placement>,
     destroy: bool,
     cursor: usize,
     sent: usize,
@@ -37,7 +42,9 @@ impl Viewer {
         }
         self.paste = Some(Paste {
             scope,
+            base: placement,
             placement,
+            queue: Vec::new(),
             destroy: self.options.paste_destroy,
             cursor: 0,
             sent: 0,
@@ -50,6 +57,40 @@ impl Viewer {
         let _ = crate::panel::close();
     }
 
+    /// Starts a paste of `grid` copies side by side; the first copy is the placement itself.
+    pub(super) fn paste_grid(&mut self, grid: [i32; 2]) {
+        let Some((scope, placement)) = self.world.zip(self.placement) else {
+            return;
+        };
+        if self.paste.is_some() {
+            return;
+        }
+        let footprint = placement.footprint(self.schematic.size());
+        let mut queue: Vec<Placement> =
+            crate::tool::grid_origins(placement.origin, footprint, grid)
+                .into_iter()
+                .map(|origin| Placement {
+                    origin,
+                    ..placement
+                })
+                .collect();
+        queue.remove(0);
+        queue.reverse();
+        self.paste = Some(Paste {
+            scope,
+            base: placement,
+            placement,
+            queue,
+            destroy: self.options.paste_destroy,
+            cursor: 0,
+            sent: 0,
+            skipped: 0,
+            palette: HashMap::new(),
+            // Grid copies always use the ordinary command stream.
+            structure: None,
+        });
+    }
+
     fn paste_result(&mut self, message: String) {
         self.show_label(&message);
         self.paste_notice = Some((message, 6.0));
@@ -59,7 +100,7 @@ impl Viewer {
         let Some(mut run) = self.paste.take() else {
             return false;
         };
-        if self.world != Some(run.scope) || self.placement != Some(run.placement) {
+        if self.world != Some(run.scope) || self.placement != Some(run.base) {
             self.paste_result("Paste canceled because the world or placement changed".into());
             return true;
         }
@@ -74,6 +115,10 @@ impl Viewer {
             match structure.step(&self.schematic, run.placement) {
                 Ok(Some(progress)) => {
                     self.show_label(&progress);
+                    self.paste = Some(run);
+                }
+                Ok(None) if run.advance() => {
+                    self.show_label("Grid paste | Next copy");
                     self.paste = Some(run);
                 }
                 Ok(None) => {
@@ -140,6 +185,11 @@ impl Viewer {
                 }
             }
             if run.cursor == volume {
+                if run.advance() {
+                    self.show_label("Grid paste | Next copy");
+                    self.paste = Some(run);
+                    return true;
+                }
                 self.paste_result(format!(
                     "Paste sent {} cells | {} unsupported. See chat for server results.",
                     run.sent, run.skipped
@@ -153,7 +203,20 @@ impl Viewer {
     }
 }
 
-fn coordinates(index: usize, width: usize, depth: usize) -> [i32; 3] {
+impl Paste {
+    /// Moves on to the next grid copy, keeping the totals. False when none is left.
+    fn advance(&mut self) -> bool {
+        let Some(next) = self.queue.pop() else {
+            return false;
+        };
+        self.placement = next;
+        self.cursor = 0;
+        self.palette.clear();
+        true
+    }
+}
+
+pub(crate) fn coordinates(index: usize, width: usize, depth: usize) -> [i32; 3] {
     [
         (index % width) as i32,
         (index / (width * depth)) as i32,
@@ -161,7 +224,7 @@ fn coordinates(index: usize, width: usize, depth: usize) -> [i32; 3] {
     ]
 }
 
-fn command(
+pub(crate) fn command(
     schematic: &Schematic,
     placement: Placement,
     local: [i32; 3],
@@ -204,7 +267,7 @@ pub(super) fn placement_property(name: &str) -> bool {
         && name != "wall_post_bit"
 }
 
-fn format_state(block: &BlockState) -> Option<String> {
+pub(crate) fn format_state(block: &BlockState) -> Option<String> {
     let safe = |text: &str| {
         !text.is_empty()
             && text

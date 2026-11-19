@@ -10,6 +10,9 @@ pub const MAX_INPUT_ACTION_BYTES: usize = 32;
 pub const MAX_CONTROL_KEYS: usize = 64;
 /// Maximum bytes in a physical key name supplied by local controls.
 pub const MAX_CONTROL_KEY_BYTES: usize = 32;
+/// The reservable name of the mouse wheel. A mod that reserves it during gameplay receives
+/// the wheel in its controls frame, and the hotbar ignores it.
+pub const RESERVED_WHEEL: &str = "MouseWheel";
 /// Whether a physical key name fits the shared controls wire contract.
 pub fn control_key_valid(key: &str) -> bool {
     !key.is_empty()

@@ -442,3 +442,18 @@ fn library_revisions_keep_entries_and_accept_legacy_libraries() {
     assert_eq!(blueprint::library_revision(&new), 42);
     assert!(blueprint::library(&new[..11]).is_err());
 }
+
+#[test]
+fn interned_states_can_be_stored_by_index() {
+    let mut s = Schematic::new("i", [2, 1, 1]);
+    let stone = s.intern_state(stone());
+    assert!(s.set_index([1, 0, 0], stone));
+    assert_eq!(s.get([1, 0, 0]), Some(&stone_state()));
+    assert!(!s.set_index([2, 0, 0], stone));
+    assert!(!s.set_index([0, 0, 0], 99));
+    assert_eq!(s.block_count(), 1);
+}
+
+fn stone_state() -> BlockState {
+    BlockState::new("minecraft:stone")
+}
