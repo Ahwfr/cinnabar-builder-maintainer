@@ -67,6 +67,8 @@ pub(crate) struct BlockUseContext<'w, 's> {
     /// The level's sneaking dimensions size the player box that blocks placement.
     physics: Option<Res<'w, client_interaction::movement::LocalPhysicsController>>,
     creative: Option<ResMut<'w, creative::CreativePlacement>>,
+    /// Dust from the local brush's strokes on blocks.
+    brush_dust: bevy::prelude::MessageWriter<'w, crate::particles::LocalBrushDust>,
 }
 
 /// Drains physical interactions before physics, then evaluates the buffered held picks.

@@ -78,6 +78,8 @@ pub(super) struct ModPanel {
     projected: std::collections::BTreeMap<String, Option<[f64; 2]>>,
     /// Where the panel was last laid out over the HUD root.
     layout: Option<ui::mod_hud::PanelLayout>,
+    /// The last pointer press on a declared control, for `panel.read-press`.
+    press: Option<input::Press>,
 }
 
 impl ModUi {
@@ -198,6 +200,7 @@ impl ModUi {
                     current.motion.transitions = transitions;
                 }
                 current.pointer = None;
+                current.press = None;
                 current.prepared = prepared.clone();
                 current.catalog = prepared.as_ref().map(|route| Arc::clone(&route.catalog));
             }
@@ -250,6 +253,7 @@ impl ModUi {
                 icons: Vec::new(),
                 projected: Default::default(),
                 layout: None,
+                press: None,
             });
         }
         if (self.reduced_motion || !panel.motion)
@@ -305,6 +309,22 @@ impl ModUi {
         Some((panel.owner, panel.layout?))
     }
 
+    /// The open panel's owner and its last pointer press on a declared control, for
+    /// `panel.read-press`; none while no panel is open or before any such press.
+    pub fn mod_panel_press(&self) -> Option<(PanelUiOwner, ui::mod_hud::PanelPress)> {
+        let panel = self.mod_panel.as_ref().filter(|panel| panel.open)?;
+        let press = panel.press?;
+        Some((
+            panel.owner,
+            ui::mod_hud::PanelPress {
+                id: panel.panel.controls.get(press.control)?.id().to_owned(),
+                rect: press.rect,
+                to_local: press.to_local,
+                held: press.held,
+            },
+        ))
+    }
+
     /// Whether the active panel retains resource-pack HUD content for placement or inspection.
     pub fn mod_panel_shows_gameplay_hud(&self) -> bool {
         self.mod_panel
@@ -326,14 +346,19 @@ impl ModUi {
             .is_some_and(|panel| panel.open || panel.exiting())
     }
 
-    /// Native feedback, surface transitions and exits need frames only while they are moving.
+    /// Native feedback, surface transitions, scrollbar fades and exits need frames only while
+    /// they are moving.
     pub fn mod_panel_motion_active(&self) -> bool {
         self.mod_panel.as_ref().is_some_and(|panel| {
             panel.exiting()
                 || panel.open
                     && (panel.motion.active()
                         || panel.motion_data_dirty && panel.animated()
-                        || matches!(panel.edit, Some(edit::Editor::Field { .. })))
+                        || matches!(panel.edit, Some(edit::Editor::Field { .. }))
+                        || panel
+                            .frame
+                            .as_ref()
+                            .is_some_and(|frame| panel.view.scrollbar_fading(&frame.report)))
         })
     }
 
@@ -600,6 +625,16 @@ impl ModUi {
                     &frame.report,
                     std::mem::take(&mut panel.carried_scroll),
                 );
+                if !panel.held
+                    && panel
+                        .frame
+                        .as_ref()
+                        .is_some_and(|old| scrolling::moved(&old.report, &frame.report))
+                {
+                    // Hover came from the old geometry; resolve it again even if the pointer
+                    // stays still.
+                    panel.pointer = None;
+                }
                 panel.frame = Some(frame);
             }
             result => {
@@ -686,6 +721,11 @@ impl ModPanel {
             .motion
             .transitions
             .advance(&self.panel.surface, now, animate);
+        if let Some(frame) = &self.frame {
+            changed |= self
+                .motion
+                .fade_scrollbars(&mut self.view, &frame.report, now, animate);
+        }
         changed
     }
 

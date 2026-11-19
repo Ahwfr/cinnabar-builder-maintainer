@@ -1,6 +1,9 @@
 use super::*;
 use crate::{MATERIAL_FLAG_ISOTROPIC, MATERIAL_FLAG_ROTATE_UV, TextureMip, TextureRef};
 
+mod carried_fences;
+mod carried_walls;
+
 #[test]
 fn azalea_inventory_has_a_separate_stem_and_open_bottom_canopy() {
     let source: Vec<_> = BlockFace::ALL
@@ -445,9 +448,9 @@ fn vanilla_gates_use_the_custom_carried_inventory_axis() {
 }
 
 #[test]
-fn carried_walls_preserve_directional_materials() {
+fn inventory_walls_preserve_directional_materials() {
     let materials = BlockFace::ALL.map(|face| face as u32 + 1);
-    for quad in carried_wall_quads(materials) {
+    for quad in walls::inventory_quads(materials) {
         let [a, b, c, _] = quad.corners;
         let u = std::array::from_fn::<_, 3, _>(|i| b[i] - a[i]);
         let v = std::array::from_fn::<_, 3, _>(|i| c[i] - a[i]);
@@ -575,14 +578,23 @@ fn lighting_flags_preserve_material_tiles_without_admitting_unresolved_tint() {
         }]
         .into(),
     };
-    for flags in [
-        MATERIAL_FLAG_ALPHA_CUTOUT | crate::MATERIAL_FLAG_DISABLE_FACE_DIMMING,
-        MATERIAL_FLAG_DISABLE_AO | crate::MATERIAL_FLAG_DISABLE_FACE_DIMMING,
+    for (flags, ao_exponent) in [
+        (
+            MATERIAL_FLAG_ALPHA_CUTOUT | crate::MATERIAL_FLAG_DISABLE_FACE_DIMMING,
+            1.0_f32,
+        ),
+        (
+            MATERIAL_FLAG_DISABLE_AO | crate::MATERIAL_FLAG_DISABLE_FACE_DIMMING,
+            1.0,
+        ),
+        (0, 0.8),
+        (MATERIAL_FLAG_ALPHA_CUTOUT, 0.8),
     ] {
         let materials = [
             Material::unvaried(),
             Material {
                 flags,
+                ao_exponent: ao_exponent.to_bits(),
                 ..Material::unvaried()
             },
         ];
@@ -677,7 +689,10 @@ fn bamboo_gui_posts_and_slats_use_separate_texture_regions() {
         quad_count: 0,
         flags: MODEL_TEMPLATE_FLAG_FENCE_WOOD,
     }];
-    assert!(block_gui_uses_paint_order(Some(&templates[0])));
+    assert_eq!(
+        BlockModelOrder::for_template(Some(&templates[0])),
+        BlockModelOrder::Paint
+    );
     let gui = block_gui_quads(
         crate::facts::BlockRenderKind::BambooFence,
         VisualKind::Model,

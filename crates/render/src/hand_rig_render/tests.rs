@@ -165,6 +165,7 @@ fn oversized_hand_glint_is_fitted_and_unchanged_uploads_are_retained() {
 
 fn single_instance_frame() -> ActorRigRenderFrame {
     ActorRigRenderFrame {
+        rasters: Arc::from([]),
         frame_generation: 1,
         geometry_revision: 1,
         instances: Arc::from([ActorGpuInstance::default()]),
@@ -531,6 +532,23 @@ fn pose_updates_reuse_their_buffers() {
     assert_eq!(gpu.atlases[0].as_ref().unwrap().size, [2, 2, 1]);
     assert_eq!(gpu.atlases[1].as_ref().unwrap().size, [4, 1, 3]);
     assert!(gpu.atlases[1].as_ref().unwrap().pixels.ptr_eq(&off_pixels));
+
+    // Switching animation settings preserves the artwork but changes its sampling format.
+    let frame = scene.frame.as_mut().unwrap();
+    for light in [light().with_java_lighting(Mat4::IDENTITY), light()] {
+        let previous = gpu.atlases[0].as_ref().unwrap()._texture.id();
+        frame.light = light;
+        upload_atlas(&mut gpu, &device, &queue, frame);
+        let atlas = gpu.atlases[0].as_ref().unwrap();
+        assert_ne!(atlas._texture.id(), previous);
+        assert_eq!(
+            atlas._texture.format(),
+            bindings::hand_artwork_format(&light)
+        );
+        let uploaded = atlas._texture.id();
+        upload_atlas(&mut gpu, &device, &queue, frame);
+        assert_eq!(gpu.atlases[0].as_ref().unwrap()._texture.id(), uploaded);
+    }
 
     // Switching animation settings preserves the artwork but changes its sampling format.
     let frame = scene.frame.as_mut().unwrap();

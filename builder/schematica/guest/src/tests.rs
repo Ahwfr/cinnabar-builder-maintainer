@@ -67,7 +67,6 @@ fn hold_aim_stops_at_a_real_block_and_ignores_off_ray_ghosts() {
         yaw: 0.,
         pitch: 0.,
         frame_seconds: 0.016,
-        players: Vec::new(),
     });
     for cell in [[1, 0, 2], [0, 0, 1]] {
         viewer

@@ -2,6 +2,7 @@
 
 mod field;
 mod physical;
+mod scroll;
 use field::PanelSample;
 
 use super::{MenuRuntime, ModRuntime};
@@ -12,6 +13,7 @@ use bevy::{
         keyboard::KeyboardInput,
         mouse::{
             AccumulatedMouseMotion, AccumulatedMouseScroll, MouseButtonInput, MouseScrollUnit,
+            MouseWheel,
         },
     },
     prelude::*,
@@ -31,6 +33,7 @@ pub(super) struct PanelInput<'w> {
     clipboard: Option<ResMut<'w, client_shell::menu::MenuClipboard>>,
     mouse_events: Option<Res<'w, Messages<MouseButtonInput>>>,
     scroll: Option<ResMut<'w, AccumulatedMouseScroll>>,
+    wheel_events: Option<Res<'w, Messages<MouseWheel>>>,
     reserved: Option<ResMut<'w, super::ReservedControls>>,
 }
 
@@ -45,6 +48,7 @@ const TEXT_INPUT: &str = "TextInput";
 pub(super) struct PhysicalControls {
     keys: MessageCursor<KeyboardInput>,
     mouse: MessageCursor<MouseButtonInput>,
+    wheel: MessageCursor<MouseWheel>,
     ime: MessageCursor<Ime>,
     ordered: MessageCursor<WindowEvent>,
     ime_owned: bool,
@@ -122,12 +126,22 @@ pub(super) fn prepare_mod_input(
         mut clipboard,
         mouse_events,
         mut scroll,
+        wheel_events,
         mut reserved,
     } = input;
     if let Some(reserved) = reserved.as_mut() {
-        reserved.0.clear();
+        reserved.keys.clear();
+        reserved.scroll = false;
     }
     let mut extension = extension.filter(|runtime| !runtime.suspended);
+    if let Some(extension) = extension.as_mut() {
+        for index in 0..extension.hosts.host_count() {
+            extension
+                .hosts
+                .host_mut(index)
+                .observe_scroll(mod_host::empty_scroll());
+        }
+    }
     if let Some(extension) = extension.as_deref_mut()
         && let Some(order) = extension.hosts.reconcile_panel_requests()
         && packets
@@ -156,6 +170,9 @@ pub(super) fn prepare_mod_input(
     let reactor_surface_focused = packets.as_ref().is_some_and(|packets| packets.panel.owned);
     if extension.is_none() && !reactor_surface_focused && !reactor_surface_available {
         physical.discard_pending(keyboard_events.as_deref(), mouse_events.as_deref());
+        if let Some(events) = &wheel_events {
+            physical.wheel.clear(events);
+        }
         if let Some(events) = &ime_events {
             physical.ime.clear(events);
         }
@@ -169,6 +186,8 @@ pub(super) fn prepare_mod_input(
     let Ok((entity, mut window, mut cursor)) = windows.single_mut() else {
         return;
     };
+    let (wheel_frame, wheel_received) =
+        scroll::sample(&mut physical.wheel, wheel_events.as_deref(), entity);
     let focused = driven.is_some()
         || (window.focused && focus.as_ref().is_none_or(|focus| focus.available()));
     if focused {
@@ -653,11 +672,6 @@ pub(super) fn prepare_mod_input(
     // could end the edit.
     extension.native_editing =
         ((editing || native_searching) && focused && !absorbed).then_some(owner);
-    let wheel_reserved = extension
-        .hosts
-        .reserved_keys()
-        .iter()
-        .any(|key| key == RESERVED_WHEEL);
     extension.controls = mod_host::ControlFrame {
         seconds: time
             .as_ref()
@@ -693,12 +707,31 @@ pub(super) fn prepare_mod_input(
                 )
             })
             .map(|[x, y]| (x, y)),
-        // A gameplay mod that reserves the wheel receives it in place of the hotbar.
         wheel: scroll
             .as_deref()
-            .filter(|_| focused && !absorbed && (open || wheel_reserved))
+            .filter(|_| open && focused && !absorbed)
             .map_or(0.0, wheel_notches),
     };
+    let gameplay_scroll = focused
+        && !absorbed
+        && !open
+        && !was_open
+        && !editing
+        && crate::camera::mouse_input_active(&window, &cursor, focus.as_deref(), driven.is_some());
+    if gameplay_scroll && wheel_received {
+        let runtime = &mut *extension;
+        if runtime
+            .hosts
+            .route_scroll(&wheel_frame, &runtime.controls.keys_held)
+        {
+            if let Some(reserved) = reserved.as_deref_mut() {
+                reserved.scroll = true;
+            }
+            if let Some(scroll) = scroll.as_deref_mut() {
+                scroll.delta = Vec2::ZERO;
+            }
+        }
+    }
     field::sync_ime(
         &mut physical,
         &mut window,
@@ -756,15 +789,9 @@ pub(super) fn prepare_mod_input(
             &subscriptions,
             reserved.as_deref_mut(),
         );
-        if subscriptions.iter().any(|key| key == RESERVED_WHEEL)
-            && let Some(scroll) = scroll.as_deref_mut()
-        {
-            scroll.delta = Vec2::ZERO;
-        }
     }
 }
 
-pub(crate) use mod_api::RESERVED_WHEEL;
 
 /// Applies shared pointer capture and input consumption for every native personal panel.
 /// One frame's wheel turn in notches, positive away from the player; a pixel-precise wheel
@@ -837,7 +864,7 @@ fn consume_reserved(
         }
     }
     if let Some(consumed) = consumed.as_mut() {
-        consumed.0.extend_from_slice(reserved);
+        consumed.keys.extend_from_slice(reserved);
     }
 }
 

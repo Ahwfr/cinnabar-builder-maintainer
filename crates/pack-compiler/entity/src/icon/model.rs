@@ -1,11 +1,11 @@
-//! Alpha-tested block thumbnails from shared GUI geometry and surface ordering.
+//! Alpha-tested block thumbnails with the shared GUI geometry and overlap order.
 //! Includes slabs, stairs, walls, glass and server custom blocks.
 
 use std::sync::Arc;
 
 use assets::gui_item::{
-    GUI_BLOCK_ALPHA_THRESHOLD, GUI_ITEM_SIDE, GuiBlockReject, GuiShading, block_gui_quads,
-    block_gui_uses_paint_order, cube_face, material_tile,
+    BlockModelOrder, GUI_BLOCK_ALPHA_THRESHOLD, GUI_ITEM_SIDE, GuiBlockReject, GuiShading,
+    block_gui_quads, cube_face, material_tile,
 };
 use assets::{
     BlockFace, BlockOverlay, BlockVisualId, IconSprite, Material, ModelQuad, ModelTemplate,
@@ -85,7 +85,7 @@ pub(super) struct Model<'a> {
     light: f32,
     face_lighting: bool,
     shading: GuiShading,
-    paint_order: bool,
+    order: BlockModelOrder,
 }
 
 impl<'a> Model<'a> {
@@ -116,7 +116,7 @@ impl<'a> Model<'a> {
             light,
             face_lighting: true,
             shading: GuiShading::Inventory,
-            paint_order: false,
+            order: BlockModelOrder::Depth,
         }
     }
 
@@ -263,7 +263,7 @@ impl<'a> Model<'a> {
             light: 1.0,
             face_lighting: true,
             shading: GuiShading::of(kind, template, parts.templates),
-            paint_order: block_gui_uses_paint_order(
+            order: BlockModelOrder::for_template(
                 template.and_then(|id| parts.templates.get(id as usize)),
             ),
         }
@@ -299,7 +299,7 @@ impl<'a> Model<'a> {
             light: 1.0,
             face_lighting: true,
             shading: GuiShading::Inventory,
-            paint_order: false,
+            order: BlockModelOrder::Depth,
         }
     }
 
@@ -316,9 +316,13 @@ impl<'a> Model<'a> {
             let points = face.corners.map(|point| {
                 let [x, y, z] = (self.projection)(point);
                 let scale = SIDE as f32 / GUI_ITEM_SIDE;
-                // Later faces cover earlier ones when the GUI uses paint order.
-                let z = if self.paint_order { -(index as f32) } else { z };
-                [scale * x, scale * y, z]
+                // Ordered faces use successive depths so cutouts and blending retain paint order.
+                let depth = if self.order == BlockModelOrder::Paint {
+                    -(index as f32)
+                } else {
+                    z
+                };
+                [scale * x, scale * y, depth]
             });
             for indices in [[0, 1, 2], [0, 2, 3]] {
                 triangle(
@@ -364,8 +368,10 @@ fn tile(parts: Parts<'_>, id: u32) -> Result<Tile<'_>, Reject> {
     if tint.is_some() {
         sampled.flags &= !assets::MATERIAL_FLAG_TINT_MASK;
     }
-    let rotated =
-        material.flags & assets::MATERIAL_FLAG_UV_MASK == assets::MATERIAL_FLAG_UV_ROTATE_180;
+    let rotated = matches!(
+        material.flags & assets::MATERIAL_FLAG_UV_MASK,
+        assets::MATERIAL_FLAG_UV_ROTATE_180 | assets::MATERIAL_FLAG_UV_INVERT
+    );
     if rotated {
         sampled.flags &= !assets::MATERIAL_FLAG_UV_MASK;
     }
@@ -517,6 +523,10 @@ fn composite_fragments(pixels: &mut [u8], depth: &[f32], fragments: &mut [Vec<(f
         }
     }
 }
+
+#[cfg(test)]
+#[path = "model/paint_order_tests.rs"]
+mod paint_order_tests;
 
 #[cfg(test)]
 mod review_tests {
@@ -710,7 +720,7 @@ mod review_tests {
         }
     }
 
-    /// Full cubes declared through the versioned geometry turn their bottom face's UVs.
+    /// Both half-turn encodings preserve thumbnail admission and turn the sampled UVs.
     #[test]
     fn a_rotated_cube_face_keeps_the_cube_drawable_with_turned_uvs() {
         let plain = assets::TextureRef::new(1, 0).unwrap();
@@ -719,7 +729,7 @@ mod review_tests {
             flags,
             ..Material::unvaried()
         };
-        let overlay = BlockOverlay {
+        let mut overlay = BlockOverlay {
             visuals: vec![assets::BlockVisual {
                 faces: [1, 1, 2, 1, 1, 1],
                 kind: VisualKind::Cube,
@@ -744,31 +754,38 @@ mod review_tests {
             }],
             ..Default::default()
         };
-        assert!(
-            Model::overlay(&overlay, 0, None, None).is_ok(),
-            "a hidden rotated face must not cost the cube its icon"
-        );
-        let parts = Parts {
-            materials: &overlay.materials,
-            templates: &overlay.model_templates,
-            quads: &overlay.model_quads,
-            textures: Textures::Overlay(&overlay, None),
-            tint: None,
-        };
-        let uvs = |faces| {
-            Model::build(parts, VisualKind::Cube, faces, None, Default::default())
-                .ok()
-                .unwrap()
-                .faces
-                .iter()
-                .map(|face| face.uvs)
-                .collect::<Vec<_>>()
-        };
-        let (upright, turned) = (uvs([1; 6]), uvs([2; 6]));
-        assert!(!upright.is_empty());
-        for (upright, turned) in upright.iter().zip(&turned) {
-            for (upright, turned) in upright.iter().zip(turned) {
-                assert_eq!(*turned, upright.map(|component| 1.0 - component));
+        for flags in [
+            assets::MATERIAL_FLAG_UV_ROTATE_180,
+            assets::MATERIAL_FLAG_UV_INVERT,
+            assets::MATERIAL_FLAG_UV_INVERT | assets::MATERIAL_FLAG_ISOTROPIC,
+        ] {
+            overlay.materials[2].flags = flags;
+            assert!(
+                Model::overlay(&overlay, 0, None, None).is_ok(),
+                "a hidden rotated face must not cost the cube its icon"
+            );
+            let parts = Parts {
+                materials: &overlay.materials,
+                templates: &overlay.model_templates,
+                quads: &overlay.model_quads,
+                textures: Textures::Overlay(&overlay, None),
+                tint: None,
+            };
+            let uvs = |faces| {
+                Model::build(parts, VisualKind::Cube, faces, None, Default::default())
+                    .ok()
+                    .unwrap()
+                    .faces
+                    .iter()
+                    .map(|face| face.uvs)
+                    .collect::<Vec<_>>()
+            };
+            let (upright, turned) = (uvs([1; 6]), uvs([2; 6]));
+            assert!(!upright.is_empty());
+            for (upright, turned) in upright.iter().zip(&turned) {
+                for (upright, turned) in upright.iter().zip(turned) {
+                    assert_eq!(*turned, upright.map(|component| 1.0 - component));
+                }
             }
         }
     }

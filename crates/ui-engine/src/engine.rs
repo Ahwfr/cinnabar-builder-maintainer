@@ -51,7 +51,6 @@ pub mod screen_cache;
 mod server_form;
 mod sprites;
 pub mod text_paint;
-mod vector_icons;
 mod vector_paths;
 use crate::atlas::ServerAtlas;
 use crate::frame::EngineFrame;
@@ -546,6 +545,24 @@ impl Canvas<'_> {
         )
     }
 
+    /// Places image pieces on one grid, including when painting a cached translated fragment.
+    fn snapped_slice(&self, rect: &RectOut, parent: &RectOut) -> [f32; 4] {
+        let offset = self.art.pixel_snap_offset;
+        pixel_snap::translated([rect.x, rect.y, rect.w, rect.h], offset, self.px, |rect| {
+            pixel_snap::slice(
+                rect,
+                [
+                    parent.x + offset[0],
+                    parent.y + offset[1],
+                    parent.w,
+                    parent.h,
+                ],
+                self.metrics.gui_scale,
+                self.px,
+            )
+        })
+    }
+
     /// `rect` as logical bounds moved to a whole physical pixel, where vanilla
     /// places text ([`pixel_snap`]).
     fn positioned(&self, rect: &RectOut) -> [f32; 4] {
@@ -579,7 +596,7 @@ impl Canvas<'_> {
         Ok(id)
     }
 
-    /// Hands `node` to the frame's renderers, then to the engine's own: vector icons, rounded
+    /// Hands `node` to the frame's renderers, then to the engine's own: vector paths, rounded
     /// chrome, fills, messaging art, named profile images, name tags and banners. Others draw
     /// nothing.
     fn custom(
@@ -595,9 +612,6 @@ impl Canvas<'_> {
         let (data, dest) = (node.data, node.dest);
         let alpha = |color: [u8; 4]| node.alpha(color);
         let drawn = match node.renderer {
-            "cinnabar_vector_icon" => self
-                .vector_icon(data, dest, &alpha)
-                .map(|visual| (visual, dest)),
             json_ui::vector_path::RENDERER => self
                 .vector_path(data, dest, &alpha)
                 .map(|visual| (visual, dest)),
@@ -731,6 +745,8 @@ impl Canvas<'_> {
                     )
                 },
             )
+        } else if let Some(parent) = &drawn.slice {
+            self.snapped_slice(&drawn.dest, parent)
         } else {
             self.snapped(&drawn.dest)
         };

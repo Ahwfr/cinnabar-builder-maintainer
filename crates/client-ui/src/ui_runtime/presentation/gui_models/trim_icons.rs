@@ -6,10 +6,9 @@ mod tests;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Key {
-    trim: protocol::ItemTrim,
+    trim: render_api::ItemTrim,
     binding: usize,
-    slot: u8,
-    armor_material: Option<assets::facts::ArmourMaterial>,
+    item: TrimItem,
     source: usize,
     size: [u16; 2],
     dye: Option<u32>,
@@ -40,6 +39,25 @@ struct SourceCell {
 #[derive(Default)]
 pub(in crate::ui_runtime::presentation) struct TrimIcons {
     cache: Mutex<Cache>,
+    /// The session's server item components, which declare custom armor's trim support.
+    session_items: Option<Arc<crate::ui_runtime::item_facts::SessionItemComponents>>,
+}
+
+/// What selects one item's trim artwork beyond the stack's trim.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) enum TrimItem {
+    /// Vanilla trimmable armor, whose own armor material darkens a same-material trim.
+    Builtin {
+        slot: assets::ArmorSlot,
+        armor_material: Option<assets::facts::ArmourMaterial>,
+    },
+    /// Server armor tagged `minecraft:trimmable_armors`, worn in `slot`; `icon` says whether it
+    /// declares the icon component its trimmed icon is generated from.
+    Custom {
+        slot: assets::ArmorSlot,
+        art: Arc<protocol::CustomArmorTrim>,
+        icon: bool,
+    },
 }
 
 impl TrimIcons {
@@ -54,7 +72,39 @@ impl TrimIcons {
         }
     }
     pub(in crate::ui_runtime::presentation) fn clear(&mut self) {
-        *self = Self::default();
+        let session_items = self.session_items.take();
+        *self = Self {
+            session_items,
+            ..Self::default()
+        };
+    }
+
+    /// Adopts the session's item components; compositions keyed by older facts retire unused.
+    pub(in crate::ui_runtime::presentation) fn observe_session_items(
+        &mut self,
+        items: Option<&Arc<crate::ui_runtime::item_facts::SessionItemComponents>>,
+    ) {
+        self.session_items = items.cloned();
+    }
+
+    /// The trim inputs of vanilla trimmable armor, then of the session's trimmable custom armor.
+    /// `None` for any other item.
+    pub(super) fn item(&self, identifier: &str) -> Option<TrimItem> {
+        if let Some(slot) = assets::item::trim::armor_slot(identifier) {
+            return Some(TrimItem::Builtin {
+                slot,
+                armor_material: armor_material(identifier)?,
+            });
+        }
+        let components = self.session_items.as_deref()?.get(identifier)?;
+        Some(TrimItem::Custom {
+            slot: components
+                .wearable_slot
+                .as_deref()
+                .and_then(assets::ArmorSlot::from_wearable_slot)?,
+            art: Arc::clone(components.armor_trim.as_ref()?),
+            icon: components.icon.is_some(),
+        })
     }
     pub(in crate::ui_runtime::presentation) fn pages(&self) -> Vec<UiTexturePage> {
         self.cache
@@ -78,13 +128,73 @@ impl TrimIcons {
     }
 }
 
+/// The pinned armor material that selects a darker palette for a same-material trim.
+fn armor_material(identifier: &str) -> Option<Option<assets::facts::ArmourMaterial>> {
+    Some(
+        assets::facts::ItemFacts::builtin()
+            .ok()?
+            .by_identifier(identifier)?
+            .armor_material(),
+    )
+}
+
+/// Resolves one trim's masks and palettes from the active pack, then the startup carrier.
+/// Vanilla armor applies `binding`'s authored pattern and palette aliases; a custom armor icon
+/// applies its own icon textures, and its worn armor its attachable's aliases. `None` when
+/// artwork is missing or a custom item declares no icon to trim.
+pub(super) fn trim_layers<'a>(
+    startup: &'a assets::RuntimeEquipmentCatalog,
+    pack: Option<&'a assets::RuntimeEquipmentCatalog>,
+    binding: Option<&'a assets::EquipmentBinding>,
+    trim: &render_api::ItemTrim,
+    item: &TrimItem,
+    icon: bool,
+) -> Option<assets::item::trim::TrimLayers<'a>> {
+    let texture = |path: &str| {
+        pack.and_then(|p| p.texture(path))
+            .or_else(|| startup.texture(path))
+    };
+    let (armor_material, slot) = match item {
+        TrimItem::Custom {
+            art,
+            icon: declared,
+            slot,
+        } if icon => {
+            if !declared {
+                return None;
+            }
+            return assets::item::trim::custom_icon(
+                &trim.material,
+                *slot,
+                art.icon_mask.is_some(),
+                art.icon_palette(assets::item::trim::short_name(&trim.material)),
+                texture,
+            );
+        }
+        TrimItem::Custom { slot, .. } => (None, *slot),
+        TrimItem::Builtin {
+            slot,
+            armor_material,
+        } => (*armor_material, *slot),
+    };
+    assets::item::trim::layers(
+        armor_material,
+        &trim.material,
+        &trim.pattern,
+        slot,
+        icon,
+        binding.map(|binding| &binding.resources),
+        texture,
+    )
+}
+
 impl UiPresentationRuntime {
     /// Resolves a stack's material-colored inventory trim over the current item artwork.
     pub(in crate::ui_runtime::presentation) fn trim_icon(
         &self,
         identifier: &str,
         metadata: u32,
-        trim: &protocol::ItemTrim,
+        trim: &render_api::ItemTrim,
         dye: Option<u32>,
     ) -> Option<IconRef> {
         let base_icon = dye
@@ -123,16 +233,23 @@ impl UiPresentationRuntime {
             Arc::clone(&cell.pixels)
         };
         let startup = self.equipment_catalog.as_deref()?;
-        let binding = startup.binding(identifier)?;
+        let binding = startup.binding(identifier);
+        // Vanilla armor keeps its startup definition; custom armor may have no attachable.
+        if binding.is_none() && assets::item::trim::armor_slot(identifier).is_some() {
+            return None;
+        }
         let trim_binding = self
             .gui_models
             .pack_equipment
             .source
             .as_deref()
             .and_then(|catalog| catalog.binding(identifier))
-            .or(Some(binding));
+            .or(binding);
         let base = assets::EquipmentTexture {
-            identifier: binding.texture.identifier.clone(),
+            identifier: binding.map_or_else(
+                || identifier.into(),
+                |binding| binding.texture.identifier.clone(),
+            ),
             width,
             height,
             rgba8: source,
@@ -156,7 +273,7 @@ impl UiPresentationRuntime {
         preview: &player_preview::PreviewTexture,
         path: &str,
         binding: Option<&assets::EquipmentBinding>,
-        trim: &protocol::ItemTrim,
+        trim: &render_api::ItemTrim,
         identifier: &str,
     ) -> Option<player_preview::PreviewTexture> {
         let base = assets::EquipmentTexture {
@@ -182,23 +299,18 @@ impl UiPresentationRuntime {
         &self,
         base: &assets::EquipmentTexture,
         binding: Option<&assets::EquipmentBinding>,
-        trim: &protocol::ItemTrim,
+        trim: &render_api::ItemTrim,
         identifier: &str,
         icon: bool,
         dye: Option<u32>,
     ) -> Option<(assets::EquipmentTexture, Option<IconRef>)> {
         let startup = self.equipment_catalog.as_deref()?;
         let pack = self.gui_models.pack_equipment.source.as_deref();
-        let slot = assets::item::trim::armor_slot(identifier)?;
-        let armor_material = assets::facts::ItemFacts::builtin()
-            .ok()?
-            .by_identifier(identifier)?
-            .armor_material();
+        let item = self.gui_models.trim_icons.item(identifier)?;
         let key = Key {
             trim: trim.clone(),
             binding: binding.map_or(0, |binding| binding as *const _ as usize),
-            slot: slot as u8,
-            armor_material,
+            item,
             source: base.rgba8.as_ptr() as usize,
             size: [base.width, base.height],
             dye,
@@ -211,13 +323,8 @@ impl UiPresentationRuntime {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         if !cache.images.contains_key(&key) {
-            let texture = assets::item::trim::compose(
+            let texture = trim_layers(startup, pack, binding, trim, &key.item, icon)?.compose(
                 base,
-                armor_material,
-                &trim.material,
-                &trim.pattern,
-                slot,
-                icon,
                 dye.map(|rgb| {
                     let [_, r, g, b] = rgb.to_be_bytes();
                     assets::item::trim::Dye {
@@ -225,11 +332,6 @@ impl UiPresentationRuntime {
                         alpha: assets::item::trim::DyeAlpha::Coverage,
                     }
                 }),
-                binding.map(|binding| &binding.resources),
-                |path| {
-                    pack.and_then(|p| p.texture(path))
-                        .or_else(|| startup.texture(path))
-                },
             )?;
             cache.images.insert(
                 key.clone(),

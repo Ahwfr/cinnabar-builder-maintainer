@@ -52,7 +52,6 @@ pub(crate) mod packets;
 mod pointer;
 pub(crate) mod registration;
 mod teleport_handler;
-pub(crate) use input::RESERVED_WHEEL;
 pub(crate) use teleport_handler::handle_move_player_rotation;
 mod terrain;
 
@@ -489,7 +488,8 @@ fn configure_systems(app: &mut App, watching: bool) {
     );
     app.init_resource::<packet_delay::RealPositionSnapshot>()
         .add_systems(Update, packet_delay::publish_packet_delay.after(drive_mod))
-        .add_systems(Update, inventory::apply_inventory_requests.after(drive_mod));
+        .add_systems(Update, inventory::apply_inventory_requests.after(drive_mod))
+        .add_systems(Update, bindings::apply_binding_writes.after(drive_mod));
 }
 
 /// Starts the shared callback allowance before any input or event reaches a guest.
@@ -675,7 +675,7 @@ use crate::interaction_override as interaction;
 mod inventory;
 mod module_observations;
 pub(crate) mod packet_delay;
-mod render;
+pub(crate) mod render;
 mod screens;
 
 mod presentation_facts;

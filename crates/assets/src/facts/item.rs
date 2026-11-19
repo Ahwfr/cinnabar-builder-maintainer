@@ -43,6 +43,8 @@ pub(super) const WRITTEN_BOOK_IDENTIFIER: &str = "minecraft:written_book";
 pub const FILLED_MAP_IDENTIFIER: &str = "minecraft:filled_map";
 /// Canonical empty bucket identity; legacy filled variants carry nonzero metadata.
 pub const EMPTY_BUCKET_IDENTIFIER: &str = "minecraft:bucket";
+/// Canonical block-item identity whose placement targets water sources.
+pub const FROG_SPAWN_IDENTIFIER: &str = "minecraft:frog_spawn";
 /// Canonical empty glass bottle identity, which fills from a targeted water source.
 pub const GLASS_BOTTLE_IDENTIFIER: &str = "minecraft:glass_bottle";
 
@@ -225,7 +227,7 @@ impl PotionForm {
 }
 
 /// Native armour texture materials that are absent from tool-tier tags.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ArmourMaterial {
     Leather,

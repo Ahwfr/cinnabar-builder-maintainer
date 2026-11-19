@@ -28,6 +28,10 @@ pub(super) enum FirstPersonShape {
     Sprite { mirrored_art: bool },
     /// A block's centred unit cube, with its optional default quarter turn.
     Block { quarter_turn: bool },
+    /// A button panel with its item-space placement below the first-person hand.
+    Button,
+    /// A wall's centered mesh translated to its carried model origin.
+    Wall,
 }
 
 /// The arm's state the first-person item follows, interpolated to the frame.
@@ -115,6 +119,8 @@ pub(super) fn first_person_display_for_profile(
         FirstPersonShape::Block {
             quarter_turn: false,
         } => held,
+        FirstPersonShape::Button => held * Mat4::from_translation(Vec3::new(0.5, -0.5, 0.5 - 0.45)),
+        FirstPersonShape::Wall => held * Mat4::from_translation(Vec3::splat(0.5)),
     })
 }
 

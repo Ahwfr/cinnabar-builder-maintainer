@@ -595,16 +595,10 @@ impl EquipmentRuntime {
             && binding.color_mask == assets::EquipmentColorMask::Dye;
         presentation.submission.material.color_mask = color_mask;
         if profile == render_api::CombatVisuals::Legacy112 {
-            presentation.submission.material.kind = if item.has_glint() {
-                assets::EntityRenderMaterial::Glint
-            } else {
-                assets::EntityRenderMaterial::Default
-            };
-            presentation.submission.material.state = Some(assets::EntityRenderMaterialState {
-                alpha_test: true,
-                cull: false,
-                ..Default::default()
-            });
+            presentation.submission.material = presentation
+                .submission
+                .material
+                .legacy_worn(item.has_glint());
         }
         if profile == render_api::CombatVisuals::Legacy112
             && from_pack
@@ -687,6 +681,7 @@ impl EquipmentRuntime {
                     assets: &assets,
                     bones,
                     owner_names: animation.rig.bone_names,
+                    owner_layers: animation.rig.render,
                     geometry: (geometry_index, evaluated.geometry),
                     local,
                     paired: false,
@@ -694,6 +689,7 @@ impl EquipmentRuntime {
                     scale: evaluated.axis_scale.map(|axis| axis * evaluated.scale),
                     alpha: placement_cache::alpha(
                         body,
+                        animation.rig.render,
                         &evaluated,
                         geometry_index,
                         local.len(),
@@ -720,9 +716,12 @@ impl EquipmentRuntime {
                         return Some(hidden_bone());
                     }
                     let Some(parent) = actor_animation::attachment::parent_for_root(
-                        &body.input.previous_bones,
-                        &body.input.current_bones,
-                        &bones.names,
+                        actor_animation::attachment::OwnerSkeleton::body(
+                            &body.input.previous_bones,
+                            &body.input.current_bones,
+                            &bones.names,
+                        )
+                        .with_layers(animation.rig),
                         input,
                         root,
                         evaluated.axis_scale.map(|axis| axis * evaluated.scale),

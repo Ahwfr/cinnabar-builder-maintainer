@@ -262,6 +262,8 @@ pub(crate) struct ToolState {
     pub(crate) held: bool,
     /// The keys currently withheld from the game.
     reserved: Vec<String>,
+    /// The held keys under which the wheel is claimed from the hotbar; empty for none.
+    scroll_claim: Vec<String>,
     poll: u8,
     /// The selected slot and equipment token last read, so unchanged equipment is not copied.
     seen: Option<(u64, i32, u8, u64)>,
@@ -468,21 +470,43 @@ impl Viewer {
     }
 
     /// The keys the game must not see this frame.
-    fn tool_wanted_keys(&self, keys: &input::Controls, rebuild_target: bool) -> Vec<String> {
+    fn tool_wanted_keys(&self, rebuild_target: bool) -> Vec<String> {
         let mut wanted: Vec<String> = Vec::new();
         if self.menu_armed {
             wanted.extend(MENU_CHORD_KEYS.iter().map(|key| (*key).to_owned()));
         }
-        let held = |name: &str| keys.keys_held.iter().any(|key| key.starts_with(name));
         if self.tool_active() {
             wanted.extend(["MouseLeft", "MouseRight", "MouseMiddle"].map(str::to_owned));
-            if held("Control") || held("Alt") {
-                wanted.push("MouseWheel".into());
-            }
         } else if rebuild_target {
             wanted.extend(["MouseLeft", "MouseRight"].map(str::to_owned));
         }
         wanted
+    }
+
+    /// Claims the wheel from the hotbar while Ctrl or Alt is held with the tool. A claim names
+    /// one set of keys that must all be held, so it follows whichever modifier is down.
+    fn tool_claim_scroll(&mut self, keys: &input::Controls) {
+        let held = |name: &str| keys.keys_held.iter().any(|key| key == name);
+        let wanted: Vec<String> = if self.tool_active() {
+            ["ControlLeft", "ControlRight", "AltLeft", "AltRight"]
+                .into_iter()
+                .find(|key| held(key))
+                .map(|key| vec![key.to_owned()])
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        if wanted != self.tool.scroll_claim && input::reserve_scroll(&wanted).is_ok() {
+            self.tool.scroll_claim = wanted;
+        }
+    }
+
+    /// Wheel notches this frame, positive away from the player; zero unless the wheel is claimed.
+    fn tool_scroll(&self) -> f32 {
+        if self.tool.scroll_claim.is_empty() {
+            return 0.;
+        }
+        input::read_scroll().map_or(0., |scroll| scroll.line_y + scroll.pixel_y / 16.)
     }
 
     /// Keeps the menu-chord reservation while the gameplay frame is not reached.
@@ -510,8 +534,9 @@ impl Viewer {
             && self.tool.mode == Mode::Rebuild
             && self.loaded
             && self.aimed_block().is_some();
-        let wanted = self.tool_wanted_keys(keys, rebuild_target);
+        let wanted = self.tool_wanted_keys(rebuild_target);
         self.tool_reserve(wanted);
+        self.tool_claim_scroll(keys);
         if self.tool.capture.is_some() {
             return self.tool_capture_step();
         }
@@ -529,8 +554,9 @@ impl Viewer {
             return false;
         }
         let (control, alt, shift) = (held("Control"), held("Alt"), held("Shift"));
-        if keys.wheel != 0. && (control || alt) {
-            let amount = if keys.wheel > 0. { 1 } else { -1 };
+        let wheel = self.tool_scroll();
+        if wheel != 0. && (control || alt) {
+            let amount = if wheel > 0. { 1 } else { -1 };
             if control {
                 // Litematica: scrolling down goes forward.
                 self.tool.cycle_mode(amount < 0);

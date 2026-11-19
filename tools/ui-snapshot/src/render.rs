@@ -194,8 +194,8 @@ fn png_fixture(
         return touch_utilities::png(state, dir, *view);
     }
     #[cfg(feature = "test-support")]
-    if let Fixture::BedrockHotbar { raised } = &fixture {
-        return bedrock_hotbar::png(state, dir, *raised);
+    if let Fixture::BedrockHotbar { raised, touch } = &fixture {
+        return bedrock_hotbar::png(state, dir, *raised, *touch);
     }
     let menu = matches!(
         &fixture,
@@ -420,8 +420,15 @@ fn png_fixture(
         }
         Fixture::Menu(view) => {
             carriers::validate_oreui(dir)?;
-            let images = oreui::images::load_optional_oreui_images(dir)
+            let mut images = oreui::images::load_optional_oreui_images(dir)
                 .ok_or_else(|| Error::Invalid("OreUI artwork is unusable; make assets".into()))?;
+            oreui::images::panorama::install(
+                &mut images,
+                Some(&carriers.ui),
+                render_model::MAX_UI_FIXED_TEXTURE_BYTES.saturating_sub(
+                    carriers::fixed_texture_bytes(&carriers.font, &carriers.pages),
+                ),
+            );
             let first = carriers.pages.len() as u16;
             let mut artwork: HashMap<_, _> = images
                 .sprites

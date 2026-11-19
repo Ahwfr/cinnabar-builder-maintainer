@@ -33,6 +33,7 @@ fn material(flags: u32) -> Material {
         variation_start: 0,
         variation_count: 0,
         variation_weight: 0,
+        ..Material::unvaried()
     }
 }
 
@@ -129,6 +130,32 @@ fn copper_grate_models_keep_fractional_texels_for_shader_sampling() {
                 .as_chunks::<4>()
                 .0
                 .contains(&[200, 100, 80, 64])
+        );
+    }
+}
+
+#[test]
+fn fence_geometry_satisfies_the_installed_paint_order_contract() {
+    let quads = stair_quads(1);
+    let materials = [material(0), material(0)];
+    let pages = [page()];
+    for flags in [
+        assets::MODEL_TEMPLATE_FLAG_FENCE_WOOD,
+        assets::MODEL_TEMPLATE_FLAG_FENCE_NETHER,
+    ] {
+        let templates = [ModelTemplate {
+            quad_start: 0,
+            quad_count: quads.len() as u32,
+            flags,
+        }];
+        let mut shape = stair(&quads, &templates, &materials, &pages);
+        // Fences draw their face material; material 0 is the diagnostic material.
+        shape.faces = [1; 6];
+        let mesh = shaped(&shape, &mut Atlas::new(7, 1))
+            .expect("a fence item becomes paint-ordered GUI geometry");
+        super::super::test_support::assert_block_model_order(
+            &mesh,
+            assets::gui_item::BlockModelOrder::Paint,
         );
     }
 }

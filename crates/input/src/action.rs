@@ -131,6 +131,13 @@ impl Action {
         }
     }
 
+    /// Parses a stable action name from [`Self::binding_name`], as mods name actions.
+    pub fn from_binding_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|action| action.binding_name() == name)
+    }
+
     pub const COUNT: usize = 58;
 
     pub(crate) const ALL: [Self; Self::COUNT] = [
@@ -348,5 +355,23 @@ impl MovementButtons {
             Action::MoveRight => self.right = true,
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Action;
+
+    /// Every stable action name parses back to its action, and unknown names are refused.
+    #[test]
+    fn binding_names_round_trip() {
+        for action in Action::ALL {
+            assert_eq!(
+                Action::from_binding_name(action.binding_name()),
+                Some(action)
+            );
+        }
+        assert_eq!(Action::from_binding_name("key.freelook"), None);
+        assert_eq!(Action::from_binding_name(""), None);
     }
 }

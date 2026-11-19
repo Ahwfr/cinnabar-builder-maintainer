@@ -1,8 +1,8 @@
 # Packaging
 
-Release installers ship the client, the Go core, the dragonfly local-world server and its
-`cinnabar-cxb` verifier beside it, the shader-pack compiler, the Cinnangles Sans font and a prep
-kit, never Mojang-derived carriers. A packaged launch whose carriers are missing or stale runs
+Release installers ship the client, the Go core, the `cinnabar-cxb` verifier, the shader-pack
+compiler, the Cinnangles Sans font and a prep kit, never Mojang-derived carriers. A packaged
+launch whose carriers are missing or stale runs
 `crates/first-run`: a setup window (a `--first-run-setup` child process, or native dialogs if no
 window opens or its process crashes) asks consent, downloads the pinned `bedrock-samples` pack
 (`assets/vanilla-source.json`, resumable, hash-verified), runs the bundled `assetc`, and publishes
@@ -25,6 +25,7 @@ in a fresh file, and the newest 10 archives up to 64 MiB are kept.
 | macOS `.app` + DMG | `make package-macos` | `CODESIGN_IDENTITY`, `NOTARY_PROFILE` or `APPLE_ID`/`APPLE_TEAM_ID`/`APPLE_APP_PASSWORD` |
 | Windows setup EXE + MSI (WiX v5) | `make package-windows` | `WINDOWS_CERT_PFX_BASE64`, `WINDOWS_CERT_PASSWORD` |
 | Linux AppImage | `make package-linux` | none |
+| Linux Flatpak (x86-64) | See [Flatpak](flatpak/README.md) | none |
 
 All native builds include the local mod host and Settings › Mods. Release targets use
 `--no-default-features` to exclude the acceptance harness. Developer defaults stay enabled for `make play`, live
@@ -83,10 +84,19 @@ macOS runners; other errors remain fatal.
 
 Windows publishes `Cinnabar-x64-setup.exe` and `Cinnabar-x64.msi`. Setup is a self-contained
 WiX Burn wizard embedding the same MSI; CI checks its embedded MSI hash against the separately
-verified package. Both install to Program Files and retain the existing machine-wide MSI upgrade
-identity, so Windows may request administrator approval. Setup, the installed executable, uninstall
-entry, Start menu and desktop shortcuts use the original `packaging/icons/cinnabar.svg` logo.
-The update manifest points to the MSI. No Mojang artwork is embedded. Local packaging requires
+verified package. Both install per user under `%LOCALAPPDATA%\Programs` (`windows_install` in
+`release-assets.json`), so installing and updating never need administrator approval. Setup, the
+installed executable, uninstall entry, Start menu and desktop shortcuts use the original
+`packaging/icons/cinnabar.svg` logo. No Mojang artwork is embedded.
+
+The update manifest lists the per-user MSI under the `update_platforms` key (`windows-user-x86_64`).
+Clients installed before per-user packages read `windows-x86_64`, which keeps serving
+`Cinnabar-x64-machine.msi`: the same payload as a per-machine package with the original upgrade code,
+so those installs still update in place. The next update after that moves them to the per-user folder
+without elevation, starts the client there, then asks once for administrator approval to remove the
+per-machine setup and MSI. Declining keeps the old copy installed. Packaging a source branch whose
+`release-assets.json` has no `update_platforms` entry keeps both packages per-machine, because that
+branch's updater still reads the per-machine key. Local packaging requires
 ImageMagick and `dotnet tool install --global wix --version 5.0.2`, followed by
 `wix extension add -g WixToolset.BootstrapperApplications.wixext/5.0.2`.
 
@@ -100,8 +110,8 @@ DXC's output, and `WGPU_DX12_COMPILER=fxc` also select FXC.
 
 The game, core, crash monitor and update helper do not request administrator rights or reject
 an elevated launch. All packaged executables embed an `asInvoker` manifest before signing,
-so they inherit the launching process's permissions. Installation may still require administrator
-approval. Setup never launches the game, and Windows Installer's Restart Manager relaunch is
+so they inherit the launching process's permissions. Only removing a per-machine install from before
+per-user packages asks for administrator approval. Setup never launches the game, and Windows Installer's Restart Manager relaunch is
 disabled; the update helper owns the client relaunch. Windows SDK `mt.exe` is required to embed
 and verify these manifests during packaging.
 
@@ -117,6 +127,7 @@ Android must recognize the same signing key to install later APKs over an existi
 | `CINNABAR_ANDROID_KEYSTORE_BASE64` (`release` environment secret) | Base64-encoded persistent Android release keystore; required for APK publication |
 | `CINNABAR_ANDROID_KEY_ALIAS`, `CINNABAR_ANDROID_STORE_PASSWORD`, `CINNABAR_ANDROID_KEY_PASSWORD` (`release` environment secrets) | Alias and passwords for the Android release keystore; all required |
 | `UPDATE_TRUSTED_KEYS` (variable) | Keys the client trusts for update manifests |
+| `CINNABAR_MSA_CLIENT_ID` (variable) | Cinnabar's Microsoft app (client) ID, compiled in for the account ownership check; unset leaves that source out |
 | `DISCORD_CHANGELOG_WEBHOOK` | Posts each new `v*` release's changelog to Discord, grouped by PR label (`packaging/changelog.py`) |
 
 Without `CODESIGN_IDENTITY` the macOS app is ad-hoc signed and not notarized. Gatekeeper then blocks
@@ -133,7 +144,7 @@ device requirements and installation.
 
 `packaging/release-assets.json` is the canonical list of downloadable release artifacts and
 their repository. `assets` lists desktop updater platforms; `manual_assets` lists downloads such
-as Android APKs that are installed separately and have no desktop update payload or symbol archive.
+as Android APKs and iOS IPAs that are installed separately and have no desktop update payload or symbol archive.
 Publication requires every platform installer, every desktop platform's symbol archive
 and the generated Linux install script before writing checksums for the native downloads. A new tagged Beta release
 stays draft until its downloads, update payloads and signed manifest are uploaded. Reruns keep
@@ -172,8 +183,8 @@ Installers ship only the stripped binaries: packagers stage binaries by name and
 rejects any other file. Each package job zips its Rust binaries with their debug files and a
 `manifest.json` (version, commit, platform, and each binary's PE GUID+age, Mach-O UUID or ELF build
 id) into `cinnabar-symbols-<version>-<platform>-<arch>.zip`, named by `release-assets.json`, and
-the release carries it beside the installers. Go binaries (`bedrock-core`, `bedrock-local-server`)
-print symbolized tracebacks themselves and have no symbol files. Android release APKs use the
+the release carries it beside the installers. The Go core (`bedrock-core`)
+prints symbolized tracebacks itself and have no symbol files. Android release APKs use the
 `release` profile with split debug info disabled and have no symbol archive; the separate Android
 CI workflow uses `play`. Releasing an older source branch without debug info publishes no archives
 when run without those overrides, with a workflow warning; `release-symbols.py has-symbols` checks
