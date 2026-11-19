@@ -1,4 +1,15 @@
-# Cinnamatica 0.3.33
+# Cinnamatica 0.3.34 (test build)
+
+- Catch up with Cinnabar: merge the 143 upstream commits from November 10 to 19 (upstream `dev` at d2195d658). They include Creative block breaking at vanilla speed, faster chunk decoding and terrain drawing, NPC dialogue, armor trims and server cosmetics, NetherNet fixes, per-user Windows installs, and local worlds that always run on the Bedrock Dedicated Server.
+- Upstream now requires proof that your Microsoft account owns Minecraft before a packaged launch. Cinnamatica keeps that check.
+- The tool's Ctrl+scroll and Alt+scroll use Cinnabar's new mouse-wheel API (`read-scroll` / `reserve-scroll`) in place of the 0.3.33 wheel reservation.
+- The tool reads the held item through `read-revisions` and `read-equipment`, because upstream removed `read-equipment-matches`. It copies the inventory only when the selected slot or the equipment changes, and reads nothing while the use control is held without the stick, so Hold to Place keeps its full frame budget. This should remove the Hold to Place stutter 0.3.33 added, most visible with logs, slabs and stairs; it is not yet confirmed in game.
+- The schematic outline in the model shader moves to the varying location that upstream's packed texture slot frees.
+- Everything else in Cinnamatica is unchanged from 0.3.33.
+
+Verified here: mod, core and importer tests; gameplay, inventory, input, keyboard settings, UI, protocol and mod API tests; the merged client type-checks. Not verified: the Windows build, first launch with the ownership check, and every in-game behaviour. Your 0.3.33 Play folder stays installed until this build passes TEST-CHECKLIST.md.
+
+## 0.3.33
 
 - Add Litematica's **tool item** (a stick), with its nine modes, controls and default keys taken from Litematica's source (26.2 branch). The tool is **on by default**, as in Litematica. **M+T** turns it off and on.
 - Modes, in Litematica's order: Area Selection, Schematic Placement, Fill, Replace Block, Paste Schematic, Grid Paste, Move, Delete and Rebuild. **Ctrl+scroll** cycles them, and the HUD shows the mode, the selection and what each control does.

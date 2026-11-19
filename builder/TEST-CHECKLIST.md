@@ -1,3 +1,17 @@
+# Cinnamatica 0.3.34 merge checks
+
+Run these in the test copy (outputs\Test\Cinnamatica-0.3.34). Compare with your 0.3.33 Play folder when unsure.
+
+M1. **First launch:** the ownership check accepts your account; the menu, skins and worlds load.
+M2. **Local world:** create and open a local world; it starts and saves.
+M3. **Hold to Place:** with logs, stripped logs, slabs and stairs, hold right-click along a guide. It should be as smooth as before 0.3.33, with correct orientation.
+M4. **Fast Place V1/V2, Placement Lock, Auto Orientation, plants, doors, trapdoors:** as in 0.3.32.
+M5. **Paste:** setblock/fill and structure paste in a local world, including cancel.
+M6. **Ghosts:** textured ghosts, outlines on partial blocks (stairs, slabs, glass, water), lightness, layers, verification colours.
+M7. **Window:** M opens it on release; Materials, Import, Settings, Controls tabs; per-world placement memory.
+M8. **Stick tool:** T1 to T12 below, especially Ctrl+scroll and Alt+scroll.
+M9. **General:** Creative block breaking speed, chat, inventory, servers you play on.
+
 # Cinnamatica 0.3.33 tool item checks
 
 Reply with each number and **works / still broken**. None of these has been run in game yet.

@@ -1,5 +1,9 @@
 # Installing and updating Builder
 
+0.3.34 merges Cinnabar up to November 19 and should fix the Hold to Place stutter from 0.3.33. It changes
+the game client, the Go core and the mod, so it needs a full build. It installs as a separate test copy
+until the checks pass. First launch asks you to confirm you own Minecraft.
+
 0.3.33 adds Litematica's tool item with its default keys and nine modes. The tool is on by default
 (M+T toggles it), and the M menu now opens when M is released. Execute Operation is unbound, as in
 Litematica: bind it in Keyboard settings. It changes the guest, the launcher's mod registration (one
