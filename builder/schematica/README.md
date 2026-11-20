@@ -19,7 +19,7 @@ Use Minecraft’s **Settings → Keyboard & Mouse** to edit Cinnamatica keybindi
 
 ## Create a library with your own files
 
-Extract **schematica-import-v4.2-windows-x64.zip**. Keep the files together and open **Import-Schematics.cmd**. Use Ctrl-click to choose up to eight **.schematic**, **.schem**, **.litematic**, or **.mcstructure** files in one folder. It writes a single **schematica-library.cinnabar.wasm** beside a multi-file selection. A single-file selection produces **your-build.cinnabar.wasm**. Move an existing output file before converting again.
+Extract **schematica-import-v4.2-windows-x64.zip**. Keep the files together and open **Import-Schematics.cmd**. Use Ctrl-click to choose up to eight files in one folder: **.schematic**, **.schem**, **.litematic**, **.mcstructure**, Java **.nbt** structures, or gzipped versions of these. A file with any other name is also tried against every format, so a renamed file still imports. It writes a single **schematica-library.cinnabar.wasm** beside a multi-file selection. A single-file selection produces **your-build.cinnabar.wasm**. Move an existing output file before converting again.
 
 For files in different folders, use PowerShell.
 

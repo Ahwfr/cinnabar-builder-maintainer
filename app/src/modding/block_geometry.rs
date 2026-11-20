@@ -105,11 +105,16 @@ pub(crate) fn prepare(
                         mode,
                         |name, states| {
                             let states = serde_json::from_str(states).ok()?;
-                            registries.block_state_runtime_id(
-                                mode,
-                                assets::facts::BlockStateIdentity::Named(name),
-                                &states,
-                            )
+                            // A state the registry does not know (for example a redstone
+                            // wire's connection states) draws the block's default state
+                            // instead of failing the whole ghost grid into blue boxes.
+                            registries
+                                .block_state_runtime_id(
+                                    mode,
+                                    assets::facts::BlockStateIdentity::Named(name),
+                                    &states,
+                                )
+                                .or_else(|| registries.block_default_runtime_id(mode, name))
                         },
                         settings,
                     )

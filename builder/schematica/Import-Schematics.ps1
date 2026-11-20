@@ -11,7 +11,7 @@ if ($interactive) {
     Add-Type -AssemblyName System.Windows.Forms
     $picker = New-Object System.Windows.Forms.OpenFileDialog
     $picker.Title = 'Select up to 8 schematics for one library'
-    $picker.Filter = 'Minecraft schematics|*.schematic;*.schem;*.litematic;*.mcstructure'
+    $picker.Filter = 'Minecraft structures and schematics|*.schematic;*.schem;*.litematic;*.mcstructure;*.nbt;*.gz|All files|*.*'
     $picker.Multiselect = $true
     try {
         if ($picker.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return }

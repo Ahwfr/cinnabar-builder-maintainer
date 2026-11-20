@@ -34,7 +34,7 @@ pub fn show_error(error: &str) {
 /// Returns selected existing source paths without converting or changing them.
 pub fn choose() -> anyhow::Result<Option<Vec<PathBuf>>> {
     let filter = wide(
-        "Minecraft schematics and Bedrock structures\0*.schematic;*.schem;*.litematic;*.mcstructure\0",
+        "Minecraft structures and schematics\0*.schematic;*.schem;*.litematic;*.mcstructure;*.nbt;*.gz\0All files\0*.*\0",
     );
     let title = wide("Select up to 8 schematics for one library");
     let mut path = vec![0u16; 32768];

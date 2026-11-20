@@ -769,7 +769,7 @@ impl Viewer {
             {
                 let native = native_cell
                     .filter(|pos| self.planned_block(*pos).is_some() && self.may_need_block(*pos));
-                if toggle_cell.is_some() && self.options.correct_aim {
+                if toggle_cell.is_some() && (self.options.correct_aim || self.options.strict_place) {
                     toggle_cell
                 } else if replacement_cell.is_some() {
                     replacement_cell

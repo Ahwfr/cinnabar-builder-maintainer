@@ -1,6 +1,6 @@
 # Installing and updating Builder
 
-0.3.34 merges Cinnabar up to November 19 and fixes the Hold to Place stutter from 0.3.33. It changes
+0.3.34 merges Cinnabar up to November 19 and works on the Hold to Place stutter from 0.3.33. It changes
 the game client, the Go core and the mod, so it needs a full build. First launch asks you to confirm
 you own Minecraft.
 

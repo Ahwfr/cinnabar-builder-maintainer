@@ -937,6 +937,7 @@ name = "schematica-builder"
 version = "0.3.34"
 dependencies = [
  "anyhow",
+ "flate2",
  "nucleation",
  "schematica-core",
  "serde_json",

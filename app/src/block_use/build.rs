@@ -220,7 +220,7 @@ fn prepare(
                 local_use = LocalUse::Place;
             } else {
             let Some(placement) = placement.as_ref() else {
-                bevy::log::info!(block = %expected.name, states = %expected.states,
+                bevy::log::debug!(block = %expected.name, states = %expected.states,
                     ghost = ?expected.position, support = ?observed.target.position,
                     face = observed.target.face, click = ?observed.target.relative_hit,
                     "Fast Place could not predict this placement");
@@ -242,7 +242,7 @@ fn prepare(
                     }))
             {
                 let (yaw, pitch, _) = attempt.view.rotation().to_euler(bevy::math::EulerRot::YXZ);
-                bevy::log::info!(block = %expected.name, states = %expected.states, ghost = ?expected.position,
+                bevy::log::debug!(block = %expected.name, states = %expected.states, ghost = ?expected.position,
                     actual_name, actual_states, destination = ?placement.position,
                     additional_cells = placement.additional.len(), face = observed.target.face,
                     click = ?observed.target.relative_hit,

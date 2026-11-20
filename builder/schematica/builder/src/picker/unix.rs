@@ -10,7 +10,7 @@ use std::{
 };
 
 const TITLE: &str = "Select up to 8 schematics for one library";
-const PATTERNS: &str = "*.schematic *.schem *.litematic *.mcstructure";
+const PATTERNS: &str = "*";
 
 pub fn run() {
     match choose().and_then(|inputs| {
@@ -41,7 +41,7 @@ pub fn choose() -> Result<Option<Vec<PathBuf>>> {
     let zenity = Command::new("zenity")
         .args(["--file-selection", "--multiple", "--separator=\n"])
         .arg(format!("--title={TITLE}"))
-        .arg(format!("--file-filter=Minecraft schematics | {PATTERNS}"))
+        .arg("--file-filter=Minecraft structures and schematics | *")
         .output();
     let output = match helper(zenity)? {
         Some(output) => output,

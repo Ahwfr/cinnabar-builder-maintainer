@@ -545,6 +545,14 @@ impl BlockUseRuntime {
     /// Records an attempt. As in vanilla, a failed repeat keeps its schedule, so it
     /// remains eligible for the next buffered pick. `takes_press` is whether the target's
     /// own use owns a press, whether or not that use succeeds.
+    /// Counts an assisted placement's repeat interval from when its attempt started, so the
+    /// tick it spent writing a corrected facing overlaps the interval instead of adding to it.
+    pub fn credit_assisted_start(&mut self, started: Duration) {
+        if let Some(last) = self.last_use.as_mut() {
+            *last = (*last).min(started);
+        }
+    }
+
     pub fn record(
         &mut self,
         trigger: ItemUseTrigger,

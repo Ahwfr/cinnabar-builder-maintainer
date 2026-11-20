@@ -17,6 +17,9 @@ pub(crate) struct CreativePlacement {
     pub offer: Option<CreativePlacementOffer>,
     pub locked: bool,
     pub hold_active: bool,
+    /// Block names of recent offers, newest last. Swapping a block into the hotbar replaces a
+    /// slot holding none of them, so alternating materials stay in the hotbar.
+    recent: Vec<String>,
     pending: Option<Pending>,
 }
 
@@ -41,6 +44,8 @@ struct Pending {
     aim: Option<TemporaryAim>,
     bridge: bool,
     trigger: ItemUseTrigger,
+    /// When the attempt started; its repeat interval counts from here.
+    started: Duration,
 }
 
 #[derive(Clone, Copy)]
@@ -262,6 +267,13 @@ pub(super) fn try_start(
     };
     let selected = observed.selection.slot;
     policy.hold_active |= offer.repeat_while_held;
+    if policy.recent.last() != Some(&offer.name) {
+        policy.recent.retain(|name| *name != offer.name);
+        policy.recent.push(offer.name.clone());
+        if policy.recent.len() > protocol::HOTBAR_SLOT_COUNT as usize {
+            policy.recent.remove(0);
+        }
+    }
     if interacting {
         policy.pending = Some(Pending {
             interacting: true,
@@ -285,6 +297,7 @@ pub(super) fn try_start(
             aim: None,
             bridge,
             trigger,
+            started: context.time.elapsed(),
         });
         return true;
     }
@@ -325,6 +338,27 @@ pub(super) fn try_start(
         .max_by_key(|(exact, slot, _)| (*exact, *slot == selected));
     let empty = (0..protocol::HOTBAR_SLOT_COUNT)
         .find(|slot| matches!(ledger.slot_state(*slot), Some(PlayerInventorySlot::Empty)));
+    // Without an empty slot, replace the hotbar slot whose block was offered least recently
+    // (or never), keeping the selected slot on a tie. Replacing the selected slot each time
+    // made two alternating materials swap through the inventory on every placement.
+    let victim = (0..protocol::HOTBAR_SLOT_COUNT)
+        .filter_map(|slot| {
+            let stack = ledger.backing_stack(slot)?;
+            let name = super::build::held_placement_block(
+                &context.collisions,
+                stream,
+                stack.block_runtime_id,
+                || stream.authority().item_identifier(stack.network_id),
+            )
+            .and_then(|block| context.collisions.block_identifier(mode, block));
+            let rank = name
+                .and_then(|name| policy.recent.iter().position(|recent| recent == name))
+                .map_or(-1, |index| index as i32);
+            Some((rank, slot != selected, slot))
+        })
+        .min()
+        .map(|(_, _, slot)| slot);
+    let empty = empty.or(victim);
     let carried = (protocol::HOTBAR_SLOT_COUNT..PLAYER_INVENTORY_SLOT_COUNT as u8)
         .filter_map(|slot| {
             let stack = ledger.backing_stack(slot)?;
@@ -372,7 +406,7 @@ pub(super) fn try_start(
             return false;
         };
         let slot = empty.unwrap_or(selected);
-        if empty.is_none() {
+        if !matches!(ledger.slot_state(slot), Some(PlayerInventorySlot::Empty)) {
             let Some(previous) = ledger.backing_stack(slot) else {
                 return false;
             };
@@ -387,7 +421,7 @@ pub(super) fn try_start(
         }
         (slot, item, None, Some(Catalog::Opening(id)))
     };
-    bevy::log::info!(block = %offer.name, slot, ?request, ?catalog, ?game_mode, item_network_id = key.0,
+    bevy::log::debug!(block = %offer.name, slot, ?request, ?catalog, ?game_mode, item_network_id = key.0,
         metadata = key.1, item_block_runtime_id = key.2, "Fast Place waiting for inventory and selection");
     policy.pending = Some(Pending {
         interacting: false,
@@ -411,6 +445,7 @@ pub(super) fn try_start(
         aim: None,
         bridge,
         trigger,
+        started: context.time.elapsed(),
     });
     true
 }
@@ -655,6 +690,7 @@ pub(super) fn resume(
     } else {
         observed
     };
+    let started = pending.started;
     let use_air = observed.target.position == pending.offer.position
         && observed.target.runtime_id == stream.air_block_id();
     runtime.forget_press_resolution();
@@ -675,6 +711,9 @@ pub(super) fn resume(
     build::advance(
         player, context, runtime, item_use, swings, movement, &mut build,
     );
+    // The facing tick and any inventory wait overlap the repeat interval, so oriented blocks
+    // (logs, slabs, stairs) repeat as fast as plain ones.
+    runtime.credit_assisted_start(started);
     movement.end_placement_facing();
     runtime.clear_press();
     true
