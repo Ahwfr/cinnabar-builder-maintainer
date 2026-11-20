@@ -342,7 +342,9 @@ fn import_bedrock(mut bytes: &[u8], name: String) -> Result<Schematic> {
     };
     let [sx, sy, sz] = [*sx, *sy, *sz];
     let volume = blueprint::validate_size([sx, sy, sz]).map_err(anyhow::Error::msg)?;
-    let structure = compound(root.get("structure").context("missing structure")?)?;
+    // Newer tools store the structure section as a compressed byte array instead of a compound.
+    let inflated = bedrock_structure_section(root.get("structure").context("missing structure")?)?;
+    let structure = compound(&inflated)?;
     let palette = compound(structure.get("palette").context("missing palette")?)?;
     let palette = compound(palette.get("default").context("missing default palette")?)?;
     let palette = list(
@@ -356,18 +358,18 @@ fn import_bedrock(mut bytes: &[u8], name: String) -> Result<Schematic> {
             .get("block_indices")
             .context("missing block indices")?,
     )?;
-    let primary = list(layers.first().context("missing primary block layer")?)?;
+    let primary = block_layer(layers.first().context("missing primary block layer")?)?;
     ensure!(
         primary.len() == volume,
         "primary block layer length differs from size"
     );
     if let Some(layer) = layers.get(1) {
-        let layer = list(layer)?;
+        let layer = block_layer(layer)?;
         ensure!(
             layer.len() == volume,
             "secondary block layer length differs from size"
         );
-        if layer.iter().any(|tag| !matches!(tag, NbtValue::Int(-1))) {
+        if layer.iter().any(|index| *index != -1) {
             eprintln!("Warning: the secondary block layer (such as waterlogging) is omitted.");
         }
     }
@@ -377,23 +379,89 @@ fn import_bedrock(mut bytes: &[u8], name: String) -> Result<Schematic> {
             for z in 0..sz {
                 let index = ((x * sy + y) * sz + z) as usize;
                 match primary[index] {
-                    NbtValue::Int(-1) => {
+                    -1 => {
                         out.set([x, y, z], BlockState::new("minecraft:structure_void"));
                     }
-                    NbtValue::Int(i) => {
-                        let state = palette
-                            .get(i as usize)
+                    i => {
+                        let state = usize::try_from(i)
+                            .ok()
+                            .and_then(|i| palette.get(i))
                             .with_context(|| format!("invalid palette index {i}"))?;
                         if state.name != "minecraft:air" {
                             out.set([x, y, z], state.clone());
                         }
                     }
-                    _ => bail!("expected integer block index at cell {index}"),
                 }
             }
         }
     }
     Ok(out)
+}
+
+/// The decoded size of a compressed structure section is bounded: the largest blueprint is
+/// 4 bytes a cell, with room for the palette and the second layer.
+const SECTION_LIMIT: u64 = 64 * 1024 * 1024;
+
+/// The `structure` section of a Bedrock structure: a compound, or the same compound as
+/// compressed little-endian NBT bytes (zlib, gzip or raw deflate) in a byte array.
+fn bedrock_structure_section(tag: &NbtValue) -> Result<NbtValue> {
+    let NbtValue::ByteArray(bytes) = tag else {
+        return Ok(tag.clone());
+    };
+    let bytes: Vec<u8> = bytes.iter().map(|byte| *byte as u8).collect();
+    let mut plain = Vec::new();
+    if bytes.starts_with(&[0x1f, 0x8b]) {
+        GzDecoder::new(&bytes[..])
+            .take(SECTION_LIMIT + 1)
+            .read_to_end(&mut plain)
+            .context("decompress gzip structure section")?;
+    } else if bytes.first() == Some(&0x0a) {
+        // Not compressed: it already starts with a compound tag.
+        plain = bytes;
+    } else {
+        let zlib = flate2::read::ZlibDecoder::new(&bytes[..])
+            .take(SECTION_LIMIT + 1)
+            .read_to_end(&mut plain);
+        if zlib.is_err() {
+            plain.clear();
+            flate2::read::DeflateDecoder::new(&bytes[..])
+                .take(SECTION_LIMIT + 1)
+                .read_to_end(&mut plain)
+                .context("decompress the structure section")?;
+        }
+    }
+    ensure!(
+        plain.len() as u64 <= SECTION_LIMIT,
+        "decompressed structure section exceeds 64 MiB"
+    );
+    let mut cursor = &plain[..];
+    read_nbt_with_limits(
+        &mut cursor,
+        Endian::Little,
+        NbtReadLimits {
+            max_depth: 32,
+            max_string_bytes: 32 * 1024,
+            max_collection_items: blueprint::MAX_CELLS,
+            max_nodes: 262_144,
+        },
+    )
+    .context("read the compressed Bedrock structure section")
+}
+
+/// One block layer: a list of ints, or an int array in newer files.
+fn block_layer(tag: &NbtValue) -> Result<Vec<i32>> {
+    match tag {
+        NbtValue::IntArray(values) => Ok(values.clone()),
+        NbtValue::List(values) => values
+            .iter()
+            .enumerate()
+            .map(|(cell, value)| match value {
+                NbtValue::Int(index) => Ok(*index),
+                _ => bail!("expected integer block index at cell {cell}"),
+            })
+            .collect(),
+        _ => bail!("expected a block layer list"),
+    }
 }
 
 fn bedrock_state(tag: &NbtValue) -> Result<BlockState> {
@@ -610,6 +678,79 @@ mod tests {
             assert_eq!(output.size(), [1, 2, 1], "{version:?}");
             assert_eq!(output.get([0, 0, 0]).unwrap().name, "minecraft:oak_planks");
             assert_eq!(output.get([0, 1, 0]).unwrap().name, "minecraft:dirt");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_compressed_version_2_structure_imports() -> Result<()> {
+        // A real file whose structure section is zlib-compressed and whose block layer is an
+        // int array: 10 x 6 x 11 cells, 519 of them air.
+        let data = include_bytes!("testdata/compressed-v2.mcstructure");
+        let output = import_bytes(data, "demo".into(), "mcstructure")?;
+        assert_eq!(output.size(), [10, 6, 11]);
+        assert_eq!(output.block_count(), 660 - 519);
+        let mut names = std::collections::BTreeSet::new();
+        for x in 0..10 {
+            for y in 0..6 {
+                for z in 0..11 {
+                    if let Some(block) = output.get([x, y, z]) {
+                        names.insert(block.name.clone());
+                    }
+                }
+            }
+        }
+        assert!(names.contains("minecraft:oak_log"));
+        assert!(names.contains("minecraft:oak_fence"));
+        assert!(names.contains("minecraft:dirt"));
+        Ok(())
+    }
+
+    #[test]
+    fn a_compressed_section_may_be_gzip_raw_deflate_or_plain() -> Result<()> {
+        use std::io::Write;
+        let data = include_bytes!("testdata/compressed-v2.mcstructure");
+        let mut bytes = &data[..];
+        let root = read_nbt_with_limits(
+            &mut bytes,
+            Endian::Little,
+            NbtReadLimits {
+                max_depth: 32,
+                max_string_bytes: 32 * 1024,
+                max_collection_items: blueprint::MAX_CELLS,
+                max_nodes: 262_144,
+            },
+        )?;
+        let NbtValue::Compound(mut root) = root else {
+            bail!("root is not a compound");
+        };
+        let Some(NbtValue::ByteArray(zlib)) = root.get("structure").cloned() else {
+            bail!("structure is not a byte array");
+        };
+        let zlib: Vec<u8> = zlib.iter().map(|byte| *byte as u8).collect();
+        let mut plain = Vec::new();
+        flate2::read::ZlibDecoder::new(&zlib[..]).read_to_end(&mut plain)?;
+        let mut encode = |payload: Vec<u8>| -> Result<Vec<u8>> {
+            root.insert(
+                "structure".into(),
+                NbtValue::ByteArray(payload.iter().map(|byte| *byte as i8).collect()),
+            );
+            let mut out = Vec::new();
+            nucleation::nbt::io::write_nbt(&mut out, &root, "", Endian::Little)?;
+            Ok(out)
+        };
+        let mut gzip = Vec::new();
+        let mut encoder = flate2::write::GzEncoder::new(&mut gzip, flate2::Compression::fast());
+        encoder.write_all(&plain)?;
+        encoder.finish()?;
+        let mut raw = Vec::new();
+        let mut encoder = flate2::write::DeflateEncoder::new(&mut raw, flate2::Compression::fast());
+        encoder.write_all(&plain)?;
+        encoder.finish()?;
+        for (label, payload) in [("gzip", gzip), ("raw deflate", raw), ("plain", plain.clone())] {
+            let output = import_bytes(&encode(payload)?, "demo".into(), "mcstructure")?;
+            assert_eq!(output.size(), [10, 6, 11], "{label}");
+            assert_eq!(output.block_count(), 141, "{label}");
         }
         Ok(())
     }
