@@ -242,7 +242,12 @@ fn prepare(
                 })
                 && world.is_air(expected.position).unwrap_or(false)
                 && surroundings.destination(observed.target.position, observed.target.face).0
-                    == expected.position;
+                    == expected.position
+                // A block with a planned horizontal facing waits for the view to give it.
+                && (!(expected.correct_aim || expected.strict_state)
+                    || super::orientation::wanted_quadrant(expected).is_none_or(|want| {
+                        super::orientation::look_quadrant(attempt.view.rotation()) == want
+                    }));
             let supported_door = placement.is_none()
                 && expected.name.ends_with("_door")
                 && (!expected.strict_state || super::orientation::door_matches_facing(expected, attempt.view.rotation()))

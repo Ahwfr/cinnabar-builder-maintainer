@@ -40,6 +40,43 @@ pub(super) fn wire_facing(rotation: Quat) -> [f32; 2] {
     ]
 }
 
+/// The horizontal look quadrant, numbered as placement numbers yaw quadrants.
+pub(super) fn look_quadrant(rotation: Quat) -> usize {
+    (wire_facing(rotation)[1] / 90.0 + 0.5).floor().rem_euclid(4.0) as usize
+}
+
+/// The look quadrant whose placement gives a block the client cannot predict (observers,
+/// droppers, furnaces and similar) the facing the guide plans. None when yaw cannot decide it,
+/// such as an upward or downward facing, or when the block's facing rule is not known.
+pub(super) fn wanted_quadrant(offer: &CreativePlacementOffer) -> Option<usize> {
+    let planned =
+        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&offer.states).ok()?;
+    if let Some(direction) = planned
+        .get("minecraft:cardinal_direction")
+        .and_then(|state| state["value"].as_str())
+    {
+        return ["north", "east", "south", "west"]
+            .iter()
+            .position(|name| *name == direction);
+    }
+    let value = planned
+        .get("minecraft:facing_direction")
+        .or_else(|| planned.get("facing_direction"))?;
+    let face = match value["value"].as_str() {
+        Some(name) => ["down", "up", "north", "south", "west", "east"]
+            .iter()
+            .position(|candidate| *candidate == name)?,
+        None => usize::try_from(value["value"].as_u64()?).ok()?,
+    };
+    // These face the player when placed; observers and pistons face away from the player.
+    let toward = match offer.name.as_str() {
+        "minecraft:dropper" | "minecraft:dispenser" => face,
+        "minecraft:observer" | "minecraft:piston" | "minecraft:sticky_piston" => face ^ 1,
+        _ => return None,
+    };
+    [2, 5, 3, 4].iter().position(|candidate| *candidate == toward)
+}
+
 /// Prefers a single look for picking and facing, then tries a separate reported yaw.
 pub(super) fn correction(
     player: &client_state::PlayerRuntime,
@@ -101,6 +138,25 @@ pub(super) fn correction(
         return None;
     }
     let planned = placement_properties(expected)?;
+    if context.collisions.block_facts(mode, held).placement
+        == assets::facts::PlacementRule::Unresolved
+    {
+        // Nothing predicts this block's state, but its facing follows the look direction.
+        // Turn to the planned facing and keep the support the player already aims at.
+        let want = wanted_quadrant(expected)?;
+        let forward = Vec3::from_array(observed.ray.direction).try_normalize()?;
+        let support = (
+            observed.target.position,
+            observed.target.face,
+            observed.target.runtime_id,
+        );
+        let view = *context.view;
+        if look_quadrant(view.rotation()) == want {
+            return bridge.then(|| PlacementAim::observed(view.rotation(), support, forward));
+        }
+        let rotation = separate_facing(view.rotation(), |rotation| look_quadrant(rotation) == want)?;
+        return Some(PlacementAim::observed(rotation, support, forward));
+    }
     let stair = planned.contains_key("weirdo_direction");
     let planned_upper = planned_upper(&planned);
     let door = expected.name.ends_with("_door");
@@ -483,6 +539,7 @@ fn placement_properties(
     let redstone = offer.name.as_str() == "minecraft:redstone_wire";
     let observer = offer.name.as_str() == "minecraft:observer";
     let hopper = offer.name == "minecraft:hopper";
+    let dispenser = matches!(offer.name.as_str(), "minecraft:dropper" | "minecraft:dispenser");
     let repeater = offer.name.ends_with("_repeater");
     let comparator = offer.name.ends_with("_comparator");
     let fence = offer.name.ends_with("_fence");
@@ -501,6 +558,7 @@ fn placement_properties(
             || (redstone && key.starts_with("redstone_"))
             || (observer && key == "powered_bit")
             || (hopper && key == "toggle_bit")
+            || (dispenser && key == "triggered_bit")
             || (repeater && key == "repeater_delay")
             || (comparator && matches!(key.as_str(), "output_lit_bit" | "output_subtract_bit"))
             || (wire

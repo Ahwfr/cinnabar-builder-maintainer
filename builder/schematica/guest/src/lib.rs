@@ -788,7 +788,7 @@ impl Viewer {
             && let Some((block, [x, y, z])) =
                 placement_cell.and_then(|pos| self.placement_block(pos))
         {
-            let block = placement.transform_state(block);
+            let block = unlit_variant(placement.transform_state(block));
             let states = overlay::canonical(&block);
             let offer = if self.options.strict_place {
                 item_use::offer_strict_placement((x, y, z), &block.name, &states)
@@ -1513,6 +1513,28 @@ fn nearby_ghost(
         }
     }
     best
+}
+
+/// Powered and lit blocks cannot be held: the item places the unpowered, unlit block and the
+/// world powers it. Offer that block, so a comparator that is receiving a signal, or a lit
+/// furnace, can be placed at all.
+fn unlit_variant(mut block: schematica_core::BlockState) -> schematica_core::BlockState {
+    let name = match block.name.as_str() {
+        "minecraft:powered_comparator" => "minecraft:unpowered_comparator",
+        "minecraft:powered_repeater" => "minecraft:unpowered_repeater",
+        "minecraft:lit_furnace" => "minecraft:furnace",
+        "minecraft:lit_blast_furnace" => "minecraft:blast_furnace",
+        "minecraft:lit_smoker" => "minecraft:smoker",
+        "minecraft:lit_redstone_lamp" => "minecraft:redstone_lamp",
+        "minecraft:lit_redstone_ore" => "minecraft:redstone_ore",
+        "minecraft:lit_deepslate_redstone_ore" => "minecraft:deepslate_redstone_ore",
+        _ => return block,
+    };
+    block.name = name.to_owned();
+    block.states.remove("output_lit_bit");
+    block.states.remove("output_subtract_bit");
+    block.states.retain(|key, _| key != "powered_bit");
+    block
 }
 
 #[cfg(test)]
