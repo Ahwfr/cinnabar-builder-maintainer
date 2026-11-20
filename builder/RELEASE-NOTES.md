@@ -1,4 +1,11 @@
-# Cinnamatica 0.3.34
+# Cinnamatica 0.3.35
+
+- Importing: a Bedrock `.mcstructure` whose structure section is stored as compressed bytes (format version 2, `compression` 1, with the block layers as int arrays) is now read. Before, such a file failed with "expected an NBT compound". The section may be zlib, gzip, raw deflate or uncompressed, and is limited to 64 MiB once decompressed.
+- Everything else in Cinnamatica is unchanged from 0.3.34.
+
+Verified: importer tests, including the real file that failed (kept as a test fixture), and the mod and core tests.
+
+## 0.3.34
 
 - Catch up with Cinnabar: merge the 143 upstream commits from November 10 to 19 (upstream `dev` at d2195d658). They include Creative block breaking at vanilla speed, faster chunk decoding and terrain drawing, NPC dialogue, armor trims and server cosmetics, NetherNet fixes, per-user Windows installs, and local worlds that always run on the Bedrock Dedicated Server.
 - Upstream now requires proof that your Microsoft account owns Minecraft before a packaged launch. Cinnamatica keeps that check.

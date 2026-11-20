@@ -1,5 +1,9 @@
 # Installing and updating Builder
 
+0.3.35 fixes importing Bedrock structures saved with a compressed structure section. It changes the
+importer only, but every commit changes the client's build stamp, so it needs the same full build as
+0.3.34. The setup EXE updates an existing install in place.
+
 0.3.34 merges Cinnabar up to November 19 and works on the Hold to Place stutter from 0.3.33. It changes
 the game client, the Go core and the mod, so it needs a full build. First launch asks you to confirm
 you own Minecraft.
