@@ -1,13 +1,13 @@
-# Cinnamatica 0.3.34 (test build)
+# Cinnamatica 0.3.34
 
 - Catch up with Cinnabar: merge the 143 upstream commits from November 10 to 19 (upstream `dev` at d2195d658). They include Creative block breaking at vanilla speed, faster chunk decoding and terrain drawing, NPC dialogue, armor trims and server cosmetics, NetherNet fixes, per-user Windows installs, and local worlds that always run on the Bedrock Dedicated Server.
 - Upstream now requires proof that your Microsoft account owns Minecraft before a packaged launch. Cinnamatica keeps that check.
 - The tool's Ctrl+scroll and Alt+scroll use Cinnabar's new mouse-wheel API (`read-scroll` / `reserve-scroll`) in place of the 0.3.33 wheel reservation.
-- The tool reads the held item through `read-revisions` and `read-equipment`, because upstream removed `read-equipment-matches`. It copies the inventory only when the selected slot or the equipment changes, and reads nothing while the use control is held without the stick, so Hold to Place keeps its full frame budget. This should remove the Hold to Place stutter 0.3.33 added, most visible with logs, slabs and stairs; it is not yet confirmed in game.
+- The tool reads the held item through `read-revisions` and `read-equipment`, because upstream removed `read-equipment-matches`. It copies the inventory only when the selected slot or the equipment changes, and reads nothing while the use control is held without the stick, so Hold to Place keeps its full frame budget. This removes the Hold to Place stutter 0.3.33 added, most visible with logs, slabs and stairs.
 - The schematic outline in the model shader moves to the varying location that upstream's packed texture slot frees.
 - Everything else in Cinnamatica is unchanged from 0.3.33.
 
-Verified here: mod, core and importer tests; gameplay, inventory, input, keyboard settings, UI, protocol and mod API tests; the merged client type-checks. Not verified: the Windows build, first launch with the ownership check, and every in-game behaviour. Your 0.3.33 Play folder stays installed until this build passes TEST-CHECKLIST.md.
+Verified: mod, core and importer tests; gameplay, inventory, input, keyboard settings, UI, protocol and mod API tests; the Windows build; and the merge checks in TEST-CHECKLIST.md, which passed in game in the 0.3.34 test copy on November 19.
 
 ## 0.3.33
 

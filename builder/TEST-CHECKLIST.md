@@ -1,6 +1,6 @@
 # Cinnamatica 0.3.34 merge checks
 
-Run these in the test copy (outputs\Test\Cinnamatica-0.3.34). Compare with your 0.3.33 Play folder when unsure.
+Passed in the 0.3.34 test copy on November 19. Keep them for later upstream merges.
 
 M1. **First launch:** the ownership check accepts your account; the menu, skins and worlds load.
 M2. **Local world:** create and open a local world; it starts and saves.
