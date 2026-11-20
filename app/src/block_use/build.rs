@@ -90,6 +90,20 @@ pub(super) fn held_placement_block(
     })
 }
 
+/// True the first time a refusal repeats the same cause, so a held press logs each distinct
+/// refusal once instead of every tick.
+fn refusal_once(key: String) -> bool {
+    static LAST: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+    let Ok(mut last) = LAST.lock() else {
+        return true;
+    };
+    if *last == key {
+        return false;
+    }
+    *last = key;
+    true
+}
+
 /// Computes a proposal without sending packets, committing inventory or changing the world.
 fn prepare(
     player_runtime: &client_state::PlayerRuntime,
@@ -220,10 +234,13 @@ fn prepare(
                 local_use = LocalUse::Place;
             } else {
             let Some(placement) = placement.as_ref() else {
-                bevy::log::debug!(block = %expected.name, states = %expected.states,
-                    ghost = ?expected.position, support = ?observed.target.position,
-                    face = observed.target.face, click = ?observed.target.relative_hit,
-                    "Fast Place could not predict this placement");
+                if refusal_once(format!("p|{}|{:?}|{:?}|{}", expected.name, expected.position,
+                    observed.target.position, observed.target.face)) {
+                    bevy::log::info!(block = %expected.name, states = %expected.states,
+                        ghost = ?expected.position, support = ?observed.target.position,
+                        face = observed.target.face, click = ?observed.target.relative_hit,
+                        "Fast Place could not predict this placement");
+                }
                 return None;
             };
             let actual_name = context.collisions.block_identifier(mode, placement.block);
@@ -242,12 +259,15 @@ fn prepare(
                     }))
             {
                 let (yaw, pitch, _) = attempt.view.rotation().to_euler(bevy::math::EulerRot::YXZ);
-                bevy::log::debug!(block = %expected.name, states = %expected.states, ghost = ?expected.position,
-                    actual_name, actual_states, destination = ?placement.position,
-                    additional_cells = placement.additional.len(), face = observed.target.face,
-                    click = ?observed.target.relative_hit,
-                    yaw = gameplay::movement::wire_yaw(180.0 - yaw.to_degrees()), pitch = -pitch.to_degrees(),
-                    "Fast Place predicted a different block or state");
+                if refusal_once(format!("d|{}|{:?}|{:?}|{}|{:?}", expected.name, expected.position,
+                    observed.target.position, observed.target.face, actual_states)) {
+                    bevy::log::info!(block = %expected.name, states = %expected.states, ghost = ?expected.position,
+                        actual_name, actual_states, destination = ?placement.position,
+                        additional_cells = placement.additional.len(), face = observed.target.face,
+                        click = ?observed.target.relative_hit,
+                        yaw = gameplay::movement::wire_yaw(180.0 - yaw.to_degrees()), pitch = -pitch.to_degrees(),
+                        "Fast Place predicted a different block or state");
+                }
                 return None;
             }
             if expected.states.contains("weirdo_direction") {

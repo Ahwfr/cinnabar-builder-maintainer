@@ -104,7 +104,21 @@ fn gunzip(data: &[u8]) -> Result<Cow<'_, [u8]>> {
     Ok(Cow::Owned(plain))
 }
 
+/// Java decoders expect gzip. Some tools save the same NBT uncompressed, so compress it here.
+fn gzipped(data: &[u8]) -> Result<Cow<'_, [u8]>> {
+    use std::io::Write;
+    if data.starts_with(&[0x1f, 0x8b]) {
+        return Ok(Cow::Borrowed(data));
+    }
+    let mut out = Vec::new();
+    let mut encoder = flate2::write::GzEncoder::new(&mut out, flate2::Compression::fast());
+    encoder.write_all(data)?;
+    encoder.finish()?;
+    Ok(Cow::Owned(out))
+}
+
 fn parse_java(ext: &str, data: &[u8]) -> Result<UniversalSchematic> {
+    let data = &*gzipped(data)?;
     let limits = DecodeLimits {
         max_input_bytes: FILE_LIMIT,
         max_decompressed_bytes: FILE_LIMIT,
@@ -529,6 +543,18 @@ mod tests {
             let stairs = output.get([1, 2, 3]).unwrap();
             assert_eq!(stairs.name, "minecraft:oak_stairs", "{ext}");
         }
+        Ok(())
+    }
+
+    #[test]
+    fn an_uncompressed_litematic_imports() -> Result<()> {
+        let mut source = UniversalSchematic::new("plain".into());
+        assert!(source.set_block_str(0, 0, 0, "minecraft:stone"));
+        let zipped = litematic::to_litematic(&source)?;
+        let plain = gunzip(&zipped)?.into_owned();
+        assert!(!plain.starts_with(&[0x1f, 0x8b]));
+        let output = import_bytes(&plain, "plain".into(), "litematic")?;
+        assert_eq!(output.get([0, 0, 0]).unwrap().name, "minecraft:stone");
         Ok(())
     }
 
