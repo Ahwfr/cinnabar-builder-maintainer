@@ -45,6 +45,36 @@ pub(super) fn look_quadrant(rotation: Quat) -> usize {
     (wire_facing(rotation)[1] / 90.0 + 0.5).floor().rem_euclid(4.0) as usize
 }
 
+/// The planned `facing_direction`, 0 down, 1 up, then north, south, west and east.
+fn planned_face(planned: &serde_json::Map<String, serde_json::Value>) -> Option<usize> {
+    let value = planned
+        .get("minecraft:facing_direction")
+        .or_else(|| planned.get("facing_direction"))?;
+    match value["value"].as_str() {
+        Some(name) => ["down", "up", "north", "south", "west", "east"]
+            .iter()
+            .position(|candidate| *candidate == name),
+        None => usize::try_from(value["value"].as_u64()?).ok().filter(|face| *face <= 5),
+    }
+}
+
+/// The face to click for blocks that point out of the face they are placed against (end rods,
+/// lightning rods, amethyst buds and clusters, ladders), whose planned facing is that face.
+pub(super) fn wanted_face(offer: &CreativePlacementOffer) -> Option<u8> {
+    let name = offer.name.as_str();
+    let face_derived = name == "minecraft:end_rod"
+        || name == "minecraft:ladder"
+        || name.ends_with("lightning_rod")
+        || name.ends_with("amethyst_bud")
+        || name == "minecraft:amethyst_cluster";
+    if !face_derived {
+        return None;
+    }
+    let planned =
+        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&offer.states).ok()?;
+    planned_face(&planned).and_then(|face| u8::try_from(face).ok())
+}
+
 /// The look quadrant whose placement gives a block the client cannot predict (observers,
 /// droppers, furnaces and similar) the facing the guide plans. None when yaw cannot decide it,
 /// such as an upward or downward facing, or when the block's facing rule is not known.
@@ -59,15 +89,7 @@ pub(super) fn wanted_quadrant(offer: &CreativePlacementOffer) -> Option<usize> {
             .iter()
             .position(|name| *name == direction);
     }
-    let value = planned
-        .get("minecraft:facing_direction")
-        .or_else(|| planned.get("facing_direction"))?;
-    let face = match value["value"].as_str() {
-        Some(name) => ["down", "up", "north", "south", "west", "east"]
-            .iter()
-            .position(|candidate| *candidate == name)?,
-        None => usize::try_from(value["value"].as_u64()?).ok()?,
-    };
+    let face = planned_face(&planned)?;
     // These face the player when placed; observers and pistons face away from the player.
     let toward = match offer.name.as_str() {
         "minecraft:dropper" | "minecraft:dispenser" => face,
@@ -143,14 +165,56 @@ pub(super) fn correction(
     {
         // Nothing predicts this block's state, but its facing follows the look direction.
         // Turn to the planned facing and keep the support the player already aims at.
-        let want = wanted_quadrant(expected)?;
+        let eye = Vec3::from_array(observed.ray.origin);
         let forward = Vec3::from_array(observed.ray.direction).try_normalize()?;
+        let view = *context.view;
+        if let Some(face) = wanted_face(expected) {
+            // The block points out of the face it is placed against, so the click must land on
+            // that neighbour's face. Report that click without turning the camera.
+            if observed.target.face == face && observed.target.position == placement_cell(expected.position, face ^ 1) {
+                return bridge.then(|| {
+                    PlacementAim::observed(
+                        view.rotation(),
+                        (
+                            observed.target.position,
+                            observed.target.face,
+                            observed.target.runtime_id,
+                        ),
+                        forward,
+                    )
+                });
+            }
+            if world.is_air(placement_cell(expected.position, face ^ 1)).unwrap_or(true) {
+                return None;
+            }
+            let hit = hidden_support_hit_at(&world, expected.position, face, 0.5)?;
+            let mut candidate = observed.clone();
+            apply_support_hit(&mut candidate, hit);
+            if !gameplay::interaction_authority::pick_point_in_range(
+                candidate.target.hit_world,
+                state.position,
+                observed.reach,
+            ) {
+                return None;
+            }
+            return Some(PlacementAim {
+                rotation: view.rotation(),
+                support_ray: None,
+                interaction_ray: Vec3::from_array(candidate.target.hit_world) - eye,
+                hidden_height: Some(0.5),
+                support: (
+                    candidate.target.position,
+                    face,
+                    candidate.target.runtime_id,
+                ),
+            });
+        }
+        let want = wanted_quadrant(expected)?;
         let support = (
             observed.target.position,
             observed.target.face,
             observed.target.runtime_id,
         );
-        let view = *context.view;
         if look_quadrant(view.rotation()) == want {
             return bridge.then(|| PlacementAim::observed(view.rotation(), support, forward));
         }
@@ -725,6 +789,9 @@ pub(super) fn planned_placement_half(offer: &CreativePlacementOffer) -> Option<b
 
 /// Pillars derive their axis from the clicked face, independently of reported yaw.
 pub(super) fn support_produces_axis(offer: &CreativePlacementOffer, face: u8) -> bool {
+    if let Some(wanted) = wanted_face(offer) {
+        return face == wanted;
+    }
     let Ok(states) = serde_json::from_str::<serde_json::Value>(&offer.states) else {
         return false;
     };
@@ -833,6 +900,28 @@ mod tests {
             strict_state: true,
             repeat_while_held: true,
         }
+    }
+
+    #[test]
+    fn unpredicted_blocks_get_the_click_face_or_look_quadrant_their_planned_state_needs() {
+        let rod = offer("minecraft:end_rod", serde_json::json!({
+            "minecraft:facing_direction": {"type":"int","value":4}
+        }));
+        assert_eq!(wanted_face(&rod), Some(4));
+        assert!(support_produces_axis(&rod, 4));
+        assert!(!support_produces_axis(&rod, 1));
+        let dropper = offer("minecraft:dropper", serde_json::json!({
+            "facing_direction": {"type":"int","value":3}
+        }));
+        assert_eq!(wanted_quadrant(&dropper), Some(2));
+        let observer = offer("minecraft:observer", serde_json::json!({
+            "minecraft:facing_direction": {"type":"string","value":"north"}
+        }));
+        assert_eq!(wanted_quadrant(&observer), Some(2));
+        let up = offer("minecraft:dropper", serde_json::json!({
+            "facing_direction": {"type":"int","value":1}
+        }));
+        assert_eq!(wanted_quadrant(&up), None);
     }
 
     #[test]
