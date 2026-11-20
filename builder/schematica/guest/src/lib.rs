@@ -741,16 +741,6 @@ impl Viewer {
         if self.lock_destination(native_cell) {
             let _ = item_use::set_placement_lock(true);
         }
-        let toggle_cell = world_target
-            .filter(|cell| {
-                self.planned_block(*cell).is_some_and(|block| {
-                    block.name.ends_with("trapdoor") && block.name != "minecraft:iron_trapdoor"
-                })
-            })
-            .filter(|cell| {
-                self.tiles.iter().find_map(|tile| tile.status_at(*cell))
-                    == Some(schematica_core::CellStatus::WrongState)
-            });
         // Existing vegetation is a real ray obstruction. Offer that guided cell
         // before looking past it; the native predictor alone decides whether its
         // current block is replaceable and the requested plant can survive.
@@ -769,9 +759,7 @@ impl Viewer {
             {
                 let native = native_cell
                     .filter(|pos| self.planned_block(*pos).is_some() && self.may_need_block(*pos));
-                if toggle_cell.is_some() && (self.options.correct_aim || self.options.strict_place) {
-                    toggle_cell
-                } else if replacement_cell.is_some() {
+                if replacement_cell.is_some() {
                     replacement_cell
                 } else if self.options.hold_place {
                     // A held click must acquire each new ghost on the current crosshair ray.

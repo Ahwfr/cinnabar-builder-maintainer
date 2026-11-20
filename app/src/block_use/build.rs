@@ -224,13 +224,32 @@ fn prepare(
         });
         if let Some(expected) = &attempt.expected {
             let mode = stream.network_id_mode();
+            // Blocks with no placement rule (containers, rails, pots, shelves and the like)
+            // cannot be predicted. Send the click at the ghost cell and let the server decide
+            // the state, as beds do, rather than refusing to place them at all.
+            let unpredicted = placement.is_none()
+                && paired.is_none()
+                && !attempt.air_place
+                && ready
+                && caps.can_build
+                && local_use != LocalUse::Interact
+                && observed.selection.item.count() > 0
+                && placed_block.is_some_and(|block| {
+                    context.collisions.block_facts(mode, block).placement
+                        == assets::facts::PlacementRule::Unresolved
+                        && context.collisions.block_identifier(mode, block)
+                            == Some(expected.name.as_str())
+                })
+                && world.is_air(expected.position).unwrap_or(false)
+                && surroundings.destination(observed.target.position, observed.target.face).0
+                    == expected.position;
             let supported_door = placement.is_none()
                 && expected.name.ends_with("_door")
                 && (!expected.strict_state || super::orientation::door_matches_facing(expected, attempt.view.rotation()))
                 && paired_fits
                 && paired.and_then(|block| context.collisions.block_identifier(mode, block)) == Some(expected.name.as_str())
                 && surroundings.destination(observed.target.position, observed.target.face).0 == expected.position;
-            if supported_door {
+            if supported_door || unpredicted {
                 local_use = LocalUse::Place;
             } else {
             let Some(placement) = placement.as_ref() else {
