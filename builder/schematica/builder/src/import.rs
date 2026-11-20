@@ -320,9 +320,21 @@ fn import_bedrock(mut bytes: &[u8], name: String) -> Result<Schematic> {
     )
     .context("read little-endian Bedrock structure NBT")?;
     let root = compound(&root)?;
+    // Tools write the version as a byte, short, int or long, or leave it out; only a file
+    // without the structure layout is refused. Another version is tried as version 1 anyway.
+    let version = match root.get("format_version") {
+        Some(NbtValue::Byte(v)) => Some(i64::from(*v)),
+        Some(NbtValue::Short(v)) => Some(i64::from(*v)),
+        Some(NbtValue::Int(v)) => Some(i64::from(*v)),
+        Some(NbtValue::Long(v)) => Some(*v),
+        _ => None,
+    };
+    if version.is_some_and(|version| version != 1) {
+        eprintln!("Warning: Bedrock structure format version {version:?} is read as version 1.");
+    }
     ensure!(
-        matches!(root.get("format_version"), Some(NbtValue::Int(1))),
-        "expected Bedrock structure format version 1"
+        root.get("structure").is_some() && root.get("size").is_some(),
+        "not a Bedrock structure: it has no size or structure section"
     );
     let size = list(root.get("size").context("missing size")?)?;
     let [NbtValue::Int(sx), NbtValue::Int(sy), NbtValue::Int(sz)] = size else {
@@ -542,6 +554,62 @@ mod tests {
             assert_eq!(output.get([0, 0, 0]).unwrap().name, "minecraft:stone", "{ext}");
             let stairs = output.get([1, 2, 3]).unwrap();
             assert_eq!(stairs.name, "minecraft:oak_stairs", "{ext}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_bedrock_structure_imports_whatever_type_its_version_is_stored_in() -> Result<()> {
+        let text = |value: &str| NbtValue::String(value.into());
+        let state = |name: &str| {
+            let mut entry = NbtMap::new();
+            entry.insert("name".into(), text(name));
+            entry.insert("states".into(), NbtValue::Compound(NbtMap::new()));
+            NbtValue::Compound(entry)
+        };
+        let build = |version: Option<NbtValue>| -> Result<Vec<u8>> {
+            let mut default = NbtMap::new();
+            default.insert(
+                "block_palette".into(),
+                NbtValue::List(vec![state("minecraft:oak_planks"), state("minecraft:dirt")]),
+            );
+            let mut palette = NbtMap::new();
+            palette.insert("default".into(), NbtValue::Compound(default));
+            let mut structure = NbtMap::new();
+            structure.insert(
+                "block_indices".into(),
+                NbtValue::List(vec![
+                    NbtValue::List(vec![NbtValue::Int(0), NbtValue::Int(1)]),
+                    NbtValue::List(vec![NbtValue::Int(-1), NbtValue::Int(-1)]),
+                ]),
+            );
+            structure.insert("palette".into(), NbtValue::Compound(palette));
+            let mut root = NbtMap::new();
+            if let Some(version) = version {
+                root.insert("format_version".into(), version);
+            }
+            root.insert(
+                "size".into(),
+                NbtValue::List(vec![NbtValue::Int(1), NbtValue::Int(2), NbtValue::Int(1)]),
+            );
+            root.insert("structure".into(), NbtValue::Compound(structure));
+            let mut data = Vec::new();
+            nucleation::nbt::io::write_nbt(&mut data, &root, "", Endian::Little)?;
+            Ok(data)
+        };
+        for version in [
+            Some(NbtValue::Int(1)),
+            Some(NbtValue::Byte(1)),
+            Some(NbtValue::Short(1)),
+            Some(NbtValue::Long(1)),
+            Some(NbtValue::Int(2)),
+            None,
+        ] {
+            let data = build(version.clone())?;
+            let output = import_bytes(&data, "bedrock".into(), "mcstructure")?;
+            assert_eq!(output.size(), [1, 2, 1], "{version:?}");
+            assert_eq!(output.get([0, 0, 0]).unwrap().name, "minecraft:oak_planks");
+            assert_eq!(output.get([0, 1, 0]).unwrap().name, "minecraft:dirt");
         }
         Ok(())
     }
