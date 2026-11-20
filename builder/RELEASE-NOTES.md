@@ -14,6 +14,7 @@
 - Fast Place can now place blocks the client has no placement rule for (containers, rails, pots, hoppers, droppers, dispensers, target blocks and similar) when a neighbouring block is clicked at the guide cell. The client sends the click and the server decides the block's state, as it already did for beds.
 - Hold to Place: refused-placement messages move from the info to the debug log, the hotbar slot that Fast Place reuses is the one used least recently instead of always the selected one, and the repeat clock is credited for the orientation tick so oriented blocks repeat sooner. These are untested in game.
 - The schematic outline in the model shader moves to the varying location that upstream's packed texture slot frees.
+- The Windows setup EXE now updates an existing Cinnamatica install in place (same folder, Start menu entry and uninstaller) and keeps its profile, instead of installing a second copy. It installs fresh only when none is found. Portable users extract the ZIP over their old folder and keep `profile`.
 - Everything else in Cinnamatica is unchanged from 0.3.33.
 
 Verified: mod, core and importer tests; gameplay, inventory, input, keyboard settings, UI, protocol and mod API tests; the Windows build; and the merge checks in TEST-CHECKLIST.md, which passed in game in the 0.3.34 test copy on November 19.
