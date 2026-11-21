@@ -15,7 +15,7 @@ use std::collections::HashMap;
 const EDGE: i32 = 8;
 /// Scans, counting the first one. The last one only reports.
 const MAX_ROUNDS: u8 = 4;
-/// Frames to leave the server after a command paste, and after a Structure Paste, which it
+/// Frames to leave the server after a repair round (commands), and after a Structure Paste, which it
 /// places in a background job, before looking.
 const SETTLE_FRAMES: u32 = 180;
 const SETTLE_FRAMES_STRUCTURE: u32 = 480;
@@ -74,11 +74,7 @@ impl Repair {
             placements,
             destroy: run.destroy,
             round: 1,
-            phase: Phase::Settle(if run.structure.is_some() {
-                SETTLE_FRAMES_STRUCTURE
-            } else {
-                SETTLE_FRAMES
-            }),
+            phase: Phase::Settle(SETTLE_FRAMES_STRUCTURE),
             copy: 0,
             next: first,
             scanning: None,

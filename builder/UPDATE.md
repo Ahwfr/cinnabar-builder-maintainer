@@ -1,5 +1,7 @@
 # Installing and updating Builder
 
+0.3.47 changes the mod, the Structure Host addon and the game, so it needs a full rebuild. It is untested in the game.
+
 0.3.46 changes the game, so it needs a full rebuild. It is untested in the game.
 
 0.3.45 changes the game as well as the mod, so it needs a full rebuild. It is untested in the game.

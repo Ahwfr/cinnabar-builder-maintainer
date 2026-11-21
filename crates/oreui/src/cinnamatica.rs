@@ -859,8 +859,8 @@ impl Window<'_> {
         let mode_right = mode_left + canvas.r(14.0);
         self.button(
             canvas,
-            "bw-paste-mode",
-            self.text("#bw_paste_mode"),
+            "bw-export",
+            self.text("#bw_export"),
             [mode_left, paste_top, mode_right, paste[3]],
             neutral,
             hits,

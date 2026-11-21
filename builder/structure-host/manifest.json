@@ -4,7 +4,7 @@
     "name": "Cinnamatica Structure Paste",
     "description": "Loads Cinnamatica templates on the world host.",
     "uuid": "215637af-958a-4eab-88b4-10671dc74a38",
-    "version": [1, 0, 1],
+    "version": [1, 0, 2],
     "min_engine_version": [1, 21, 90]
   },
   "modules": [{
@@ -12,7 +12,7 @@
     "language": "javascript",
     "entry": "scripts/main.js",
     "uuid": "cd8f1a22-ebd0-4d22-8bbc-a41cad532380",
-    "version": [1, 0, 1]
+    "version": [1, 0, 2]
   }],
   "dependencies": [{"module_name": "@minecraft/server", "version": "2.1.0"}]
 }

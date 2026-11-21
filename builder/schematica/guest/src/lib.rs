@@ -60,7 +60,7 @@ thread_local! {
     /// Where the guide of a copied selection goes: the box's minimum corner.
     static ADOPT_ORIGIN: Cell<Option<[i32; 3]>> = const { Cell::new(None) };
     static RUNTIME: RefCell<(Runtime, Vec<&'static [u8]>, Options, Option<usize>)> =
-        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, structure_paste: false, textured: true, assist: false, fast_place: false, strict_place: false, correct_aim: false, bridge_place: true, lightness: DEFAULT_LIGHTNESS, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new(), tool_item: true }, None)) };
+        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, textured: true, assist: false, fast_place: false, strict_place: false, correct_aim: false, bridge_place: true, lightness: DEFAULT_LIGHTNESS, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new(), tool_item: true }, None)) };
 }
 
 /// The "Ghost lightness" cycle: percent the ghost blocks blend toward light blue.
@@ -87,7 +87,6 @@ struct Options {
     placement_lock: bool,
     auto_layer: bool,
     paste_destroy: bool,
-    structure_paste: bool,
     textured: bool,
     assist: bool,
     fast_place: bool,
@@ -112,7 +111,6 @@ impl Options {
                 "hold_place": self.hold_place,
                 "auto_layer": self.auto_layer,
                 "paste_destroy": self.paste_destroy,
-                "structure_paste": self.structure_paste,
                 "textured":self.textured, "assist":self.assist, "fast_place": self.fast_place,
                 "correct_aim": self.correct_aim,
                 "strict_place": self.strict_place,
@@ -162,7 +160,6 @@ impl Guest for Schematica {
                 options.hold_place = value["hold_place"].as_bool().unwrap_or(false);
                 options.auto_layer = value["auto_layer"].as_bool().unwrap_or(true);
                 options.paste_destroy = value["paste_destroy"].as_bool().unwrap_or(false);
-                options.structure_paste = value["structure_paste"].as_bool().unwrap_or(false);
                 options.textured = value["textured"].as_bool().unwrap_or(options.textured);
                 options.assist = value["assist"].as_bool().unwrap_or(options.assist);
                 options.fast_place = value["fast_place"].as_bool().unwrap_or(options.fast_place);
@@ -436,6 +433,8 @@ struct Viewer {
     auto_place: bool,
     dirty: bool,
     paste_confirm: bool,
+    /// The pending confirmation is for Export, not Paste.
+    export_confirming: bool,
     paste_notice: Option<(String, f32)>,
     cancel_structure: Option<(u64, i32)>,
     paste: Option<paste::Paste>,
@@ -515,6 +514,7 @@ impl Viewer {
             auto_place: loaded,
             dirty: false,
             paste_confirm: false,
+            export_confirming: false,
             paste_notice: None,
             cancel_structure: None,
             paste: None,

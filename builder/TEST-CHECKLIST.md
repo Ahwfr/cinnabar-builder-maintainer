@@ -6,8 +6,9 @@ M1. **First launch:** the ownership check accepts your account; the menu, skins 
 M2. **Local world:** create and open a local world; it starts and saves.
 M3. **Hold to Place:** with logs, stripped logs, slabs and stairs, hold right-click along a guide. It should be as smooth as before 0.3.33, with correct orientation.
 M4. **Fast Place V1/V2, Placement Lock, Auto Orientation, plants, doors, trapdoors:** as in 0.3.32.
-M5. **Paste:** setblock/fill and structure paste in a local world, including cancel.
-M6. **Ghosts:** textured ghosts, outlines on partial blocks (stairs, slabs, glass, water), lightness, layers, verification colours.
+M5. **Paste:** structure paste and grid paste in a local world, including cancel, and that no sections are skipped on a large schematic.
+M6. **Export:** Export a schematic, then load it with a structure block by name; a schematic wider than 64 saves as parts.
+M6b. **Ghosts:** textured ghosts, outlines on partial blocks (stairs, slabs, glass, water), lightness, layers, verification colours.
 M7. **Window:** M opens it on release; Materials, Import, Settings, Controls tabs; per-world placement memory.
 M8. **Stick tool:** T1 to T12 below, especially Ctrl+scroll and Alt+scroll.
 M9. **General:** Creative block breaking speed, chat, inventory, servers you play on.
@@ -50,7 +51,7 @@ These are acceptance checks, not claims that every item has been fixed.
    Check a pane/fence/wall as well as a full block.
 6. **Materials:** Open and scroll Materials immediately after loading a large guide.
    The menu and guide should remain present without a mod reload or whole-guide flash.
-7. **Paste:** Test setblock/fill and structure modes with the required operator permissions.
+7. **Paste and Export:** Test structure paste and structure export with the required operator permissions.
    Completed areas should lose ghosts while Paste is still running; cancellation
    should stop new work and leave completed blocks intact. Check nearby and distant areas.
 8. **Graphics/startup:** If the saved Vulkan failure notice appears, it should say it

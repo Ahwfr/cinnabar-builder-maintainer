@@ -58,6 +58,30 @@ impl PlayerInventoryLedger {
         true
     }
 
+    /// Which condition makes `request_background_personal_open` refuse, for the log.
+    #[must_use]
+    pub fn background_personal_open_blocker(&self, runtime_id: u64) -> &'static str {
+        if self.personal_inventory_desired_open() {
+            "the personal inventory is already wanted open"
+        } else if self.controls.personal.server_window().is_some() {
+            "a server window for the personal inventory is open"
+        } else if self.controls.personal.sent.is_some() {
+            "an open request is already sent"
+        } else if self.cursor_stack().is_some() {
+            "the cursor is holding an item"
+        } else if self.resync_required() {
+            "the inventory needs a resync from the server"
+        } else if self.authority.is_none() {
+            "the inventory has no server authority yet"
+        } else if runtime_id == 0 {
+            "the local player runtime id is 0"
+        } else if self.storage.is_some() {
+            "a storage container is open"
+        } else {
+            "unknown"
+        }
+    }
+
     #[must_use]
     pub const fn background_personal_active(&self) -> bool {
         self.controls.background_personal && self.personal_inventory_desired_open()

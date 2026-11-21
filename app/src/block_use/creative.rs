@@ -486,7 +486,12 @@ pub(super) fn try_start(
             .inventory_commands()
             .request_background_personal_open(stream.local_player_runtime_id())
         {
-            bevy::log::info!(block = %offer.name, slot, "Fast Place could not open Creative inventory");
+            let blocker = player
+                .inventory
+                .ledger()
+                .background_personal_open_blocker(stream.local_player_runtime_id());
+            bevy::log::info!(block = %offer.name, slot, blocker,
+                "Fast Place could not open Creative inventory");
             return false;
         }
         (slot, item, None, Some(Catalog::Opening(id)))

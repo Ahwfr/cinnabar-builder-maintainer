@@ -1043,11 +1043,11 @@ mod layout {
             plain(controls, "paste", "#bw_paste", [90., 20.], [20., 277.]),
         ));
         nodes.push(named(
-            "paste_mode",
+            "export",
             plain(
                 controls,
-                "bw-paste-mode",
-                "#bw_paste_mode",
+                "bw-export",
+                "#bw_export",
                 [95., 20.],
                 [118., 277.],
             ),
@@ -1227,10 +1227,8 @@ impl Viewer {
             self.browser_tab = tab;
         } else if let Some(key) = id.strip_prefix(SETTING_PREFIX) {
             self.browser_setting(key, value >= 0.5);
-        } else if id == "bw-paste-mode" {
-            self.options.structure_paste = !self.options.structure_paste;
-            self.paste_confirm = false;
-            self.options.save();
+        } else if id == "bw-export" {
+            self.export_button();
         } else if id == MODE_ID {
             self.options.strict_place = !self.options.strict_place;
             self.options.save();
@@ -1574,18 +1572,20 @@ fn keys(viewer: &Viewer, out: &mut Map<String, Value>) {
         "#bw_paste".into(),
         json!(if viewer.paste.is_some() {
             "Cancel Paste"
-        } else if viewer.paste_confirm {
+        } else if viewer.paste_confirm && !viewer.export_confirming {
             "Confirm paste"
         } else {
             "Paste"
         }),
     );
     out.insert(
-        "#bw_paste_mode".into(),
-        json!(if viewer.options.structure_paste {
-            "Structure"
+        "#bw_export".into(),
+        json!(if viewer.paste.as_ref().is_some_and(|run| run.is_export()) {
+            "Cancel Export"
+        } else if viewer.paste_confirm && viewer.export_confirming {
+            "Confirm export"
         } else {
-            "Setblock"
+            "Export"
         }),
     );
     let overlaps = if viewer.options.paste_destroy {
@@ -1597,6 +1597,8 @@ fn keys(viewer: &Viewer, out: &mut Map<String, Value>) {
         "#bw_paste_hint".into(),
         json!(if viewer.paste.is_some() {
             "Stops the remaining paste".to_string()
+        } else if viewer.paste_confirm && viewer.export_confirming {
+            "Click Export again to save a structure block structure".to_string()
         } else if viewer.paste_confirm {
             format!("Click again to confirm  ·  Replace wrong blocks: {overlaps}")
         } else {

@@ -2,7 +2,6 @@
 
 use crate::{Viewer, gameplay, structure_paste::StructurePaste};
 use schematica_core::{BlockState, Placement, Schematic, StateValue};
-use std::collections::HashMap;
 
 mod repair;
 pub(crate) use repair::Repair;
@@ -18,13 +17,17 @@ pub(super) struct Paste {
     /// Grid copies still to paste after this one; empty for an ordinary paste.
     queue: Vec<Placement>,
     destroy: bool,
-    cursor: usize,
-    sent: usize,
-    skipped: usize,
-    palette: HashMap<u32, Option<String>>,
-    structure: Option<StructurePaste>,
+    structure: StructurePaste,
+    /// An export in progress: the structure parts still to send after the current one, and
+    /// the names of all of them. `None` for a paste into the world.
+    export: Option<Export>,
     /// Grid copies already sent, kept so the check afterwards covers all of them.
     finished: Vec<Placement>,
+}
+
+pub(super) struct Export {
+    queue: Vec<StructurePaste>,
+    names: Vec<String>,
 }
 
 impl Viewer {
@@ -36,12 +39,14 @@ impl Viewer {
             return;
         }
         if let Some(run) = self.paste.take() {
-            if run.structure.is_some() {
-                self.cancel_structure = Some(run.scope);
-            }
+            self.cancel_structure = Some(run.scope);
             self.paste_confirm = false;
             let _ = crate::panel::close();
-            self.paste_result("Paste canceled | Completed blocks were kept".into());
+            self.paste_result(if run.export.is_some() {
+                "Export canceled | Nothing was saved".into()
+            } else {
+                "Paste canceled | Completed blocks were kept".into()
+            });
             return;
         }
         let Some((scope, placement)) = self.world.zip(self.placement) else {
@@ -49,6 +54,7 @@ impl Viewer {
         };
         if !std::mem::take(&mut self.paste_confirm) {
             self.paste_confirm = true;
+            self.export_confirming = false;
             return;
         }
         self.paste = Some(Paste {
@@ -57,13 +63,49 @@ impl Viewer {
             placement,
             queue: Vec::new(),
             destroy: self.options.paste_destroy,
-            cursor: 0,
-            sent: 0,
-            skipped: 0,
-            palette: HashMap::new(),
-            structure: self.options.structure_paste.then(|| {
-                StructurePaste::new(&self.schematic, placement, self.options.paste_destroy)
-            }),
+            structure: StructurePaste::new(&self.schematic, placement, self.options.paste_destroy),
+            export: None,
+            finished: Vec::new(),
+        });
+        let _ = crate::panel::close();
+    }
+
+    /// Saves the guide as structures in the world, for a structure block's Load mode. A first
+    /// click asks to confirm; the second starts the upload.
+    pub(super) fn export_button(&mut self) {
+        if self.paste.is_some() || self.repair.is_some() {
+            self.paste_button();
+            return;
+        }
+        let Some((scope, placement)) = self.world.zip(self.placement) else {
+            return;
+        };
+        if !std::mem::take(&mut self.paste_confirm) || !self.export_confirming {
+            self.paste_confirm = true;
+            self.export_confirming = true;
+            return;
+        }
+        self.export_confirming = false;
+        let (min, max) = placement.world_bounds(self.schematic.size());
+        let base = structure_name(&self.schematic.name);
+        let mut parts = export_parts(min, max, &base);
+        let names = parts.iter().map(|(name, ..)| name.clone()).collect();
+        let mut queue: Vec<StructurePaste> = parts
+            .drain(..)
+            .map(|(name, lo, hi)| StructurePaste::saved(lo, hi, name))
+            .collect();
+        queue.reverse();
+        let Some(first) = queue.pop() else {
+            return;
+        };
+        self.paste = Some(Paste {
+            scope,
+            base: placement,
+            placement,
+            queue: Vec::new(),
+            destroy: false,
+            structure: first,
+            export: Some(Export { queue, names }),
             finished: Vec::new(),
         });
         let _ = crate::panel::close();
@@ -88,18 +130,17 @@ impl Viewer {
                 .collect();
         queue.remove(0);
         queue.reverse();
+        // The copies share one host session: the first opens it and the last closes it.
+        let structure = StructurePaste::new(&self.schematic, placement, self.options.paste_destroy)
+            .session(true, queue.is_empty());
         self.paste = Some(Paste {
             scope,
             base: placement,
             placement,
             queue,
             destroy: self.options.paste_destroy,
-            cursor: 0,
-            sent: 0,
-            skipped: 0,
-            palette: HashMap::new(),
-            // Grid copies always use the ordinary command stream.
-            structure: None,
+            structure,
+            export: None,
             finished: Vec::new(),
         });
     }
@@ -107,7 +148,8 @@ impl Viewer {
     /// Reports a finished paste and starts the check for blocks the server did not keep.
     fn finish_paste(&mut self, run: Paste, message: String) {
         self.paste_result(message);
-        if run.sent > 0 || run.structure.is_some() {
+        // Nothing is sent to the world by an export, so there is nothing to check.
+        if run.export.is_none() {
             self.repair = Some(Repair::new(&run, self.schematic.size()));
         }
     }
@@ -142,121 +184,60 @@ impl Viewer {
         }
         if !gameplay::can_paste_blocks() {
             self.paste_result(
-                "Paste needs Creative, operator cheats, and setblock and fill mod permissions"
-                    .into(),
+                format!(
+                    "{} needs Creative, operator cheats, and setblock and fill mod permissions",
+                    if run.export.is_some() { "Export" } else { "Paste" }
+                ),
             );
             return true;
         }
-        if let Some(structure) = &mut run.structure {
-            let result = structure.step(&self.schematic, run.placement);
-            if let Some((lo, hi)) = structure.take_sent_box() {
-                self.expect_pasted(lo, hi);
-            }
-            match result {
-                Ok(Some(progress)) => {
-                    self.show_label(&progress);
-                    self.paste = Some(run);
-                }
-                Ok(None) if run.advance() => {
-                    self.show_label("Grid paste | Next copy");
-                    self.paste = Some(run);
-                }
-                Ok(None) => self.finish_paste(
-                    run,
-                    "Structure sent | The host reports placement in chat. Checking for missing blocks"
-                        .into(),
-                ),
-                Err(error) => self.paste_result(format!("Structure paste stopped | {error}")),
-            }
-            return true;
+        let exporting = run.export.is_some();
+        let result = run.structure.step(&self.schematic, run.placement);
+        if !exporting && let Some((lo, hi)) = run.structure.take_sent_box() {
+            self.expect_pasted(lo, hi);
         }
-        let [width, height, depth] = self.schematic.size().map(|size| size as usize);
-        let volume = width * height * depth;
-        for _ in 0..4 {
-            while run.cursor < volume {
-                if crate::budget::remaining_fuel() < 850_000 {
+        match result {
+            Ok(Some(progress)) => {
+                self.show_label(&progress);
+                self.paste = Some(run);
+            }
+            Ok(None) if exporting => {
+                let export = run.export.as_mut().expect("exporting");
+                if let Some(next) = export.queue.pop() {
+                    run.structure = next;
+                    self.show_label("Structure Export | Next part");
                     self.paste = Some(run);
-                    return true;
-                }
-                let local = coordinates(run.cursor, width, depth);
-                let palette_index = self.schematic.palette_index(local).unwrap();
-                if self.schematic.is_air_index(palette_index)
-                    || self.schematic.palette()[palette_index as usize].is_placement_artifact()
-                {
-                    run.cursor += 1;
-                    continue;
-                }
-                let formatted = run.palette.entry(palette_index).or_insert_with(|| {
-                    format_state(
-                        &run.placement
-                            .transform_state(&self.schematic.palette()[palette_index as usize]),
-                    )
-                });
-                let Some(formatted) = formatted else {
-                    run.cursor += 1;
-                    run.skipped += 1;
-                    continue;
-                };
-                let (command, cells) = command(
-                    &self.schematic,
-                    run.placement,
-                    local,
-                    palette_index,
-                    formatted,
-                    run.destroy,
-                );
-                let Some(command) = command else {
-                    run.cursor += 1;
-                    run.skipped += 1;
-                    continue;
-                };
-                match gameplay::request_command(&command) {
-                    Ok(()) => {
-                        let size = self.schematic.size();
-                        let head = run.placement.local_to_world(size, local);
-                        let tail = run.placement.local_to_world(
-                            size,
-                            [local[0] + cells as i32 - 1, local[1], local[2]],
-                        );
-                        self.expect_pasted(
-                            std::array::from_fn(|axis| head[axis].min(tail[axis])),
-                            std::array::from_fn(|axis| head[axis].max(tail[axis]) + 1),
-                        );
-                        run.cursor += cells;
-                        run.sent += cells;
-                        break;
-                    }
-                    Err(error) if error == "command rate limit reached" => {
-                        self.paste = Some(run);
-                        return true;
-                    }
-                    Err(error) => {
-                        self.paste_result(format!("Paste stopped | {error}"));
-                        return true;
-                    }
+                } else {
+                    let names = export.names.clone();
+                    self.paste_result(export_message(&names));
                 }
             }
-            if run.cursor == volume {
-                if run.advance() {
-                    self.show_label("Grid paste | Next copy");
-                    self.paste = Some(run);
-                    return true;
-                }
-                let message = format!(
-                    "Paste sent {} cells | {} unsupported. Checking for missing blocks",
-                    run.sent, run.skipped
-                );
-                self.finish_paste(run, message);
-                return true;
+            Ok(None) if run.advance() => {
+                // The copies share the host session: the last one closes it.
+                run.structure = StructurePaste::new(&self.schematic, run.placement, run.destroy)
+                    .session(false, run.queue.is_empty());
+                self.show_label("Grid paste | Next copy");
+                self.paste = Some(run);
             }
+            Ok(None) => self.finish_paste(
+                run,
+                "Structure sent | The host reports placement in chat. Checking for missing blocks"
+                    .into(),
+            ),
+            Err(error) => self.paste_result(format!(
+                "{} stopped | {error}",
+                if exporting { "Structure export" } else { "Structure paste" }
+            )),
         }
-        self.show_label(&format!("Paste | {} of {volume} cells checked", run.cursor));
-        self.paste = Some(run);
         true
     }
 }
 
 impl Paste {
+    pub(super) fn is_export(&self) -> bool {
+        self.export.is_some()
+    }
+
     /// Moves on to the next grid copy, keeping the totals. False when none is left.
     fn advance(&mut self) -> bool {
         let Some(next) = self.queue.pop() else {
@@ -264,9 +245,85 @@ impl Paste {
         };
         self.finished.push(self.placement);
         self.placement = next;
-        self.cursor = 0;
-        self.palette.clear();
         true
+    }
+}
+
+/// The name a structure block types to load this schematic: lowercase letters, digits and
+/// underscores, from the schematic's own name without its file extension.
+pub(crate) fn structure_name(schematic_name: &str) -> String {
+    let stem = schematic_name
+        .rsplit_once('.')
+        .filter(|(_, extension)| {
+            ["mcstructure", "nbt", "litematic", "schem", "schematic", "gz"]
+                .iter()
+                .any(|known| extension.eq_ignore_ascii_case(known))
+        })
+        .map_or(schematic_name, |(stem, _)| stem);
+    let mut name = String::new();
+    for character in stem.chars() {
+        let character = character.to_ascii_lowercase();
+        if character.is_ascii_lowercase() || character.is_ascii_digit() {
+            name.push(character);
+        } else if !name.ends_with('_') && !name.is_empty() {
+            name.push('_');
+        }
+    }
+    let name = name.trim_end_matches('_');
+    let name: String = name.chars().take(24).collect();
+    let name = name.trim_end_matches('_');
+    if name.is_empty() { "schematic".into() } else { name.into() }
+}
+
+/// Structure blocks load at most 64 blocks along x and z, and 384 up. A larger schematic is
+/// cut into parts named `base_x_z` (and `base_x_y_z` when it is also tall), counted from the
+/// minimum corner.
+pub(crate) const PART_EDGE: i32 = 64;
+const PART_HEIGHT: i32 = 384;
+
+pub(crate) fn export_parts(
+    min: [i32; 3],
+    max: [i32; 3],
+    base: &str,
+) -> Vec<(String, [i32; 3], [i32; 3])> {
+    let counts: [i32; 3] = std::array::from_fn(|axis| {
+        let edge = if axis == 1 { PART_HEIGHT } else { PART_EDGE };
+        (max[axis] - min[axis] + edge - 1) / edge
+    });
+    let mut parts = Vec::new();
+    for x in 0..counts[0] {
+        for y in 0..counts[1] {
+            for z in 0..counts[2] {
+                let index = [x, y, z];
+                let lo: [i32; 3] = std::array::from_fn(|axis| {
+                    min[axis] + index[axis] * if axis == 1 { PART_HEIGHT } else { PART_EDGE }
+                });
+                let hi: [i32; 3] = std::array::from_fn(|axis| {
+                    (lo[axis] + if axis == 1 { PART_HEIGHT } else { PART_EDGE }).min(max[axis])
+                });
+                let name = if counts == [1, 1, 1] {
+                    base.to_string()
+                } else if counts[1] == 1 {
+                    format!("{base}_{x}_{z}")
+                } else {
+                    format!("{base}_{x}_{y}_{z}")
+                };
+                parts.push((name, lo, hi));
+            }
+        }
+    }
+    parts
+}
+
+fn export_message(names: &[String]) -> String {
+    match names {
+        [only] => format!(
+            "Exported | In a structure block choose Load and type {only}"
+        ),
+        [first, .., last] => format!(
+            "Exported {} parts | Load {first} to {last}, each {PART_EDGE} wide, the number counts east then south"
+        , names.len()),
+        [] => "Exported nothing".into(),
     }
 }
 
@@ -369,5 +426,47 @@ mod tests {
             "minecraft:stone_stairs [\"upside_down_bit\"=true,\"weirdo_direction\"=2]"
         );
         assert!(format_state(&BlockState::new("minecraft:stone\n/fill")).is_none());
+    }
+
+    #[test]
+    fn structure_names_are_lowercase_words_a_structure_block_accepts() {
+        assert_eq!(structure_name("My House (v2).litematic"), "my_house_v2");
+        assert_eq!(structure_name("castle.mcstructure"), "castle");
+        assert_eq!(structure_name("***.schem"), "schematic");
+        assert_eq!(structure_name(""), "schematic");
+        let long = structure_name("a_very_long_schematic_name_that_goes_on_and_on.nbt");
+        assert!(long.len() <= 24 && !long.ends_with('_'), "{long}");
+        assert!(long.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_'));
+    }
+
+    #[test]
+    fn small_schematics_export_as_one_structure_and_large_ones_are_cut_at_64() {
+        assert_eq!(
+            export_parts([10, 64, -5], [30, 80, 20], "hut"),
+            vec![("hut".to_string(), [10, 64, -5], [30, 80, 20])]
+        );
+        let parts = export_parts([0, 0, 0], [130, 50, 64], "wall");
+        let names: Vec<_> = parts.iter().map(|part| part.0.as_str()).collect();
+        assert_eq!(names, ["wall_0_0", "wall_1_0", "wall_2_0"]);
+        assert_eq!(parts[0].1, [0, 0, 0]);
+        assert_eq!(parts[0].2, [64, 50, 64]);
+        assert_eq!(parts[2].1, [128, 0, 0]);
+        assert_eq!(parts[2].2, [130, 50, 64]);
+        // Every cell belongs to exactly one part.
+        let volume: i32 = parts
+            .iter()
+            .map(|(_, lo, hi)| (hi[0] - lo[0]) * (hi[1] - lo[1]) * (hi[2] - lo[2]))
+            .sum();
+        assert_eq!(volume, 130 * 50 * 64);
+        let tall = export_parts([0, -64, 0], [10, 400, 10], "tower");
+        assert_eq!(tall.iter().map(|part| part.0.as_str()).collect::<Vec<_>>(), ["tower_0_0_0", "tower_0_1_0"]);
+        assert!(tall.iter().all(|(_, lo, hi)| hi[1] - lo[1] <= 384));
+    }
+
+    #[test]
+    fn the_export_message_names_what_to_load() {
+        assert!(export_message(&["hut".into()]).contains("type hut"));
+        let many = export_message(&["w_0_0".into(), "w_1_0".into()]);
+        assert!(many.contains("2 parts") && many.contains("w_0_0") && many.contains("w_1_0"), "{many}");
     }
 }

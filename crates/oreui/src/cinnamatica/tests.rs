@@ -177,7 +177,7 @@ fn controls_tab_sends_every_placement_action() {
             "lock",
             "visibility",
             "paste",
-            "bw-paste-mode",
+            "bw-export",
         ] {
             assert!(target(&screen, id).is_some(), "{id}");
         }
