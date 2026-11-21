@@ -79,6 +79,15 @@ impl cinnabar::extension::item_use::Host for State {
         Ok(Ok(()))
     }
 
+    fn set_placement_upper_air(&mut self, enabled: bool) -> Result<Result<(), String>> {
+        self.controls.budget(false)?;
+        let Some(offer) = self.item_use_policy.pending_placement.as_mut() else {
+            return Ok(Err("No admitted placement offer in this frame".into()));
+        };
+        offer.upper_air = enabled;
+        Ok(Ok(()))
+    }
+
     fn set_placement_lock(&mut self, enabled: bool) -> Result<Result<(), String>> {
         self.controls.budget(false)?;
         if !self.grants.item_use || !self.grants.inventory || self.snapshot.is_none() {
@@ -140,6 +149,7 @@ impl State {
             correct_aim,
             strict_state,
             repeat_while_held: true,
+            upper_air: false,
         });
         Ok(Ok(()))
     }

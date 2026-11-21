@@ -167,6 +167,7 @@ fn ordered_fast_place_selects_a_carried_block_and_places_in_both_modes() {
             correct_aim: false,
             strict_state: false,
             repeat_while_held: true,
+            upper_air: false,
         });
         super::super::tap(world, MouseButton::Right);
         // Resume through real selection and input maintenance, not just the request producer.
@@ -224,6 +225,7 @@ fn ordered_fast_place_allows_different_states_and_leaves_unrelated_clicks_alone(
             correct_aim: false,
             strict_state: false,
             repeat_while_held: true,
+            upper_air: false,
             states: if matching_state {
                 states
             } else {
@@ -331,6 +333,7 @@ fn ordered_fast_place_waits_for_a_server_inventory_window_before_any_transfer() 
             correct_aim: false,
             strict_state: false,
             repeat_while_held: true,
+            upper_air: false,
         });
         super::super::tap(world, MouseButton::Right);
         super::before_physics(&mut app);

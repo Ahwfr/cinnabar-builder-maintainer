@@ -127,6 +127,8 @@ pub struct CreativePlacementOffer {
     pub correct_aim: bool,
     pub strict_state: bool,
     pub repeat_while_held: bool,
+    /// Experimental: an upper-half stair, slab or trapdoor may be clicked into the air from below.
+    pub upper_air: bool,
 }
 
 /// Successfully committed local interaction requests, consumed once per frame.

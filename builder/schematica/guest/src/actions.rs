@@ -90,6 +90,12 @@ impl Viewer {
                 self.options.save();
                 return;
             }
+            "upper-air" => {
+                self.options.upper_air = !self.options.upper_air;
+                self.upper_air.rearm();
+                self.options.save();
+                return;
+            }
             "bridge-place" => {
                 self.options.bridge_place = !self.options.bridge_place;
                 self.options.save();

@@ -505,6 +505,10 @@ pub(super) fn door_matches_facing(offer: &CreativePlacementOffer, rotation: Quat
 pub(super) fn air_place_face(offer: &CreativePlacementOffer) -> Option<u8> {
     let planned =
         serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&offer.states).ok()?;
+    // Experimental: a mirrored click, on the bottom face of the empty destination.
+    if planned_upper(&planned) == Some(true) {
+        return (offer.upper_air && upper_air_kind(&offer.name)).then_some(0);
+    }
     let hopper_needs_side = offer.name == "minecraft:hopper"
         && planned
             .get("facing_direction")
@@ -522,6 +526,13 @@ pub(super) fn air_place_face(offer: &CreativePlacementOffer) -> Option<u8> {
         && !offer.name.ends_with("_door")
         && planned_upper(&planned) != Some(true))
     .then_some(1)
+}
+
+/// Blocks whose upper half the experimental air click may place.
+fn upper_air_kind(name: &str) -> bool {
+    name.ends_with("_stairs")
+        || name.ends_with("_trapdoor")
+        || (name.ends_with("_slab") && !name.contains("double"))
 }
 
 fn planned_upper(planned: &serde_json::Map<String, serde_json::Value>) -> Option<bool> {
@@ -899,6 +910,7 @@ mod tests {
             correct_aim: true,
             strict_state: true,
             repeat_while_held: true,
+            upper_air: false,
         }
     }
 
@@ -922,6 +934,31 @@ mod tests {
             "facing_direction": {"type":"int","value":1}
         }));
         assert_eq!(wanted_quadrant(&up), None);
+    }
+
+    #[test]
+    fn upper_halves_air_place_from_below_only_when_the_experiment_is_on() {
+        let upper = serde_json::json!({
+            "upside_down_bit": {"type":"byte","value":1},
+            "weirdo_direction": {"type":"int","value":0}
+        });
+        let lower = serde_json::json!({
+            "upside_down_bit": {"type":"byte","value":0},
+            "weirdo_direction": {"type":"int","value":0}
+        });
+        for name in ["minecraft:oak_stairs", "minecraft:stone_block_slab", "minecraft:oak_trapdoor"] {
+            let mut planned = offer(name, upper.clone());
+            assert_eq!(air_place_face(&planned), None, "{name} is refused without the setting");
+            planned.upper_air = true;
+            assert_eq!(air_place_face(&planned), Some(0), "{name} clicks the bottom face");
+            let mut below = offer(name, lower.clone());
+            assert_eq!(air_place_face(&below), Some(1), "{name} lower half is unchanged");
+            below.upper_air = true;
+            assert_eq!(air_place_face(&below), Some(1));
+        }
+        let mut dropper = offer("minecraft:double_stone_block_slab", upper.clone());
+        dropper.upper_air = true;
+        assert_eq!(air_place_face(&dropper), None);
     }
 
     #[test]

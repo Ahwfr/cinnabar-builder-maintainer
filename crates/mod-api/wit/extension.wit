@@ -989,6 +989,11 @@ interface item-use {
     offer-strict-placement: func(position: tuple<s32, s32, s32>, name: string, states: string) -> result<_, string>;
     /// Sets whether the offered placement can repeat under physically held use in this frame.
     set-placement-repeat: func(enabled: bool) -> result<_, string>;
+    /// Experimental. Lets a strict stair, slab or trapdoor offer planned in its upper half be
+    /// clicked into the empty destination from below (the bottom face), so it needs no support.
+    /// Only the client's prediction accepts this; the server decides what is placed, so the
+    /// caller must read the result back. Ignored for other offers.
+    set-placement-upper-air: func(enabled: bool) -> result<_, string>;
     /// Limits normal block placement to the admitted schematic offer for this frame.
     /// Renews while a guide is active. Requires item-use and inventory grants.
     set-placement-lock: func(enabled: bool) -> result<_, string>;

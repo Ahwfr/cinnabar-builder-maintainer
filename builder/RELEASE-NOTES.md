@@ -1,3 +1,14 @@
+# Cinnamatica 0.3.37
+
+New, off by default: **Upper-half air place (test)** in Settings > Fast Place, in both the OreUI window and the fallback window. It only does anything with Fast Place V2 Strict.
+
+- An upside-down stair, an upper slab or a top trapdoor in the guide with no support block to click is placed by clicking the empty cell from below (the bottom face), the mirror of the click that places a lower half. When a support block is within reach the old path still runs first.
+- It checks itself: after the click it reads the block that appeared. If it is the planned state, upper half included, it keeps going. If the server placed anything else it switches itself off for the session, names the cell, and stops placing more. It does not remove the wrong block. Switching the setting off and on tries again.
+- The client predicts a bottom-face click as an upper half, but the server decides, and whether it accepts that is not known.
+- Adds the host call `item-use.set-placement-upper-air` and changes the client's air-click face, so it needs the full build. The Settings tab has one more row, so the window is 28 px taller.
+
+Verified: the mod unit tests (74), a client unit test for the click face, and a compile of the host and OreUI crates. Not tried in the game.
+
 # Cinnamatica 0.3.36
 
 - Fast Place V2 Strict now places blocks that have no placement rule (copper bulbs, scaffolding, rails, containers and the like) by clicking into air. Before, it refused each one with "could not predict this placement". The server decides their state, as it already did for a click on a real neighbour.

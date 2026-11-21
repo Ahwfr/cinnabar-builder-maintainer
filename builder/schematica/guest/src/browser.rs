@@ -56,7 +56,7 @@ impl Tab {
 }
 
 /// The Settings tab's switches: option key and title. Controls are named `bw-set-<key>`.
-const SETTINGS: [(&str, &str); 10] = [
+const SETTINGS: [(&str, &str); 11] = [
     ("hold-place", "Hold to place"),
     ("placement-lock", "Placement lock"),
     ("look", "Textured ghost blocks"),
@@ -66,6 +66,7 @@ const SETTINGS: [(&str, &str); 10] = [
     ("fast-place", "Fast Place"),
     ("correct-aim", "Auto orientation"),
     ("bridge-place", "Nearby placement assist"),
+    ("upper-air", "Upper-half air place (test)"),
     ("auto-layer", "Auto next layer"),
 ];
 const SETTING_PREFIX: &str = "bw-set-";
@@ -81,7 +82,7 @@ mod layout {
     /// Tab titles, matching [`Tab::ALL`].
     const TABS: [&str; 4] = ["Materials", "Import", "Settings", "Controls"];
 
-    const WINDOW: [f64; 2] = [460., 330.];
+    const WINDOW: [f64; 2] = [460., 358.];
     /// The line under the tab strip; tab bodies start below it.
     const STRIP: f64 = 30.;
     const TAB_HEIGHT: f64 = 24.;
@@ -90,7 +91,7 @@ mod layout {
     /// The heading row: the title, then the summary under it.
     const TITLE_Y: f64 = 36.;
     const SUMMARY_Y: f64 = 47.;
-    const FOOTER_Y: f64 = 314.;
+    const FOOTER_Y: f64 = 342.;
     const FONT: &str = "mod_panel_sans";
 
     /// An opaque colour from `0xRRGGBB`.
@@ -130,7 +131,7 @@ mod layout {
     const SWITCH: [f64; 2] = [26., 16.];
 
     /// What each Settings row does, shown in the hint box while the row is hovered.
-    const HINTS: [(&str, &str); 12] = [
+    const HINTS: [(&str, &str); 13] = [
         (
             "fast-place",
             "Places the targeted ghost block for you, picking the material from the hotbar, inventory or Creative catalog.",
@@ -154,6 +155,10 @@ mod layout {
         (
             "bridge-place",
             "Lets a single click use a nearby ghost and support face. Hold to place uses the direct aim.",
+        ),
+        (
+            "upper-air",
+            "Test mode: air-places upside-down stairs, upper slabs and top trapdoors. Turns itself off if the server gets the half wrong.",
         ),
         (
             "look",
@@ -883,7 +888,7 @@ mod layout {
             (key.to_owned(), row, index)
         };
 
-        nodes.extend(group("fast", "Fast Place", [214., 172.], [PAD, 60.]));
+        nodes.extend(group("fast", "Fast Place", [214., 200.], [PAD, 60.]));
         rows.push(switch(controls, "fast-place", [20., 62.]));
         let (row, index) = cycle_row(
             controls,
@@ -899,6 +904,7 @@ mod layout {
             "placement-lock",
             "correct-aim",
             "bridge-place",
+            "upper-air",
         ]
         .into_iter()
         .enumerate()
@@ -934,14 +940,14 @@ mod layout {
         }
 
         let hint_box = [214., 66.];
-        let hint_offset = [PAD, 238.];
+        let hint_offset = [PAD, 266.];
         nodes.push(named("hint_box", framed(hint_box, hint_offset)));
         nodes.push(named(
             "hint_idle",
             text(
                 "Hover a setting to see what it does",
                 [198., 10.],
-                [20., 266.],
+                [20., 294.],
                 MUTED,
                 "center",
             ),
@@ -1252,6 +1258,7 @@ impl Viewer {
             "placement-lock" => options.placement_lock,
             "correct-aim" => options.correct_aim,
             "bridge-place" => options.bridge_place,
+            "upper-air" => options.upper_air,
             "auto-layer" => options.auto_layer,
             _ => false,
         }
