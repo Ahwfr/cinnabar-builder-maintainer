@@ -56,6 +56,7 @@ pub(super) mod columns;
 mod crystal_beams;
 mod culling;
 mod dragon_death;
+mod hologram;
 mod loyalty_ropes;
 mod maps;
 mod placement;
@@ -147,6 +148,9 @@ pub(crate) struct BlockEntityRuntime {
     books: books::TableBooks,
     /// This frame's submissions, kept empty between frames so their buffer is reused.
     submissions: Vec<BlockEntitySubmission>,
+    /// Chests and shulker boxes found in mods' retained block grids (the Schematica hologram).
+    hologram: hologram::HologramPieces,
+    hologram_pieces: Vec<([i32; 3], hologram::Piece)>,
 }
 
 impl BlockEntityRuntime {
@@ -168,6 +172,8 @@ impl BlockEntityRuntime {
             beam_source: None,
             books: books::TableBooks::default(),
             submissions: Vec::new(),
+            hologram: hologram::HologramPieces::default(),
+            hologram_pieces: Vec::new(),
         }
     }
 
@@ -375,6 +381,7 @@ pub(crate) fn update_block_entity_scene(
     mut placements: ResMut<render_scene::StaticItemPlacementsResource>,
     profiler: Option<Res<render_scene::RuntimeStageProfiler>>,
     cave: Option<Res<CaveVisibilityCache>>,
+    mod_scene: Option<Res<render_scene::ModRenderScene>>,
 ) {
     let camera = camera.single().ok();
     if !scene.has_assets() {
@@ -739,6 +746,32 @@ pub(crate) fn update_block_entity_scene(
     let global = (submissions.len() - before_global) as u32;
     work.candidates += global;
     work.prepared += global;
+    // Real chest and shulker models for a hologram's block grids, which the terrain mesh leaves
+    // out. They are drawn like placed blocks, so a ghost looks the same as the built result.
+    let mut pieces = std::mem::take(&mut runtime.hologram_pieces);
+    pieces.clear();
+    if let Some(mod_scene) = mod_scene.as_deref() {
+        runtime
+            .hologram
+            .gather(&mod_scene.retained, dimension, eye, &mut pieces);
+    }
+    for &(at, piece) in &pieces {
+        if submissions.len() >= MAX_SUBMISSIONS {
+            break;
+        }
+        let kind = match piece {
+            hologram::Piece::Chest(model) => BlockEntityKind::Chest(model),
+            hologram::Piece::Shulker(model) => BlockEntityKind::Shulker(model),
+        };
+        let (block_light, sky_light) = stream.light_level_at([at[0] as f32 + 0.5, at[1] as f32 + 0.5, at[2] as f32 + 0.5]);
+        let light = model_light(&kind, block_light, sky_light, daylight);
+        submissions.push(BlockEntitySubmission {
+            block: at,
+            light,
+            kind,
+        });
+    }
+    runtime.hologram_pieces = pieces;
     placements.0.0 = held;
     let _zone = bevy::log::info_span!(
         "block_entity.scene_update",

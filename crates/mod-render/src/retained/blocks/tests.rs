@@ -415,12 +415,12 @@ fn retained_partial_edits_keep_the_context_of_reused_sections_before_the_next_pr
 fn block_entity_drawn_blocks_mesh_as_a_stand_in_cube() {
     let mut grid = grid([1; 3]);
     grid.palette = vec![BlockState::Named {
-        name: "minecraft:chest".into(),
-        states: r#"{"minecraft:cardinal_direction":{"type":"string","value":"north"}}"#.into(),
+        name: "minecraft:bed".into(),
+        states: "{}".into(),
     }];
-    // As in game, the chest's own terrain visual is empty and the stand-in is a cube.
+    // As in game, the bed's own terrain visual is empty and the stand-in is a cube.
     let named = |name: &str, _: &str| match name {
-        "minecraft:chest" => Some(1),
+        "minecraft:bed" => Some(1),
         name if name == ENTITY_DRAWN_STAND_IN => Some(2),
         _ => None,
     };
@@ -432,10 +432,44 @@ fn block_entity_drawn_blocks_mesh_as_a_stand_in_cube() {
             Default::default(),
         )
         .unwrap();
-    assert_eq!(mesh.sections.len(), 1, "the chest cell has geometry");
+    assert_eq!(mesh.sections.len(), 1, "the bed cell has geometry");
     assert!(mesh.triangles > 0);
     assert!(entity_drawn("minecraft:trapped_chest") && entity_drawn("minecraft:white_shulker_box"));
     assert!(!entity_drawn("minecraft:furnace") && !entity_drawn("minecraft:oak_planks"));
+}
+
+#[test]
+fn chests_and_shulker_boxes_leave_a_hole_for_the_client_to_draw_the_real_model() {
+    for name in [
+        "minecraft:chest",
+        "minecraft:trapped_chest",
+        "minecraft:ender_chest",
+        "minecraft:copper_chest",
+        "minecraft:waxed_weathered_copper_chest",
+        "minecraft:blue_shulker_box",
+        "minecraft:undyed_shulker_box",
+    ] {
+        assert!(entity_overlaid(name), "{name}");
+        let mut grid = grid([1; 3]);
+        grid.palette = vec![BlockState::Named {
+            name: name.into(),
+            states: "{}".into(),
+        }];
+        // Nothing but air is registered, so any stand-in lookup would fail the mesh.
+        let named = |_: &str, _: &str| None;
+        let mesh = grid
+            .mesh(
+                &assets(),
+                NetworkIdMode::Sequential,
+                named,
+                Default::default(),
+            )
+            .unwrap();
+        assert_eq!(mesh.triangles, 0, "{name} draws nothing in the terrain mesh");
+    }
+    for name in ["minecraft:bed", "minecraft:furnace", "minecraft:oak_planks", "minecraft:chest_boat"] {
+        assert!(!entity_overlaid(name), "{name}");
+    }
 }
 
 #[test]
@@ -461,12 +495,12 @@ fn block_entity_stand_ins_look_like_the_block_not_white() {
 fn a_missing_stand_in_falls_back_to_the_plain_cube() {
     let mut grid = grid([1; 3]);
     grid.palette = vec![BlockState::Named {
-        name: "minecraft:chest".into(),
+        name: "minecraft:bed".into(),
         states: "{}".into(),
     }];
-    // The registry knows the plain cube but not the planks: the grid still meshes.
+    // The registry knows the plain cube but not the wool: the grid still meshes.
     let named = |name: &str, _: &str| match name {
-        "minecraft:chest" => Some(1),
+        "minecraft:bed" => Some(1),
         name if name == ENTITY_DRAWN_STAND_IN => Some(2),
         _ => None,
     };
@@ -479,4 +513,26 @@ fn a_missing_stand_in_falls_back_to_the_plain_cube() {
         )
         .unwrap();
     assert!(mesh.triangles > 0);
+}
+
+#[test]
+fn only_grids_with_leaves_or_unknown_ids_remesh_whole_columns() {
+    let named = |name: &str| BlockState::Named {
+        name: name.into(),
+        states: "{}".into(),
+    };
+    assert!(!super::reads_column_shelter(&[
+        named("minecraft:stone"),
+        named("minecraft:chest"),
+        named("minecraft:mangrove_roots"),
+    ]));
+    assert!(super::reads_column_shelter(&[
+        named("minecraft:stone"),
+        named("minecraft:mangrove_leaves"),
+    ]));
+    assert!(super::reads_column_shelter(&[named("minecraft:leaves2")]));
+    assert!(super::reads_column_shelter(&[
+        named("minecraft:stone"),
+        BlockState::RuntimeId(7),
+    ]));
 }

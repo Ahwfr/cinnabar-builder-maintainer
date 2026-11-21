@@ -38,7 +38,23 @@ impl Viewer {
             } else {
                 ""
             };
-            self.show_label(&format!("{name}  |  {x}, {y}, {z}{action}"));
+            // What the guide's scan reads in the cell, so a ghost that will not go away or a
+            // chest it cannot see can be diagnosed from the aim label.
+            let world = self
+                .tiles
+                .iter()
+                .find_map(|tile| tile.status_at([x, y, z]))
+                .map_or("outside", |status| match status {
+                    schematica_core::CellStatus::Correct => "built",
+                    schematica_core::CellStatus::Missing => "empty",
+                    schematica_core::CellStatus::Wrong => "other block",
+                    schematica_core::CellStatus::WrongState => "wrong state",
+                    schematica_core::CellStatus::Extra => "extra",
+                    schematica_core::CellStatus::Unloaded => "not loaded",
+                });
+            self.show_label(&format!(
+                "{name}  |  {x}, {y}, {z}  |  world: {world}{action}"
+            ));
             return;
         }
         let pending = self

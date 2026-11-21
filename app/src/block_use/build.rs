@@ -271,8 +271,12 @@ fn prepare(
                 && local_use != LocalUse::Interact
                 && observed.selection.item.count() > 0
                 && placed_block.is_some_and(|block| {
-                    context.collisions.block_facts(mode, block).placement
-                        == assets::facts::PlacementRule::Unresolved
+                    // A block whose survival rule is unresolved (mangrove roots, mushrooms and
+                    // the like) has a known placement but no support rule to predict it with,
+                    // so prediction refuses it. The server decides these as well.
+                    let fact = context.collisions.block_facts(mode, block);
+                    (fact.placement == assets::facts::PlacementRule::Unresolved
+                        || fact.survival == assets::registry::SurvivalRule::Unresolved)
                         && context.collisions.block_identifier(mode, block).is_some_and(|name| {
                             unpredicted_face_places(&context.collisions, mode, name, expected,
                                 observed.target.face)

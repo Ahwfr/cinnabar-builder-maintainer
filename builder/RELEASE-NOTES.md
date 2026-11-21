@@ -1,3 +1,13 @@
+# Cinnamatica 0.3.45
+
+- Chests, ender chests, copper chests and shulker boxes in the hologram are drawn as their real models instead of a plank or colored cube. Two chests side by side with the same kind and direction are drawn as one double chest, because that is what the game makes of them when they are placed. Shulker lids always face up and chest lids stay closed. Beds, signs, banners and heads are still stand-in cubes.
+- A chest of the right kind now counts as built whichever way it faces, because it faces the player who places it. Before, a chest facing the other way left its ghost on screen.
+- Placing or breaking a block in the hologram remeshes only the sections it can touch when the schematic has no leaves. Before it remeshed every section in nine columns. Schematics with leaves still remesh whole columns, because leaves read shelter from the full column. This should shorten the wait for a ghost to go away or come back; the wait has not been measured.
+- Fast Place now sends the click for blocks the game has no support rule for (mangrove roots, and likewise mushrooms and similar) and lets the server decide. Before, it refused them with "could not predict this placement".
+- The aim label now shows what the guide reads in the cell, for example `chest | -100, 73, 184 | world: empty | Hold right-click`. It reads `built`, `empty`, `other block`, `wrong state`, `extra` or `not loaded`. This is there to find out why a ghost stays or a chest is not seen.
+
+Verified: the mod's unit tests (75 in the guest), the hologram unit tests (pairing and direction) and the block-grid mesh tests, which now check that chests leave a hole in the terrain mesh. Not tried in the game: the real chest models, the double-chest pairing, the roots fix and the shorter remesh. Nothing was measured on screen, so the stutter and slow-ghost improvements are unconfirmed.
+
 # Cinnamatica 0.3.44
 
 - Fixed: 0.3.43 stopped the mod during the check for missing blocks after a paste. The check sent up to eight commands in one frame, and the game ends the mod for good when a frame asks for more than four. It now sends at most three per frame, which also keeps it clear of other senders. If the mod already shows as failed, press Reload on it in the Mods list or restart the game; logging out and back in does not clear it.

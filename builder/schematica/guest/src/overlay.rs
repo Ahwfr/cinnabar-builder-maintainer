@@ -1108,9 +1108,31 @@ fn same_placed_state(expected: &str, actual: &str) -> bool {
     placed(expected).is_some_and(|expected| Some(expected) == placed(actual))
 }
 
+/// Chests face the player who places them, so the guide cannot ask for one direction: a chest
+/// of the right kind counts as built whichever way it faces.
+fn faces_the_placer(name: &str) -> bool {
+    let short = name.strip_prefix("minecraft:").unwrap_or(name);
+    let short = short.strip_prefix("waxed_").unwrap_or(short);
+    matches!(short, "chest" | "trapped_chest" | "ender_chest") || short.ends_with("copper_chest")
+}
+
+/// Whether two states are equal once the direction properties are set aside.
+fn same_apart_from_direction(expected: &str, actual: &str) -> bool {
+    let without = |state: &str| {
+        let mut values: Map<String, serde_json::Value> = serde_json::from_str(state).ok()?;
+        values.remove("minecraft:cardinal_direction");
+        values.remove("facing_direction");
+        Some(values)
+    };
+    without(expected).is_some_and(|expected| Some(expected) == without(actual))
+}
+
 /// Pane arms and wall geometry are resolved by adjacent blocks when placed.
 fn preview_states_match(name: &str, expected: &str, actual: &str) -> bool {
     if expected == actual || same_placed_state(expected, actual) {
+        return true;
+    }
+    if faces_the_placer(name) && same_apart_from_direction(expected, actual) {
         return true;
     }
     let wall = name.ends_with("_wall");
@@ -1206,6 +1228,28 @@ fn double_slabs_built_as_their_full_block_count_as_correct() {
         "minecraft:oak_planks"
     ));
     assert!(!built_as_full_block("minecraft:stone", "minecraft:stone"));
+}
+
+#[test]
+fn a_placed_chest_counts_as_built_whichever_way_it_faces() {
+    let north = r#"{"minecraft:cardinal_direction":{"type":"string","value":"north"}}"#;
+    let east = r#"{"minecraft:cardinal_direction":{"type":"string","value":"east"}}"#;
+    for name in [
+        "minecraft:chest",
+        "minecraft:trapped_chest",
+        "minecraft:ender_chest",
+        "minecraft:exposed_copper_chest",
+    ] {
+        assert!(preview_states_match(name, north, east), "{name}");
+    }
+    // Other directional blocks still compare their direction, and a chest still compares
+    // anything that is not a direction.
+    assert!(!preview_states_match("minecraft:furnace", north, east));
+    assert!(!preview_states_match(
+        "minecraft:chest",
+        r#"{"minecraft:cardinal_direction":{"type":"string","value":"north"},"x":{"type":"int","value":1}}"#,
+        east
+    ));
 }
 
 #[test]

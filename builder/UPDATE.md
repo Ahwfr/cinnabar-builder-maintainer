@@ -1,5 +1,7 @@
 # Installing and updating Builder
 
+0.3.45 changes the game as well as the mod, so it needs a full rebuild. It is untested in the game.
+
 0.3.44 changes only the mod (a crash fix in the paste check). It is untested in the game.
 
 0.3.43 changes only the mod (budget use of the ghost updates, and the paste check), so no new client features, but the build still runs in full. It is untested in the game.
