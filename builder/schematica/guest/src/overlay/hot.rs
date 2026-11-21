@@ -181,7 +181,8 @@ impl HotWatch {
                     continue;
                 }
                 let air = schematic.is_air_index(id);
-                let status = compare(region, cell, &preview.palette[id as usize], air);
+                let (status, skip) =
+                    compare_cell(region, cell, &preview.palette[id as usize], air);
                 if status == CellStatus::Unloaded {
                     continue;
                 }
@@ -190,7 +191,7 @@ impl HotWatch {
                     let [px, py, pz] = pos.map(|axis| axis as usize);
                     whole.apply_observation((px * gz + pz) * gy + py, pos, id, status);
                 }
-                if marker_color(status).is_some() {
+                if marker_color(status).is_some() && !skip {
                     self.marks.insert(world, status);
                 } else {
                     self.marks.remove(&world);

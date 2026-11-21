@@ -437,3 +437,46 @@ fn block_entity_drawn_blocks_mesh_as_a_stand_in_cube() {
     assert!(entity_drawn("minecraft:trapped_chest") && entity_drawn("minecraft:white_shulker_box"));
     assert!(!entity_drawn("minecraft:furnace") && !entity_drawn("minecraft:oak_planks"));
 }
+
+#[test]
+fn block_entity_stand_ins_look_like_the_block_not_white() {
+    for (name, stand_in) in [
+        ("minecraft:chest", "minecraft:spruce_planks"),
+        ("minecraft:trapped_chest", "minecraft:spruce_planks"),
+        ("minecraft:ender_chest", "minecraft:obsidian"),
+        ("minecraft:blue_shulker_box", "minecraft:blue_concrete"),
+        ("minecraft:light_gray_shulker_box", "minecraft:light_gray_concrete"),
+        ("minecraft:undyed_shulker_box", "minecraft:purple_concrete"),
+        ("minecraft:copper_chest", "minecraft:copper_block"),
+        ("minecraft:waxed_weathered_copper_chest", "minecraft:weathered_copper"),
+        ("minecraft:oxidized_copper_golem_statue", "minecraft:oxidized_copper"),
+        ("minecraft:bed", "minecraft:white_wool"),
+        ("minecraft:something_new", ENTITY_DRAWN_STAND_IN),
+    ] {
+        assert_eq!(entity_drawn_stand_in(name), stand_in, "{name}");
+    }
+}
+
+#[test]
+fn a_missing_stand_in_falls_back_to_the_plain_cube() {
+    let mut grid = grid([1; 3]);
+    grid.palette = vec![BlockState::Named {
+        name: "minecraft:chest".into(),
+        states: "{}".into(),
+    }];
+    // The registry knows the plain cube but not the planks: the grid still meshes.
+    let named = |name: &str, _: &str| match name {
+        "minecraft:chest" => Some(1),
+        name if name == ENTITY_DRAWN_STAND_IN => Some(2),
+        _ => None,
+    };
+    let mesh = grid
+        .mesh(
+            &assets(),
+            NetworkIdMode::Sequential,
+            named,
+            Default::default(),
+        )
+        .unwrap();
+    assert!(mesh.triangles > 0);
+}

@@ -1,3 +1,11 @@
+# Cinnamatica 0.3.41
+
+- Pasting: the ghost of a cell is hidden the moment the paste sends it to the server (both the command paste and Structure Paste), instead of waiting for the verifier to see the block. While the world still shows air there, a stale reading does not bring the ghost back; it holds for about four seconds, so a paste the server refuses gets its ghost back after that. Large batches of ghost changes also go to the hologram in bigger groups (up to 1536 cells at a time instead of 192) when the frame has fuel.
+- Chests and other blocks that the client draws with a block-entity model (shulker boxes, ender chests, copper chests, banners, beds, pots, heads) are still a stand-in cube in the hologram, but it is now a block that looks like them: a chest is spruce-brown, an ender chest obsidian, a shulker box its own colour, a copper chest its copper. It falls back to the old white cube for anything not listed. This is a client change.
+- Water, lava and powder snow are no longer counted as missing, wrong or extra and get no red or yellow box, and a water, lava or powder snow cell that is not right does not hold back Auto next layer. Water, lava or powder snow where the schematic has air is not an extra block. They are still counted in the material list. Their ghost is still drawn.
+
+Verified: the mod's unit tests (67 for the public guest, new ones for the paste hold, the liquid rules and the next-layer check) and the 14 block-grid tests of the render crate (new ones for the stand-in blocks). Not tried in the game: how pasting looks now, how the stand-in cubes look, and whether the bigger batches stay inside the frame fuel budget (watch for `fuel exhausted` in the log).
+
 # Cinnamatica 0.3.40
 
 - The hologram now updates single blocks right away around you. A guide watches a 16-block box centred on the camera every frame. When a block in it changes, only that one ghost cell is edited: a correct block hides its ghost, a broken block (wrong or right) brings the ghost back, a right block in the wrong orientation or a different block shows its yellow or red box at once. The hologram itself is never hidden, rebuilt or toggled, and the tiles still do the full check right after.

@@ -16,6 +16,9 @@ pub(super) struct StructurePaste {
     tile: Tile,
     sent: usize,
     started: bool,
+    /// The section whose last fragment was sent since the previous call: world minimum and
+    /// exclusive maximum.
+    sent_box: Option<([i32; 3], [i32; 3])>,
 }
 
 #[derive(Default)]
@@ -40,7 +43,13 @@ impl StructurePaste {
             tile: Tile::default(),
             sent: 0,
             started: false,
+            sent_box: None,
         }
+    }
+
+    /// The section just sent, once.
+    pub(super) fn take_sent_box(&mut self) -> Option<([i32; 3], [i32; 3])> {
+        self.sent_box.take()
     }
 
     pub(super) fn step(
@@ -166,6 +175,7 @@ impl StructurePaste {
                     tile.part += 1;
                     if final_part == 1 {
                         self.sent += 1;
+                        self.sent_box = Some((self.next, std::array::from_fn(|i| self.next[i] + size[i])));
                         self.advance();
                         break;
                     }

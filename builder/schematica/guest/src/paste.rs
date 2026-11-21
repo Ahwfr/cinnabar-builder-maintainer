@@ -96,6 +96,21 @@ impl Viewer {
         self.paste_notice = Some((message, 6.0));
     }
 
+    /// Hides the ghosts of the cells in `lo..hi` that a paste has just sent to the server.
+    fn expect_pasted(&mut self, lo: [i32; 3], hi: [i32; 3]) {
+        for x in lo[0]..hi[0] {
+            for z in lo[2]..hi[2] {
+                for y in lo[1]..hi[1] {
+                    if crate::budget::remaining_fuel() < 400_000 {
+                        return;
+                    }
+                    self.whole
+                        .expect_placed(&self.preview, &self.schematic, [x, y, z]);
+                }
+            }
+        }
+    }
+
     pub(super) fn paste_step(&mut self) -> bool {
         let Some(mut run) = self.paste.take() else {
             return false;
@@ -112,7 +127,11 @@ impl Viewer {
             return true;
         }
         if let Some(structure) = &mut run.structure {
-            match structure.step(&self.schematic, run.placement) {
+            let result = structure.step(&self.schematic, run.placement);
+            if let Some((lo, hi)) = structure.take_sent_box() {
+                self.expect_pasted(lo, hi);
+            }
+            match result {
                 Ok(Some(progress)) => {
                     self.show_label(&progress);
                     self.paste = Some(run);
@@ -170,6 +189,16 @@ impl Viewer {
                 };
                 match gameplay::request_command(&command) {
                     Ok(()) => {
+                        let size = self.schematic.size();
+                        let head = run.placement.local_to_world(size, local);
+                        let tail = run.placement.local_to_world(
+                            size,
+                            [local[0] + cells as i32 - 1, local[1], local[2]],
+                        );
+                        self.expect_pasted(
+                            std::array::from_fn(|axis| head[axis].min(tail[axis])),
+                            std::array::from_fn(|axis| head[axis].max(tail[axis]) + 1),
+                        );
                         run.cursor += cells;
                         run.sent += cells;
                         break;

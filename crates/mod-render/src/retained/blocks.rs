@@ -14,8 +14,54 @@ use std::{
 #[cfg(test)]
 mod tests;
 
-/// The plain full cube a hologram draws in place of a block-entity-rendered block.
+/// The plain full cube a hologram draws in place of a block-entity-rendered block when no
+/// closer match is known.
 const ENTITY_DRAWN_STAND_IN: &str = "minecraft:white_concrete";
+
+/// The ordinary full block whose look is closest to a block-entity-rendered `name`, so a chest
+/// is a brown cube and a shulker box has its own color instead of everything being white.
+/// The cube is only a stand-in: the model itself is drawn by the block-entity renderer, which
+/// a hologram does not have.
+fn entity_drawn_stand_in(name: &str) -> String {
+    let short = name.strip_prefix("minecraft:").unwrap_or(name);
+    let short = short.strip_prefix("waxed_").unwrap_or(short);
+    let copper = |family: &str| match family {
+        "exposed" => "exposed_copper",
+        "weathered" => "weathered_copper",
+        "oxidized" => "oxidized_copper",
+        _ => "copper_block",
+    };
+    let stand_in = if let Some(color) = short.strip_suffix("_shulker_box") {
+        match color {
+            "undyed" => "purple_concrete".to_owned(),
+            color => format!("{color}_concrete"),
+        }
+    } else if let Some(family) = short
+        .strip_suffix("copper_chest")
+        .or_else(|| short.strip_suffix("copper_golem_statue"))
+    {
+        copper(family.trim_end_matches('_')).to_owned()
+    } else {
+        match short {
+            "chest" | "trapped_chest" => "spruce_planks",
+            "ender_chest" => "obsidian",
+            "decorated_pot" => "terracotta",
+            "conduit" => "prismarine",
+            "frame" | "glow_frame" | "chalkboard" => "oak_planks",
+            "bed" | "standing_banner" | "wall_banner" => "white_wool",
+            "skeleton_skull" => "bone_block",
+            "wither_skeleton_skull" => "coal_block",
+            "zombie_head" => "green_concrete",
+            "creeper_head" => "lime_concrete",
+            "piglin_head" => "pink_concrete",
+            "player_head" => "terracotta",
+            "dragon_head" | "end_portal" | "end_gateway" => "black_concrete",
+            _ => return ENTITY_DRAWN_STAND_IN.to_owned(),
+        }
+        .to_owned()
+    };
+    format!("minecraft:{stand_in}")
+}
 
 /// Whether the block-entity renderer, not the terrain mesher, draws `name`.
 fn entity_drawn(name: &str) -> bool {
@@ -348,7 +394,8 @@ impl BlockGrid {
                 let id = match state {
                     BlockState::RuntimeId(id) => Some(*id),
                     BlockState::Named { name, .. } if entity_drawn(name) => {
-                        named(ENTITY_DRAWN_STAND_IN, "{}")
+                        named(&entity_drawn_stand_in(name), "{}")
+                            .or_else(|| named(ENTITY_DRAWN_STAND_IN, "{}"))
                     }
                     BlockState::Named { name, states } => named(name, states),
                 };

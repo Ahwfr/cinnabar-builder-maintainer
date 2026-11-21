@@ -1,7 +1,7 @@
 use crate::{budget, drawing as draw, terrain};
 use schematica_core::{BlockState, CellStatus, LayerMode, Placement, Schematic, StateValue, Tally};
 use serde_json::{Map, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 mod coverage;
 mod hot;
@@ -13,6 +13,9 @@ const LARGE_TILE_EDGE: i32 = 5;
 const MAX_VISIBLE_TILES: i32 = 128;
 const WINDOW_TILES: i32 = 5;
 const DEFAULT_LIGHT: u32 = 0xffff0000;
+/// How many frames a pasted cell's ghost stays hidden while the world still shows air: long
+/// enough for the server to apply the paste, short enough that a refused one comes back.
+const HOLD_FRAMES: u32 = 240;
 // Lowering triangle vertices to WASM host calls dominates dense mismatch tiles.
 // The verifier and material counts still track every cell.
 /// Host block-grid parameter slots (`mod_api::drawing::BLOCK_GRID_*_PARAM`).
@@ -223,6 +226,8 @@ pub struct Tile {
     pub error: Option<String>,
     materials: Vec<[u16; 3]>,
     statuses: Vec<CellStatus>,
+    /// Cells of water, lava or powder snow that the guide reports nothing about.
+    ignored: Vec<bool>,
     pub mismatches: Vec<([i32; 3], CellStatus)>,
     markers: Option<DrawPair>,
     blocks: Option<DrawPair>,
@@ -241,6 +246,10 @@ pub struct WholeGhost {
     distant: coverage::DistantScan,
     hidden: Vec<bool>,
     changes: BTreeMap<[u32; 3], u32>,
+    /// Cells a paste has just asked the server to fill, with the frame their hold ends.
+    holds: HashMap<usize, u32>,
+    /// Counts `flush` calls: the clock the holds run on.
+    frame: u32,
     pair: Option<DrawPair>,
     retiring: Option<DrawPair>,
     pub failed: bool,
@@ -391,6 +400,13 @@ impl WholeGhost {
     }
 
     fn apply_observation(&mut self, index: usize, pos: [u32; 3], id: u32, status: CellStatus) {
+        if let Some(&until) = self.holds.get(&index) {
+            // The world may still show the air that was there before the paste arrived.
+            if matches!(status, CellStatus::Missing | CellStatus::Unloaded) && self.frame < until {
+                return;
+            }
+            self.holds.remove(&index);
+        }
         let hidden = ghost_hidden(status, self.hidden[index]);
         if hidden != self.hidden[index] {
             self.hidden[index] = hidden;
@@ -398,16 +414,64 @@ impl WholeGhost {
         }
     }
 
+    /// Hides the ghost of a cell a paste has just asked the server to fill, without waiting for
+    /// the world to show the block. Observations of air keep it hidden for `HOLD_FRAMES`;
+    /// anything else, or the end of the hold, goes back to what the world says.
+    pub(crate) fn expect_placed(
+        &mut self,
+        preview: &Preview,
+        schematic: &Schematic,
+        world: [i32; 3],
+    ) {
+        if !self.active() {
+            return;
+        }
+        let size = schematic.size();
+        let (lo, hi) = preview.bounds(size);
+        if !(0..3).all(|axis| (lo[axis]..hi[axis]).contains(&world[axis])) {
+            return;
+        }
+        let Some(local) = preview
+            .placement
+            .and_then(|placement| placement.world_to_local(size, world))
+        else {
+            return;
+        };
+        let Some(id) = schematic.palette_index(local) else {
+            return;
+        };
+        if schematic.is_air_index(id) || schematic.palette()[id as usize].is_placement_artifact() {
+            return;
+        }
+        let pos = std::array::from_fn(|axis| (world[axis] - lo[axis]) as u32);
+        let [x, y, z] = pos.map(|axis| axis as usize);
+        let (gy, gz) = ((hi[1] - lo[1]) as usize, (hi[2] - lo[2]) as usize);
+        self.hold_hidden((x * gz + z) * gy + y, pos);
+    }
+
+    fn hold_hidden(&mut self, index: usize, pos: [u32; 3]) {
+        self.holds
+            .insert(index, self.frame.saturating_add(HOLD_FRAMES));
+        if !self.hidden[index] {
+            self.hidden[index] = true;
+            self.changes.insert(pos, 0);
+        }
+    }
+
     pub fn flush(&mut self) {
+        self.frame = self.frame.wrapping_add(1);
         let Some(pair) = &self.pair else {
             return;
         };
         match draw::geometry_status(pair.geometry) {
             Ok(draw::GeometryState::Ready) if !self.changes.is_empty() => {
+                // A generation remeshes whole columns whatever its size, so a large paste goes
+                // in big batches while fuel allows. The floor is the old fixed size.
+                let batch = (budget::remaining_fuel().saturating_sub(250_000) / 300) as usize;
                 let edits: Vec<_> = self
                     .changes
                     .iter()
-                    .take(192)
+                    .take(batch.clamp(192, 1536))
                     .map(|(&[x, y, z], &palette)| draw::BlockEdit {
                         position: (x, y, z),
                         cell: draw::BlockCell {
@@ -449,6 +513,54 @@ fn a_terrain_gap_does_not_restore_a_previously_hidden_ghost() {
     assert!(ghost_hidden(CellStatus::Unloaded, placed));
     assert!(!ghost_hidden(CellStatus::Unloaded, false));
     assert!(!ghost_hidden(CellStatus::Missing, placed));
+}
+
+#[cfg(test)]
+fn whole_with_hidden(hidden: bool) -> WholeGhost {
+    WholeGhost {
+        hidden: vec![hidden; 4],
+        ..WholeGhost::default()
+    }
+}
+
+#[test]
+fn a_pasted_cell_stays_hidden_while_the_world_still_shows_air() {
+    let mut whole = whole_with_hidden(false);
+    whole.hold_hidden(1, [0, 1, 0]);
+    assert_eq!(whole.changes.get(&[0, 1, 0]), Some(&0));
+    whole.changes.clear();
+    // A stale read from before the server applied the paste does not bring the ghost back.
+    whole.apply_observation(1, [0, 1, 0], 6, CellStatus::Missing);
+    assert!(whole.hidden[1] && whole.changes.is_empty());
+    whole.apply_observation(1, [0, 1, 0], 6, CellStatus::Unloaded);
+    assert!(whole.hidden[1] && whole.changes.is_empty());
+    // The placed block ends the hold, and it stays hidden.
+    whole.apply_observation(1, [0, 1, 0], 6, CellStatus::Correct);
+    assert!(whole.hidden[1] && whole.holds.is_empty() && whole.changes.is_empty());
+    // After that, a broken block restores the ghost at once.
+    whole.apply_observation(1, [0, 1, 0], 6, CellStatus::Missing);
+    assert!(!whole.hidden[1]);
+    assert_eq!(whole.changes.get(&[0, 1, 0]), Some(&7));
+}
+
+#[test]
+fn a_refused_paste_gets_its_ghost_back_when_the_hold_ends() {
+    let mut whole = whole_with_hidden(false);
+    whole.hold_hidden(2, [0, 2, 0]);
+    whole.changes.clear();
+    whole.frame += HOLD_FRAMES;
+    whole.apply_observation(2, [0, 2, 0], 3, CellStatus::Missing);
+    assert!(!whole.hidden[2]);
+    assert_eq!(whole.changes.get(&[0, 2, 0]), Some(&4));
+    assert!(whole.holds.is_empty());
+}
+
+#[test]
+fn a_wrong_block_ends_the_hold_too() {
+    let mut whole = whole_with_hidden(false);
+    whole.hold_hidden(0, [0, 0, 0]);
+    whole.apply_observation(0, [0, 0, 0], 3, CellStatus::WrongState);
+    assert!(whole.hidden[0] && whole.holds.is_empty());
 }
 
 pub(super) struct DrawPair {
@@ -526,6 +638,7 @@ impl Tile {
         self.grid_cells.clear();
         self.blocks_ready = false;
         self.statuses.clear();
+        self.ignored.clear();
         self.materials.clear();
         self.mismatches.clear();
         self.tally = Tally::default();
@@ -636,6 +749,7 @@ impl Tile {
         let volume = (sx * sy * sz) as usize;
         let mut ids = Vec::with_capacity(volume);
         let mut statuses = Vec::with_capacity(volume);
+        let mut ignored = Vec::with_capacity(volume);
         let p = preview.placement.unwrap();
         let mut comparisons = std::collections::HashMap::new();
         for x in 0..sx {
@@ -645,8 +759,8 @@ impl Tile {
                     let local = p.world_to_local(schematic.size(), world).unwrap();
                     let id = schematic.palette_index(local).unwrap();
                     let expected = &preview.palette[id as usize];
-                    let status = if schematic.palette()[id as usize].is_placement_artifact() {
-                        CellStatus::Correct
+                    let (status, skip) = if schematic.palette()[id as usize].is_placement_artifact() {
+                        (CellStatus::Correct, false)
                     } else {
                         let cell = ids.len();
                         if region
@@ -656,18 +770,19 @@ impl Tile {
                             && let Some(&actual) = region.states.get(cell)
                         {
                             *comparisons.entry((id, actual)).or_insert_with(|| {
-                                compare(&region, cell, expected, schematic.is_air_index(id))
+                                compare_cell(&region, cell, expected, schematic.is_air_index(id))
                             })
                         } else {
-                            CellStatus::Unloaded
+                            (CellStatus::Unloaded, false)
                         }
                     };
                     ids.push(id);
                     statuses.push(status);
+                    ignored.push(skip);
                 }
             }
         }
-        if self.stamp.is_some() && self.statuses == statuses {
+        if self.stamp.is_some() && self.statuses == statuses && self.ignored == ignored {
             self.stamp = Some(region.stamp);
             return;
         }
@@ -695,10 +810,11 @@ impl Tile {
                 for y in 0..sy {
                     let id = ids[cells.len()] as usize;
                     let status = statuses[cells.len()];
+                    let skip = ignored[cells.len()];
                     let air = schematic.is_air_index(id as u32);
                     let ignored = schematic.palette()[id].is_placement_artifact();
                     let mut word = DEFAULT_LIGHT;
-                    if (!air && !ignored) || status == CellStatus::Extra {
+                    if ((!air && !ignored) || status == CellStatus::Extra) && !skip {
                         tally.add(status);
                         if status != CellStatus::Correct {
                             self.mismatches
@@ -720,15 +836,16 @@ impl Tile {
                                 Some((0.16, 0.60, 0.94, 0.30))
                             }
                         }
+                        // Counted for the material list, but never marked.
                         CellStatus::Wrong => {
                             materials[id][0] += 1;
-                            Some((1., 0.22, 0.42, 0.44))
+                            (!skip).then_some((1., 0.22, 0.42, 0.44))
                         }
                         CellStatus::WrongState => {
                             materials[id][0] += 1;
-                            Some((1., 0.69, 0.08, 0.42))
+                            (!skip).then_some((1., 0.69, 0.08, 0.42))
                         }
-                        CellStatus::Extra => Some((0.98, 0.14, 0.17, 0.40)),
+                        CellStatus::Extra => (!skip).then_some((0.98, 0.14, 0.17, 0.40)),
                         CellStatus::Correct if !air && !ignored => {
                             materials[id][1] += 1;
                             None
@@ -836,9 +953,41 @@ impl Tile {
         }
         self.stamp = Some(region.stamp);
         self.statuses = statuses;
+        self.ignored = ignored;
         self.materials = materials;
         self.tally = tally;
     }
+}
+
+/// Water, lava and powder snow come from buckets and the world, so the guide never counts
+/// them as missing, wrong or extra. The material list still counts them.
+pub(crate) fn ignored_material(name: &str) -> bool {
+    matches!(
+        name.strip_prefix("minecraft:").unwrap_or(name),
+        "water" | "flowing_water" | "lava" | "flowing_lava" | "powder_snow"
+    )
+}
+
+/// `compare`, and whether the cell is one the guide reports nothing about: a planned liquid
+/// or powder snow cell that is not right, or air planned where the world has one.
+fn compare_cell(
+    region: &terrain::Region,
+    cell: usize,
+    expected: &draw::NamedBlock,
+    air: bool,
+) -> (CellStatus, bool) {
+    let status = compare(region, cell, expected, air);
+    let ignored = match status {
+        CellStatus::Correct | CellStatus::Unloaded => false,
+        _ if !air => ignored_material(&expected.name),
+        _ => region
+            .states
+            .get(cell)
+            .and_then(|&state| region.palette.get(usize::from(state)))
+            .and_then(|block| block.identifier.as_deref())
+            .is_some_and(ignored_material),
+    };
+    (status, ignored)
 }
 
 fn compare(
@@ -1243,4 +1392,121 @@ fn a_fence_is_correct_before_its_neighbors_connect() {
         connected,
         "{}"
     ));
+}
+
+#[cfg(test)]
+fn region_of(names: &[&str]) -> terrain::Region {
+    terrain::Region {
+        stamp: terrain::Stamp {
+            session: 0,
+            dimension: 0,
+            registry: 0,
+            revision: 0,
+        },
+        chunks: Vec::new(),
+        layer_count: 1,
+        loaded: vec![u64::MAX],
+        states: (0..names.len() as u16).collect(),
+        palette: names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| terrain::BlockState {
+                runtime_id: index as u32,
+                identifier: Some((*name).into()),
+                canonical_state: Some("{}".into()),
+                tags: Vec::new(),
+                physics: None,
+                collision: terrain::ShapeBinding::NotRequested,
+                selection: terrain::ShapeBinding::NotRequested,
+            })
+            .collect(),
+        shape_offsets: Vec::new(),
+        shape_boxes: Vec::new(),
+        overrides: Vec::new(),
+    }
+}
+
+#[cfg(test)]
+fn block(name: &str) -> draw::NamedBlock {
+    draw::NamedBlock {
+        name: name.into(),
+        states: "{}".into(),
+    }
+}
+
+#[test]
+fn water_lava_and_powder_snow_are_never_reported_but_other_blocks_still_are() {
+    let world = region_of(&[
+        "minecraft:air",
+        "minecraft:water",
+        "minecraft:stone",
+        "minecraft:lava",
+        "minecraft:powder_snow",
+    ]);
+    // Planned liquid or powder snow: missing, or a block in its place, is not reported.
+    assert_eq!(
+        compare_cell(&world, 0, &block("minecraft:water"), false),
+        (CellStatus::Missing, true)
+    );
+    assert_eq!(
+        compare_cell(&world, 2, &block("minecraft:flowing_lava"), false),
+        (CellStatus::Wrong, true)
+    );
+    assert_eq!(
+        compare_cell(&world, 0, &block("minecraft:powder_snow"), false),
+        (CellStatus::Missing, true)
+    );
+    // The right liquid is simply correct.
+    assert_eq!(
+        compare_cell(&world, 1, &block("minecraft:water"), false),
+        (CellStatus::Correct, false)
+    );
+    // Water, lava or powder snow where air is planned is not an extra block; stone is.
+    for cell in [1, 3, 4] {
+        assert_eq!(
+            compare_cell(&world, cell, &block("minecraft:air"), true),
+            (CellStatus::Extra, true)
+        );
+    }
+    assert_eq!(
+        compare_cell(&world, 2, &block("minecraft:air"), true),
+        (CellStatus::Extra, false)
+    );
+    // A planned stone block is still missing or wrong when the world has air or water there.
+    assert_eq!(
+        compare_cell(&world, 0, &block("minecraft:stone"), false),
+        (CellStatus::Missing, false)
+    );
+    assert_eq!(
+        compare_cell(&world, 1, &block("minecraft:stone"), false),
+        (CellStatus::Wrong, false)
+    );
+}
+
+#[test]
+fn a_missing_liquid_does_not_hold_back_the_next_layer() {
+    // The tile tally leaves ignored cells out, which is what `layer_complete` reads.
+    let mut tally = Tally::default();
+    for (status, ignored) in [
+        (CellStatus::Correct, false),
+        (CellStatus::Missing, true),
+        (CellStatus::Extra, true),
+    ] {
+        if !ignored {
+            tally.add(status);
+        }
+    }
+    let tile = Tile {
+        lo: [0; 3],
+        hi: [4, 1, 4],
+        stamp: Some(terrain::Stamp {
+            session: 0,
+            dimension: 0,
+            registry: 0,
+            revision: 0,
+        }),
+        tally,
+        ..Tile::default()
+    };
+    assert!(layer_complete(&[tile], 4, 4));
 }
