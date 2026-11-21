@@ -1119,7 +1119,8 @@ pub(super) struct MaterialPageCounts {
     palette_identity: (usize, usize),
     palette_cursor: usize,
     palette_indices: [Vec<usize>; ROWS],
-    needed: [u64; ROWS],
+    /// Blocks already in the world as planned, per row; what is left is the total less these.
+    built: [u64; ROWS],
     cursor: usize,
     /// Finished counts by material, kept while the palette and the placed totals are unchanged,
     /// so a page seen before (or one the search brings back) shows at once instead of
@@ -1302,12 +1303,8 @@ impl Viewer {
             return materials.map(|index| index.map(|index| self.materials[index].total));
         }
         let identity = self.preview.palette_identity();
-        let placed_key = self
-            .tiles
-            .iter()
-            .map(|tile| tile.tally.missing + tile.tally.wrong)
-            .sum::<u64>();
-        let key = (identity.0, identity.1, placed_key);
+        let built_key = self.tiles.iter().map(|tile| tile.built).sum::<u64>();
+        let key = (identity.0, identity.1, built_key);
         let mut counts = self.browser_counts.borrow_mut();
         if counts.known_key != key {
             counts.known.clear();
@@ -1315,7 +1312,7 @@ impl Viewer {
             counts.materials = [None; ROWS];
             counts.palette_cursor = 0;
             counts.palette_indices = Default::default();
-            counts.needed = [0; ROWS];
+            counts.built = [0; ROWS];
             counts.cursor = 0;
         }
         // Every row on this page was counted before: show it without walking the tiles.
@@ -1359,23 +1356,26 @@ impl Viewer {
             let tile = &self.tiles[counts.cursor];
             for (row, material) in materials.iter().enumerate() {
                 if material.is_some() {
-                    let add = u64::from(tile.material_counts(&counts.palette_indices[row])[0]);
-                    counts.needed[row] += add;
+                    let add = u64::from(tile.material_counts(&counts.palette_indices[row])[1]);
+                    counts.built[row] += add;
                 }
             }
             counts.cursor += 1;
             counted += 1;
         }
         if counts.cursor == self.tiles.len() {
-            let result: [Option<u64>; ROWS] =
-                std::array::from_fn(|row| materials[row].map(|_| counts.needed[row]));
+            // What is left is everything not yet in the world as planned. Counting only the
+            // cells known to be missing showed 0 for blocks in unloaded or unchecked parts
+            // of the guide.
+            let left: [Option<u64>; ROWS] = std::array::from_fn(|row| {
+                materials[row].map(|index| self.materials[index].total.saturating_sub(counts.built[row]))
+            });
             for (row, line) in materials.iter().enumerate() {
-                if let Some(index) = line {
-                    let value = counts.needed[row];
+                if let (Some(index), Some(value)) = (line, left[row]) {
                     counts.known.insert(*index, value);
                 }
             }
-            result
+            left
         } else {
             [None; ROWS]
         }
@@ -1421,13 +1421,10 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
     let scanned = viewer.material_scan_available();
     let total: u64 = viewer.materials.iter().map(|line| line.total).sum();
     // Per-material counts walk every tile, so only the rows in view compute them; the
-    // totals read the tiles' running tallies.
+    // totals read each tile's built count. What is left is the total less what is built, so
+    // blocks in unloaded or unchecked parts of the guide count as left, not as done.
     let needed: u64 = if scanned {
-        viewer
-            .tiles
-            .iter()
-            .map(|tile| tile.tally.missing + tile.tally.wrong)
-            .sum()
+        total.saturating_sub(viewer.tiles.iter().map(|tile| tile.built).sum())
     } else {
         total
     };

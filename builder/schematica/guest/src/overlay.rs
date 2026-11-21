@@ -227,6 +227,9 @@ pub struct Tile {
     hi: [i32; 3],
     pub stamp: Option<terrain::Stamp>,
     pub tally: Tally,
+    /// Blocks in this tile that are in the world exactly as planned. The material list counts
+    /// what is left as everything else, so cells that are unloaded or not yet checked are left.
+    pub built: u64,
     pub fallback: bool,
     pub error: Option<String>,
     materials: Vec<[u16; 3]>,
@@ -678,6 +681,7 @@ impl Tile {
         self.materials.clear();
         self.mismatches.clear();
         self.tally = Tally::default();
+        self.built = 0;
     }
 
     pub(super) fn subtract_placed_materials(&self, remaining: &mut [u64]) {
@@ -990,8 +994,16 @@ impl Tile {
         self.stamp = Some(region.stamp);
         self.statuses = statuses;
         self.ignored = ignored;
+        self.built = materials.iter().map(|counts| u64::from(counts[1])).sum();
         self.materials = materials;
         self.tally = tally;
+    }
+
+    /// Gives a tile per-material counts without a world scan.
+    #[cfg(test)]
+    pub(crate) fn set_material_counts(&mut self, counts: Vec<[u16; 3]>) {
+        self.built = counts.iter().map(|counts| u64::from(counts[1])).sum();
+        self.materials = counts;
     }
 }
 

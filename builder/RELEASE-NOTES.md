@@ -1,3 +1,9 @@
+# Cinnamatica 0.3.51
+
+- **The material list now shows the right numbers.** "Left" was wrong: it counted only the blocks the guide had already checked and found missing, so a block in a part of the guide that had not been checked yet showed 0 left. You had placed nothing and had nothing in your inventory, and a material with 6 in the schematic showed 0 where it should show 6. I told you in 0.3.50 that your screenshot was correct and that only the wording was the problem. That was wrong, and I am sorry. "Left" is now the schematic's total for that block minus the blocks the guide has checked and found placed as planned, so anything not yet checked counts as left, never as done. The "% built" line at the top uses the same rule, so it can no longer read higher than it should.
+
+Verified: the mod's unit tests (79, including two new ones: nothing built shows the full total as left, and unchecked parts of the guide never count as built) and the OreUI window tests. The mod's WASM file was not built here. Not tried in the game.
+
 # Cinnamatica 0.3.50
 
 - **The material list says what it means.** The column that said "Needed" now says "Left", and a material with nothing left to place shows "Done" instead of 0. "Left" is how many of that block still have to be placed, and "Total" is how many the schematic has, so "Done" next to a total of 6 means all six are in the world. Your screenshot (soul sand 0 of 6, with 9,013 of 9,309 blocks built) was correct; the wording was the problem.

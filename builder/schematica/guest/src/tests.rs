@@ -323,25 +323,50 @@ fn material_page_counts_finish_over_multiple_frames() {
         registry: 1,
         revision: 0,
     });
-    // Thirty-two tiles are counted per call: three calls for seventy.
+    // Thirty-two tiles are counted per call: three calls for seventy. Nothing is built, so
+    // the first row (cobblestone, 49 in the schematic) has all 49 left, not 0.
     for pending in [true, true, false] {
         let mut bindings = serde_json::Map::new();
         browser::bindings(&viewer, &mut bindings, &mut Vec::new());
         assert_eq!(viewer.material_counts_pending(), pending);
-        assert_eq!(bindings["#bw_row0_needed"], if pending { "…" } else { "Done" });
+        assert_eq!(bindings["#bw_row0_needed"], if pending { "…" } else { "49" });
     }
     // A finished page is remembered: asking again counts nothing.
     let mut bindings = serde_json::Map::new();
     browser::bindings(&viewer, &mut bindings, &mut Vec::new());
-    assert_eq!(bindings["#bw_row0_needed"], "Done");
-    assert_eq!(bindings["#bw_row0_done"], true);
+    assert_eq!(bindings["#bw_row0_needed"], "49");
+    assert_eq!(bindings["#bw_row0_need"], true);
+    assert_eq!(bindings["#bw_row0_done"], false);
     assert!(!viewer.material_counts_pending());
-    // Placing or breaking a block changes the totals, so the counts start again.
-    viewer.tiles[0].tally.missing = 5;
+    assert_eq!(bindings["#bw_progress_label"], "0% built  ·  0 / 171");
+}
+
+#[test]
+fn what_is_left_is_the_total_less_what_is_built_so_unchecked_cells_never_read_as_done() {
+    let mut viewer = reference_viewer();
+    viewer.tiles.resize_with(3, Tile::default);
+    viewer.tiles[0].stamp = Some(terrain::Stamp {
+        session: 1,
+        dimension: 0,
+        registry: 1,
+        revision: 0,
+    });
+    // Only the first tile has been checked, and it holds 40 built blocks. The other two
+    // tiles were never checked and add nothing to what is built.
+    viewer.tiles[0].built = 40;
     let mut bindings = serde_json::Map::new();
     browser::bindings(&viewer, &mut bindings, &mut Vec::new());
-    assert!(viewer.material_counts_pending());
-    assert_eq!(bindings["#bw_row0_needed"], "…");
+    assert_eq!(bindings["#bw_progress_label"], "23% built  ·  40 / 171");
+    // Placing or breaking a block changes what is built, so the page's counts start again.
+    for _ in 0..4 {
+        browser::bindings(&viewer, &mut bindings, &mut Vec::new());
+    }
+    assert!(!viewer.material_counts_pending());
+    viewer.tiles[0].built = 41;
+    let mut bindings = serde_json::Map::new();
+    browser::bindings(&viewer, &mut bindings, &mut Vec::new());
+    assert_eq!(bindings["#bw_progress_label"], "23% built  ·  41 / 171");
+    assert_eq!(bindings["#bw_row0_needed"], "49");
 }
 
 #[test]
