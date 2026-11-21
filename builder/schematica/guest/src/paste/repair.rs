@@ -22,9 +22,12 @@ const SETTLE_FRAMES_STRUCTURE: u32 = 480;
 /// Fuel a frame must still have before it checks cells or sends a command.
 const SCAN_FUEL: u64 = 500_000;
 const SEND_FUEL: u64 = 700_000;
-const SENDS_PER_FRAME: usize = 8;
-/// Frames of failed world reads after which the check gives up.
-const READ_FAILURES: u32 = 900;
+/// Commands one frame may send. The host ends the mod for good when a frame asks for more than
+/// four (`MAX_COMMANDS_PER_FRAME`), so stay under that and leave room for other senders.
+const SENDS_PER_FRAME: usize = 3;
+/// Failed reads of one box, a frame apart, after which it is counted as not checked. A box can
+/// be unreadable when it is too far from the player or the frame's terrain reads are used up.
+const BOX_RETRIES: u32 = 30;
 
 enum Phase {
     Settle(u32),
@@ -205,10 +208,13 @@ impl Viewer {
                 }
                 _ => {
                     run.failures += 1;
-                    if run.failures > READ_FAILURES {
-                        return Some("Paste check stopped | The world could not be read".into());
+                    if run.failures <= BOX_RETRIES {
+                        return None;
                     }
-                    return None;
+                    run.failures = 0;
+                    let cells: i32 = (0..3).map(|axis| max[axis] - run.next[axis]).product();
+                    run.unloaded += cells as usize;
+                    return self.repair_next_box(run, lo, hi);
                 }
             }
         }
@@ -265,6 +271,11 @@ impl Viewer {
             return None;
         }
         run.scanning = None;
+        self.repair_next_box(run, lo, hi)
+    }
+
+    /// Moves to the next box, or the next copy. `Some` is the final report after the last box.
+    fn repair_next_box(&mut self, run: &mut Repair, lo: [i32; 3], hi: [i32; 3]) -> Option<String> {
         match next_box(run.next, lo, hi) {
             Some(next) => run.next = next,
             None if run.copy + 1 < run.placements.len() => {
@@ -413,6 +424,12 @@ mod tests {
             next = next_box(corner, lo, hi);
         }
         assert!(seen.iter().all(|&count| count == 1));
+    }
+
+    #[test]
+    fn a_frame_never_sends_as_many_commands_as_the_host_allows() {
+        // The host quarantines the mod when one frame asks for its fourth-plus command.
+        assert!(SENDS_PER_FRAME < 4);
     }
 
     #[test]

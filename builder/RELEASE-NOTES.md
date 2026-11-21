@@ -1,3 +1,10 @@
+# Cinnamatica 0.3.44
+
+- Fixed: 0.3.43 stopped the mod during the check for missing blocks after a paste. The check sent up to eight commands in one frame, and the game ends the mod for good when a frame asks for more than four. It now sends at most three per frame, which also keeps it clear of other senders. If the mod already shows as failed, press Reload on it in the Mods list or restart the game; logging out and back in does not clear it.
+- The check also no longer gives up on the whole build when part of it cannot be read (for example a part more than 128 blocks away). After thirty failed tries a box is counted as not checked and the check goes on; the final message says how many cells were not checked. This is a mod change only.
+
+Verified: the mod's unit tests (74, including a new one that keeps the check under the game's command limit). Not tried in the game: the paste check itself has still not been seen to finish; this fixes the crash that stopped it.
+
 # Cinnamatica 0.3.43
 
 - After a paste, the mod now checks for blocks the server did not keep and places only those again. Blocks that depend on another block (hanging signs and lanterns, wall signs, sand, torches, rails, plants) break when the paste places them before their support exists, so they were missing after a paste. When the paste has finished (command paste or Structure Paste) the mod waits a few seconds for the server, reads the pasted area a few cells at a time, lists the missing blocks, sends them again from the bottom up, waits, and checks again, up to three re-sends. The label shows `Paste check` with the round and progress, and the last message says whether every block is in place or how many are still missing. Water, lava and powder snow are not counted, cells in unloaded chunks are reported as not checked, and pressing Paste again cancels the check. With Paste Destroy on, wrong blocks are replaced as well. This is a mod change only.
