@@ -1,3 +1,12 @@
+# Cinnamatica 0.3.49
+
+- **Anvils now turn to the right side when Fast Place places them.** The client planned an anvil's facing as if it faced the player, but Bedrock turns an anvil a quarter turn to the left of the player, which is how the client's own prediction already places it. So the planned facing and the turn did not agree, and an anvil came out a quarter turn off. This is the one fix I am sure was a bug.
+- **Barrels and command blocks (command, repeating and chain) now turn to face the player** when the guide plans a horizontal facing, the same way droppers and dispensers already did. Before, nothing turned the view for them, so their facing depended on where you happened to look. A barrel or command block planned to face up or down is still not turned, because that depends on where your eyes are compared with the block, not on which way you face.
+- **Not changed, because the stairs' logic is mostly already there.** Furnaces, smokers, blast furnaces, chests, ender chests, trapped chests, fence gates, repeaters, comparators, carved pumpkins, stonecutters, lecterns, campfires, droppers, dispensers, observers and pistons already turn to the planned facing and can already be placed in the air. I checked the code for them and the new tests cover their quadrant table. I did not find a reason they would not work, but I have not seen it in the game.
+- **Not done.** Grindstones, bells, beehives, bee nests, chiseled bookshelves, decorated pots, shelves, beds, rails, tripwire hooks and coral fans have no turning rule. I do not know their Bedrock facing values well enough to write them without testing, and a wrong table would make them wrong every time. Doing them properly needs the placement run against a real server that I offered, or you telling me what they do in your game.
+
+Verified: the new test of every quadrant for the anvil, furnace, chest and similar families, the barrel and command blocks, and the existing orientation test; both pass, and the rest of the client compiles. The mod is unchanged since 0.3.48 and its tests were not re-run. Not tried in the game: any of the placements above.
+
 # Cinnamatica 0.3.48
 
 - **Export no longer blocks building.** In 0.3.47 an export counted as a paste in progress, which turned off Fast Place, the guide label and the stick tool until it finished. It now uploads in the background and none of those are affected. The Paste button waits while an export runs, and Export waits while a paste or its check runs, because both send commands and the host ends the mod if a frame sends too many.

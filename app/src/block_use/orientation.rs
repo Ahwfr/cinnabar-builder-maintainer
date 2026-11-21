@@ -106,14 +106,24 @@ pub(super) fn wanted_quadrant(offer: &CreativePlacementOffer) -> Option<usize> {
         .get("minecraft:cardinal_direction")
         .and_then(|state| state["value"].as_str())
     {
-        return ["north", "east", "south", "west"]
-            .iter()
-            .position(|name| *name == direction);
+        // Anvils face a quarter turn left of the player (`anvil_states` in gameplay); every
+        // other block with this state faces the player.
+        let table = if offer.name.ends_with("anvil") {
+            ["east", "south", "west", "north"]
+        } else {
+            ["north", "east", "south", "west"]
+        };
+        return table.iter().position(|name| *name == direction);
     }
     let face = planned_face(&planned)?;
     // These face the player when placed; observers and pistons face away from the player.
     let toward = match offer.name.as_str() {
-        "minecraft:dropper" | "minecraft:dispenser" => face,
+        "minecraft:dropper"
+        | "minecraft:dispenser"
+        | "minecraft:barrel"
+        | "minecraft:command_block"
+        | "minecraft:repeating_command_block"
+        | "minecraft:chain_command_block" => face,
         "minecraft:observer" | "minecraft:piston" | "minecraft:sticky_piston" => face ^ 1,
         _ => return None,
     };
@@ -975,6 +985,67 @@ mod tests {
             }),
         );
         assert_eq!(wanted_quadrant(&up), None);
+    }
+
+    #[test]
+    fn facing_families_turn_to_the_quadrant_their_own_rule_needs() {
+        let cardinal = |name: &str, direction: &str| {
+            offer(
+                name,
+                serde_json::json!({
+                    "minecraft:cardinal_direction": {"type":"string","value":direction}
+                }),
+            )
+        };
+        // Blocks that face the player: north is the look quadrant 0, then east, south, west.
+        for name in [
+            "minecraft:furnace",
+            "minecraft:smoker",
+            "minecraft:blast_furnace",
+            "minecraft:chest",
+            "minecraft:carved_pumpkin",
+            "minecraft:stonecutter_block",
+            "minecraft:lectern",
+            "minecraft:campfire",
+        ] {
+            for (quadrant, direction) in ["north", "east", "south", "west"].iter().enumerate() {
+                assert_eq!(
+                    wanted_quadrant(&cardinal(name, direction)),
+                    Some(quadrant),
+                    "{name} {direction}"
+                );
+            }
+        }
+        // Anvils face a quarter turn left of the player, as `anvil_states` places them.
+        for name in ["minecraft:anvil", "minecraft:chipped_anvil", "minecraft:damaged_anvil"] {
+            for (quadrant, direction) in ["east", "south", "west", "north"].iter().enumerate() {
+                assert_eq!(
+                    wanted_quadrant(&cardinal(name, direction)),
+                    Some(quadrant),
+                    "{name} {direction}"
+                );
+            }
+        }
+        // Barrels and command blocks face the player like droppers do.
+        for name in [
+            "minecraft:barrel",
+            "minecraft:command_block",
+            "minecraft:repeating_command_block",
+            "minecraft:chain_command_block",
+        ] {
+            for (face, quadrant) in [(2, 0), (5, 1), (3, 2), (4, 3)] {
+                let planned = offer(
+                    name,
+                    serde_json::json!({"facing_direction": {"type":"int","value":face}}),
+                );
+                assert_eq!(wanted_quadrant(&planned), Some(quadrant), "{name} {face}");
+            }
+            let up = offer(
+                name,
+                serde_json::json!({"facing_direction": {"type":"int","value":1}}),
+            );
+            assert_eq!(wanted_quadrant(&up), None, "{name} up");
+        }
     }
 
     #[test]
