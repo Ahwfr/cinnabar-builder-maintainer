@@ -23,6 +23,8 @@ mod placement_stairs;
 pub mod placement_state;
 mod placement_support;
 mod placement_vines;
+pub mod placement_items;
+pub mod placement_world_states;
 pub mod survival_mining;
 
 pub use protocol::BatchSendError;

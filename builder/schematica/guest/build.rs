@@ -46,4 +46,46 @@ fn main() {
         generated,
     )
     .unwrap();
+    world_states(&manifest);
+}
+
+/// Copies the native placement's world-controlled state names, so the guest ignores the same
+/// properties when it offers a placement and checks the built guide.
+fn world_states(manifest: &std::path::Path) {
+    let source = manifest.join("../../../crates/gameplay/src/placement_world_states.rs");
+    println!("cargo:rerun-if-changed={}", source.display());
+    let parsed = syn::parse_file(&fs::read_to_string(&source).unwrap()).unwrap();
+    let names: Vec<String> = parsed
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Const(item) if item.ident == "WORLD_CONTROLLED_NAMES" => Some(item),
+            _ => None,
+        })
+        .map(|item| {
+            let Expr::Reference(reference) = item.expr.as_ref() else {
+                panic!("world-controlled names must remain an explicit array");
+            };
+            let Expr::Array(array) = reference.expr.as_ref() else {
+                panic!("world-controlled names must remain an explicit array");
+            };
+            array
+                .elems
+                .iter()
+                .map(|entry| match entry {
+                    Expr::Lit(value) => match &value.lit {
+                        Lit::Str(value) => value.value(),
+                        _ => panic!("non-string world-controlled name"),
+                    },
+                    _ => panic!("nonliteral world-controlled name"),
+                })
+                .collect()
+        })
+        .expect("native world-controlled state names");
+    assert!(!names.is_empty());
+    fs::write(
+        PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("world_states.rs"),
+        format!("pub(crate) const WORLD_CONTROLLED_STATES: &[&str] = &{names:?};\n"),
+    )
+    .unwrap();
 }

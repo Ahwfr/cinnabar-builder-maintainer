@@ -869,7 +869,16 @@ fn compare(
         (true, true) => CellStatus::Correct,
         (true, false) => CellStatus::Extra,
         (false, true) => CellStatus::Missing,
-        (false, false) if name != expected.name => CellStatus::Wrong,
+        // Fast Place builds a double slab as the full block of its material.
+        (false, false) if built_as_full_block(&expected.name, name) => CellStatus::Correct,
+        // A powered or lit block counts as its plain block; the world lights it.
+        (false, false)
+            if name != expected.name
+                && crate::unlit_name(name).unwrap_or(name)
+                    != crate::unlit_name(&expected.name).unwrap_or(&expected.name) =>
+        {
+            CellStatus::Wrong
+        }
         (false, false) => match block.canonical_state.as_deref() {
             Some(state) if preview_states_match(name, &expected.states, state) => {
                 CellStatus::Correct
@@ -880,9 +889,46 @@ fn compare(
     }
 }
 
+/// Whether `actual` is the full block a planned double slab is built as, following the
+/// registry's naming of a material's full block: `dark_oak_double_slab` as `dark_oak_planks`,
+/// `stone_brick_double_slab` as `stone_bricks`, `normal_stone_double_slab` as `stone`.
+/// Incomplete: petrified oak and end stone brick double slabs name no matching block.
+fn built_as_full_block(expected: &str, actual: &str) -> bool {
+    let Some(material) = expected
+        .strip_prefix("minecraft:")
+        .and_then(|name| name.strip_suffix("_double_slab"))
+    else {
+        return false;
+    };
+    let Some(actual) = actual.strip_prefix("minecraft:") else {
+        return false;
+    };
+    actual == material
+        || ["s", "_planks", "_block"]
+            .iter()
+            .any(|suffix| actual.strip_suffix(suffix) == Some(material))
+        || material
+            .strip_suffix(actual)
+            .is_some_and(|prefix| prefix.ends_with('_'))
+}
+
+/// Whether two states differ only in properties the world sets after placement, such as
+/// power, lit or growth, so a built guide counts them as correct. Open state stays compared:
+/// V2 Strict reconciles a trapdoor whose guide cell reads as wrong.
+fn same_placed_state(expected: &str, actual: &str) -> bool {
+    let placed = |state: &str| {
+        let mut values: Map<String, serde_json::Value> = serde_json::from_str(state).ok()?;
+        values.retain(|key, _| {
+            key == "open_bit" || !crate::WORLD_CONTROLLED_STATES.contains(&key.as_str())
+        });
+        Some(values)
+    };
+    placed(expected).is_some_and(|expected| Some(expected) == placed(actual))
+}
+
 /// Pane arms and wall geometry are resolved by adjacent blocks when placed.
 fn preview_states_match(name: &str, expected: &str, actual: &str) -> bool {
-    if expected == actual {
+    if expected == actual || same_placed_state(expected, actual) {
         return true;
     }
     let wall = name.ends_with("_wall");
@@ -934,7 +980,7 @@ fn preview_states_match(name: &str, expected: &str, actual: &str) -> bool {
             !((leaves && matches!(key.as_str(), "persistent_bit" | "update_bit"))
                 || (redstone && key.starts_with("redstone_"))
                 || (observer && key == "powered_bit")
-                || (hopper && key == "toggle_bit"))
+                || (hopper && matches!(key.as_str(), "toggle_bit" | "facing_direction")))
         });
         if gate {
             values.remove("in_wall_bit");
@@ -947,7 +993,69 @@ fn preview_states_match(name: &str, expected: &str, actual: &str) -> bool {
         .is_some_and(|(a, b)| a == b)
 }
 
-#[cfg(test)]
+#[test]
+fn double_slabs_built_as_their_full_block_count_as_correct() {
+    assert!(built_as_full_block(
+        "minecraft:dark_oak_double_slab",
+        "minecraft:dark_oak_planks"
+    ));
+    assert!(built_as_full_block(
+        "minecraft:stone_brick_double_slab",
+        "minecraft:stone_bricks"
+    ));
+    assert!(built_as_full_block(
+        "minecraft:brick_double_slab",
+        "minecraft:brick_block"
+    ));
+    assert!(built_as_full_block(
+        "minecraft:normal_stone_double_slab",
+        "minecraft:stone"
+    ));
+    assert!(built_as_full_block(
+        "minecraft:andesite_double_slab",
+        "minecraft:andesite"
+    ));
+    assert!(!built_as_full_block(
+        "minecraft:dark_oak_double_slab",
+        "minecraft:dark_oak_stairs"
+    ));
+    assert!(!built_as_full_block(
+        "minecraft:dark_oak_double_slab",
+        "minecraft:oak_planks"
+    ));
+    assert!(!built_as_full_block("minecraft:stone", "minecraft:stone"));
+}
+
+#[test]
+fn world_set_states_and_lit_variants_count_as_correct_in_the_guide() {
+    let lamp_lit = r#"{"growth":{"type":"int","value":7}}"#;
+    assert!(preview_states_match(
+        "minecraft:wheat",
+        lamp_lit,
+        r#"{"growth":{"type":"int","value":3}}"#
+    ));
+    assert!(preview_states_match(
+        "minecraft:golden_rail",
+        r#"{"rail_data_bit":{"type":"byte","value":1},"rail_direction":{"type":"int","value":1}}"#,
+        r#"{"rail_data_bit":{"type":"byte","value":0},"rail_direction":{"type":"int","value":0}}"#
+    ));
+    // Orientation and open state stay compared.
+    assert!(!preview_states_match(
+        "minecraft:oak_stairs",
+        r#"{"upside_down_bit":{"type":"byte","value":1},"weirdo_direction":{"type":"int","value":2}}"#,
+        r#"{"upside_down_bit":{"type":"byte","value":0},"weirdo_direction":{"type":"int","value":2}}"#
+    ));
+    assert!(!preview_states_match(
+        "minecraft:oak_trapdoor",
+        r#"{"direction":{"type":"int","value":1},"open_bit":{"type":"byte","value":1}}"#,
+        r#"{"direction":{"type":"int","value":1},"open_bit":{"type":"byte","value":0}}"#
+    ));
+    assert_eq!(
+        crate::unlit_name("minecraft:lit_redstone_lamp"),
+        Some("minecraft:redstone_lamp")
+    );
+}
+
 #[test]
 fn natural_and_persistent_leaves_are_the_same_material() {
     let natural =
@@ -970,7 +1078,12 @@ fn pane_arms_do_not_mark_the_correct_pane_yellow() {
         "{}",
         connected
     ));
-    assert!(!preview_states_match("minecraft:stone", "{}", connected));
+    // Connections are world-set for any block; a placement-set difference still counts.
+    assert!(!preview_states_match(
+        "minecraft:stone",
+        "{}",
+        r#"{"pillar_axis":{"type":"string","value":"x"}}"#
+    ));
     assert!(!preview_states_match(
         "minecraft:glass_pane",
         "{}",

@@ -7,7 +7,7 @@ fn placement_cell_is_on_the_hit_face_and_requires_input_ownership() {
     bind_world_clock(&mut world);
     let cells = world
         .run_system_cached(|context: GameplayContext| {
-            [true, false].map(|owned| context.facts(owned, None, None, None).placement_cell)
+            [true, false].map(|owned| context.facts(owned, false, None, None, None).placement_cell)
         })
         .unwrap();
     assert_eq!(cells, [Some([4, 2, 7]), None]);

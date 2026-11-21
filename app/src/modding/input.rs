@@ -792,7 +792,6 @@ pub(super) fn prepare_mod_input(
     }
 }
 
-
 /// Applies shared pointer capture and input consumption for every native personal panel.
 /// One frame's wheel turn in notches, positive away from the player; a pixel-precise wheel
 /// reports its pixels / 16.

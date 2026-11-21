@@ -433,9 +433,11 @@ impl Viewer {
         }
         self.tool.poll = POLL_FRAMES;
         let observed = player_state::read_selected_slot().and_then(|slot| {
-            Ok(slot.zip(player_state::read_revisions()?).map(|(slot, revisions)| {
-                (slot.session, slot.dimension, slot.slot, revisions.equipment)
-            }))
+            Ok(slot
+                .zip(player_state::read_revisions()?)
+                .map(|(slot, revisions)| {
+                    (slot.session, slot.dimension, slot.slot, revisions.equipment)
+                }))
         });
         let observed = match observed {
             Ok(observed) => observed,
@@ -710,7 +712,9 @@ impl Viewer {
             return;
         }
         if !gameplay::can_paste_blocks() {
-            self.show_label("Move needs Creative, operator cheats, and setblock and fill permissions");
+            self.show_label(
+                "Move needs Creative, operator cheats, and setblock and fill permissions",
+            );
             return;
         }
         match Capture::new(a, b, scope) {
@@ -872,7 +876,10 @@ impl Viewer {
                 }
             }
             self.paste_notice = Some((
-                format!("{} sent {} commands | See chat for results", run.title, run.sent),
+                format!(
+                    "{} sent {} commands | See chat for results",
+                    run.title, run.sent
+                ),
                 6.0,
             ));
             self.last_label.clear();
@@ -1176,7 +1183,14 @@ fn next_paste_command(job: &mut PasteJob) -> Option<(String, usize)> {
             job.cursor += 1;
             continue;
         };
-        match paste::command(&job.schematic, job.placement, local, index, &formatted, false) {
+        match paste::command(
+            &job.schematic,
+            job.placement,
+            local,
+            index,
+            &formatted,
+            false,
+        ) {
             (Some(command), cells) => return Some((command, cells)),
             (None, _) => job.cursor += 1,
         }
@@ -1241,7 +1255,10 @@ mod tests {
         let commands = fill_commands([0, 60, 0], [40, 5, 33], "minecraft:stone", None);
         assert_eq!(commands.len(), 4);
         assert_eq!(commands[0], "/fill 0 60 0 31 64 31 minecraft:stone replace");
-        assert_eq!(commands[3], "/fill 32 60 32 39 64 32 minecraft:stone replace");
+        assert_eq!(
+            commands[3],
+            "/fill 32 60 32 39 64 32 minecraft:stone replace"
+        );
         let replace = fill_commands(
             [1, 2, 3],
             [1, 1, 1],

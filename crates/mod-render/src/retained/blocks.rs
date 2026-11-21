@@ -14,6 +14,14 @@ use std::{
 #[cfg(test)]
 mod tests;
 
+/// The plain full cube a hologram draws in place of a block-entity-rendered block.
+const ENTITY_DRAWN_STAND_IN: &str = "minecraft:white_concrete";
+
+/// Whether the block-entity renderer, not the terrain mesher, draws `name`.
+fn entity_drawn(name: &str) -> bool {
+    assets::facts::block_render_fact(name).kind == assets::facts::BlockRenderKind::EntityDrawn
+}
+
 /// A state is resolved in the current session, never a different world's ID space.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum BlockState {
@@ -321,6 +329,9 @@ impl BlockGrid {
         self.mesh_changed(assets, mode, &palette, settings, None, None)
     }
 
+    /// Resolves the palette, drawing a block the block-entity renderer owns (chests, beds,
+    /// banners, heads and the rest of the `EntityDrawn` render kind) as a plain cube, since
+    /// the terrain mesher gives it no geometry. Only this mesh changes; the grid keeps the block.
     fn resolve_palette(
         &self,
         assets: &RuntimeAssets,
@@ -336,6 +347,9 @@ impl BlockGrid {
             .map(|state| {
                 let id = match state {
                     BlockState::RuntimeId(id) => Some(*id),
+                    BlockState::Named { name, .. } if entity_drawn(name) => {
+                        named(ENTITY_DRAWN_STAND_IN, "{}")
+                    }
                     BlockState::Named { name, states } => named(name, states),
                 };
                 id.filter(|id| assets.is_known(mode, *id))

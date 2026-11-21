@@ -48,6 +48,8 @@ pub(crate) struct InteractionOwners<'w> {
     item_use: Option<Res<'w, client_interaction::item_use::ItemUseRuntime>>,
     melee: Option<Res<'w, client_interaction::melee::MeleeRuntime>>,
     block_use: Option<Res<'w, client_interaction::block_use::BlockUseRuntime>>,
+    /// Fast Place holds sneak while a click on an interactive block places.
+    creative: Option<ResMut<'w, crate::block_use::creative::CreativePlacement>>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -65,7 +67,7 @@ pub(crate) fn advance_local_physics(
     mut view: ResMut<LocalViewPose>,
     settings: MovementSettings<'_>,
     player: Option<Res<PlayerRuntime>>,
-    interaction: InteractionOwners<'_>,
+    mut interaction: InteractionOwners<'_>,
     mut locals: ResMut<LocomotionState>,
     network: Option<Res<NetworkHandle<PackApplication>>>,
 ) {
@@ -173,6 +175,21 @@ pub(crate) fn advance_local_physics(
         frame.sneak = Default::default();
         frame.always_sprint = false;
         frame.toggle_sprint = false;
+        frame.toggle_sneak = false;
+    }
+    let latest_written = movement_ticker
+        .latest_written_facing()
+        .map(|(tick, _)| tick);
+    if interaction
+        .creative
+        .as_deref_mut()
+        .is_some_and(|creative| creative.holds_sneak(latest_written))
+    {
+        frame.sneak = semantic_input::ActionPhase {
+            pressed: false,
+            held: true,
+            released: false,
+        };
         frame.toggle_sneak = false;
     }
 

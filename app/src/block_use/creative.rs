@@ -21,6 +21,39 @@ pub(crate) struct CreativePlacement {
     /// slot holding none of them, so alternating materials stay in the hotbar.
     recent: Vec<String>,
     pending: Option<Pending>,
+    sneak: SneakHold,
+}
+
+/// Sneak Fast Place holds so a click on an interactive support (a chest, furnace, lever or
+/// button) places the block instead of using the support.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum SneakHold {
+    #[default]
+    Idle,
+    /// Held until the waiting press is sent.
+    Holding,
+    /// Held until the movement sample of this tick, which carries the click, is written.
+    Releasing(u64),
+}
+
+impl CreativePlacement {
+    /// Whether Fast Place holds sneak for the coming movement frame. A release ends once the tick
+    /// carrying the click is written, and a hold ends when its press is gone.
+    pub(crate) fn holds_sneak(&mut self, latest_written_tick: Option<u64>) -> bool {
+        match self.sneak {
+            SneakHold::Idle => false,
+            SneakHold::Holding if self.pending.is_some() => true,
+            SneakHold::Releasing(tick)
+                if latest_written_tick.is_none_or(|written| written < tick) =>
+            {
+                true
+            }
+            SneakHold::Holding | SneakHold::Releasing(_) => {
+                self.sneak = SneakHold::Idle;
+                false
+            }
+        }
+    }
 }
 
 type StackKey = (i32, u32, i32);
@@ -170,6 +203,38 @@ fn advance_catalog(player: &mut client_state::PlayerRuntime, pending: &mut Pendi
     }
 }
 
+/// A planned double slab is built from the full block drawn the same way, such as dark oak
+/// planks for a dark oak double slab; every other offer is kept.
+fn full_block_offer(
+    collisions: &PhysicsCollisionRegistries,
+    stream: &chunk_pipeline::WorldStream,
+    mut offer: mod_host::CreativePlacementOffer,
+) -> mod_host::CreativePlacementOffer {
+    let mode = stream.network_id_mode();
+    let full = collisions
+        .block_default_runtime_id(mode, &offer.name)
+        .and_then(|slab| {
+            gameplay::placement_items::double_slab_full_block(
+                collisions,
+                stream.runtime_assets(),
+                mode,
+                slab,
+            )
+        })
+        .and_then(|block| {
+            Some((
+                collisions.block_identifier(mode, block)?,
+                collisions.block_canonical_state(mode, block)?,
+            ))
+        });
+    if let Some((name, states)) = full {
+        bevy::log::debug!(planned = %offer.name, full = name, "Fast Place builds a double slab as its full block");
+        offer.name = name.to_owned();
+        offer.states = states.to_owned();
+    }
+    offer
+}
+
 fn key(stack: &NetworkItemStack) -> StackKey {
     (stack.network_id, stack.metadata, stack.block_runtime_id)
 }
@@ -202,6 +267,7 @@ pub(super) fn try_start(
         bevy::log::debug!(support = ?observed.target.position, face = observed.target.face, "Fast Place: native hit has no schematic offer");
         return false;
     };
+    let offer = full_block_offer(&context.collisions, stream, offer);
     bevy::log::debug!(block = %offer.name, states = %offer.states, ghost = ?offer.position,
         support = ?observed.target.position, face = observed.target.face, "Fast Place: examining use press");
     let Some(game_mode @ (PlayerGameMode::Creative | PlayerGameMode::Survival)) =
@@ -254,14 +320,18 @@ pub(super) fn try_start(
         return false;
     }
     let ledger = player.inventory.ledger();
+    // A wall sign, banner or coral fan is built from the item of its floor-standing form.
+    let item_block =
+        gameplay::placement_items::standing_form(&context.collisions, mode, &offer.name)
+            .unwrap_or_else(|| offer.name.clone());
     let quality = |stack: &NetworkItemStack| {
-        let block = super::build::held_placement_block(
+        let block = super::build::fast_place_block(
             &context.collisions,
             stream,
             stack.block_runtime_id,
             || stream.authority().item_identifier(stack.network_id),
         )?;
-        (context.collisions.block_identifier(mode, block)? == offer.name.as_str()).then(|| {
+        (context.collisions.block_identifier(mode, block)? == item_block.as_str()).then(|| {
             context.collisions.block_canonical_state(mode, block) == Some(offer.states.as_str())
         })
     };
@@ -344,7 +414,7 @@ pub(super) fn try_start(
     let victim = (0..protocol::HOTBAR_SLOT_COUNT)
         .filter_map(|slot| {
             let stack = ledger.backing_stack(slot)?;
-            let name = super::build::held_placement_block(
+            let name = super::build::fast_place_block(
                 &context.collisions,
                 stream,
                 stack.block_runtime_id,
@@ -690,9 +760,26 @@ pub(super) fn resume(
     } else {
         observed
     };
-    let started = pending.started;
     let use_air = observed.target.position == pending.offer.position
         && observed.target.runtime_id == stream.air_block_id();
+    // A click on a chest, furnace, lever or the like would use it; sneak first so it places.
+    let interactive_support = !pending.interacting
+        && !use_air
+        && context
+            .collisions
+            .block_facts(stream.network_id_mode(), observed.target.runtime_id)
+            .traits
+            .contains(assets::registry::BlockTraits::INTERACTIVE);
+    if interactive_support && !state.sneaking {
+        if let Some(policy) = context.creative.as_deref_mut() {
+            bevy::log::debug!(ghost = ?pending.offer.position, support = ?observed.target.position,
+                "Fast Place: holding sneak to place against an interactive block");
+            policy.sneak = SneakHold::Holding;
+            policy.pending = Some(pending);
+        }
+        return true;
+    }
+    let started = pending.started;
     runtime.forget_press_resolution();
     runtime.selection_changed(&observed.selection);
     let clock = RepeatClock::for_state(context.time.elapsed(), &state, Some(pending.game_mode));
@@ -711,10 +798,37 @@ pub(super) fn resume(
     build::advance(
         player, context, runtime, item_use, swings, movement, &mut build,
     );
+    if let Some(policy) = context.creative.as_deref_mut()
+        && policy.sneak == SneakHold::Holding
+    {
+        policy.sneak = SneakHold::Releasing(movement.next_tick());
+    }
     // The facing tick and any inventory wait overlap the repeat interval, so oriented blocks
     // (logs, slabs, stairs) repeat as fast as plain ones.
     runtime.credit_assisted_start(started);
     movement.end_placement_facing();
     runtime.clear_press();
     true
+}
+
+#[cfg(test)]
+mod sneak_hold_tests {
+    use super::{CreativePlacement, SneakHold};
+
+    /// Sneak stays held until the tick carrying the click is written, and a hold without a
+    /// waiting press ends at once.
+    #[test]
+    fn a_sneak_release_waits_for_the_click_tick() {
+        let mut policy = CreativePlacement {
+            sneak: SneakHold::Releasing(10),
+            ..Default::default()
+        };
+        assert!(policy.holds_sneak(None));
+        assert!(policy.holds_sneak(Some(9)));
+        assert!(!policy.holds_sneak(Some(10)));
+        assert!(!policy.holds_sneak(Some(9)));
+        policy.sneak = SneakHold::Holding;
+        assert!(!policy.holds_sneak(None));
+        assert_eq!(policy.sneak, SneakHold::Idle);
+    }
 }

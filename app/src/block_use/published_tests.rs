@@ -20,6 +20,9 @@ use {
 #[path = "published_tests/actor_use.rs"]
 mod actor_use_tests;
 
+#[path = "published_tests/world_states.rs"]
+mod world_states_tests;
+
 #[path = "published_tests/item_use.rs"]
 mod item_use_tests;
 

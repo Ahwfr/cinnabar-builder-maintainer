@@ -1513,6 +1513,11 @@ literal = "turtle_scute"
 reason = "Java 1.21.2+ equipment texture file name renamed to the Bedrock turtle armour layer, not an item identifier."
 
 [[identifier_literal_exceptions]]
+path = "crates/mod-render/src/retained/blocks.rs"
+literal = "minecraft:white_concrete"
+reason = "Plain cube a mod hologram draws in place of a block-entity-rendered block; the hologram mesh only, never placed or compared."
+
+[[identifier_literal_exceptions]]
 path = "crates/pack-compiler/input/src/pack/block.rs"
 literal = "missing_tile"
 reason = "terrain_texture.json key that native BlockGraphics uses for blocks without graphics, not a block identifier."

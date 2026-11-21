@@ -90,6 +90,41 @@ pub(super) fn held_placement_block(
     })
 }
 
+/// [`held_placement_block`], plus the blocks of items Fast Place builds with that carry no
+/// block, such as signs, banners and heads.
+pub(super) fn fast_place_block(
+    collisions: &PhysicsCollisionRegistries,
+    stream: &chunk_pipeline::WorldStream,
+    block_id: i32,
+    item_identifier: impl Fn() -> Option<std::sync::Arc<str>>,
+) -> Option<u32> {
+    held_placement_block(collisions, stream, block_id, &item_identifier).or_else(|| {
+        gameplay::placement_items::routed_item_block(
+            collisions,
+            stream.network_id_mode(),
+            &item_identifier()?,
+        )
+    })
+}
+
+/// Whether clicking `face` with the item placing `placed` builds `expected` when no prediction
+/// exists. A wall banner or coral fan comes from its floor item clicked on a side face; the floor
+/// form of a block that also has a wall form needs the top face.
+fn unpredicted_face_places(
+    collisions: &PhysicsCollisionRegistries,
+    mode: assets::NetworkIdMode,
+    placed: &str,
+    expected: &mod_host::CreativePlacementOffer,
+    face: u8,
+) -> bool {
+    use gameplay::placement_items::{standing_form, wall_form};
+    if placed == expected.name {
+        return wall_form(collisions, mode, placed).is_none() || face == 1;
+    }
+    (2..=5).contains(&face)
+        && standing_form(collisions, mode, &expected.name).as_deref() == Some(placed)
+}
+
 /// True the first time a refusal repeats the same cause, so a held press logs each distinct
 /// refusal once instead of every tick.
 fn refusal_once(key: String) -> bool {
@@ -196,12 +231,12 @@ fn prepare(
         // the item's own use and report the same success, which starts the repeat delay.
         let paired = paired_item_block(&context.collisions, stream, &observed.selection.item);
         let placed_block = paired.or_else(|| {
-            held_placement_block(
-                &context.collisions,
-                stream,
-                observed.selection.item.block_runtime_id(),
-                || identifier.clone(),
-            )
+            let block_id = observed.selection.item.block_runtime_id();
+            if attempt.expected.is_some() {
+                fast_place_block(&context.collisions, stream, block_id, || identifier.clone())
+            } else {
+                held_placement_block(&context.collisions, stream, block_id, || identifier.clone())
+            }
         });
         let placement = (ready && caps.can_build && local_use != LocalUse::Interact)
             .then_some(placed_block)
@@ -238,8 +273,10 @@ fn prepare(
                 && placed_block.is_some_and(|block| {
                     context.collisions.block_facts(mode, block).placement
                         == assets::facts::PlacementRule::Unresolved
-                        && context.collisions.block_identifier(mode, block)
-                            == Some(expected.name.as_str())
+                        && context.collisions.block_identifier(mode, block).is_some_and(|name| {
+                            unpredicted_face_places(&context.collisions, mode, name, expected,
+                                observed.target.face)
+                        })
                 })
                 && world.is_air(expected.position).unwrap_or(false)
                 && (if attempt.air_place {

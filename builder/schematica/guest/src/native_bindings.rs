@@ -305,8 +305,10 @@ mod tests {
             },
         };
         CACHE.with(|cache| {
-            cache.borrow_mut().bindings =
-                vec![row("schematic-execute", "KeyJ"), row("schematic-menu", "F4")]
+            cache.borrow_mut().bindings = vec![
+                row("schematic-execute", "KeyJ"),
+                row("schematic-menu", "F4"),
+            ]
         });
         keys.keys_pressed = vec!["KeyJ".into()];
         assert!(action(&keys, &mut false) == Some(Action::Execute));

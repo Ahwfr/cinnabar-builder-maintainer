@@ -750,40 +750,39 @@ impl Viewer {
                 .find_map(|tile| tile.status_at(*cell))
                 .is_some_and(|status| self.accepts_plant_replacement(*cell, status))
         });
-        let placement_cell =
-            if !pasting
-                && !self.tool_active()
-                && self.options.fast_place
-                && self.shown
-                && self.placement.is_some()
-            {
-                let native = native_cell
-                    .filter(|pos| self.planned_block(*pos).is_some() && self.may_need_block(*pos));
-                if replacement_cell.is_some() {
-                    replacement_cell
-                } else if self.options.hold_place {
-                    // A held click must acquire each new ghost on the current crosshair ray.
-                    // Nearby assist may choose an off-ray cell only in the single-click mode.
-                    aimed
-                } else if self.options.strict_place || inside_ghost {
-                    aimed
-                        .or_else(|| native.filter(|pos| Some(*pos) != eye_cell))
-                        .or_else(|| {
-                            self.options
-                                .bridge_place
-                                .then(|| self.bridge_ghost(world_target, use_held))
-                                .flatten()
-                        })
-                } else {
-                    native.or_else(|| {
-                        (self.options.correct_aim && self.options.bridge_place)
+        let placement_cell = if !pasting
+            && !self.tool_active()
+            && self.options.fast_place
+            && self.shown
+            && self.placement.is_some()
+        {
+            let native = native_cell
+                .filter(|pos| self.planned_block(*pos).is_some() && self.may_need_block(*pos));
+            if replacement_cell.is_some() {
+                replacement_cell
+            } else if self.options.hold_place {
+                // A held click must acquire each new ghost on the current crosshair ray.
+                // Nearby assist may choose an off-ray cell only in the single-click mode.
+                aimed
+            } else if self.options.strict_place || inside_ghost {
+                aimed
+                    .or_else(|| native.filter(|pos| Some(*pos) != eye_cell))
+                    .or_else(|| {
+                        self.options
+                            .bridge_place
                             .then(|| self.bridge_ghost(world_target, use_held))
                             .flatten()
                     })
-                }
             } else {
-                None
-            };
+                native.or_else(|| {
+                    (self.options.correct_aim && self.options.bridge_place)
+                        .then(|| self.bridge_ghost(world_target, use_held))
+                        .flatten()
+                })
+            }
+        } else {
+            None
+        };
         if let Some(placement) = self.placement
             && let Some((block, [x, y, z])) =
                 placement_cell.and_then(|pos| self.placement_block(pos))
@@ -1141,6 +1140,13 @@ impl Viewer {
     fn placement_block(&self, pos: [i32; 3]) -> Option<(&schematica_core::BlockState, [i32; 3])> {
         use schematica_core::StateValue;
         let block = self.planned_block(pos)?;
+        // A bed's head is placed by its foot; the head cell offers nothing.
+        if matches!(
+            block.states.get("head_piece_bit"),
+            Some(StateValue::Bool(true) | StateValue::Byte(1) | StateValue::Int(1))
+        ) {
+            return None;
+        }
         if !matches!(
             block.states.get("upper_block_bit"),
             Some(StateValue::Bool(true) | StateValue::Byte(1) | StateValue::Int(1))
@@ -1548,7 +1554,19 @@ pub(crate) fn unplaceable(name: &str) -> bool {
 /// world powers it. Offer that block, so a comparator that is receiving a signal, or a lit
 /// furnace, can be placed at all.
 fn unlit_variant(mut block: schematica_core::BlockState) -> schematica_core::BlockState {
-    let name = match block.name.as_str() {
+    let Some(name) = unlit_name(&block.name) else {
+        return block;
+    };
+    block.name = name.to_owned();
+    block.states.remove("output_lit_bit");
+    block.states.remove("output_subtract_bit");
+    block.states.retain(|key, _| key != "powered_bit");
+    block
+}
+
+/// The unpowered, unlit block a powered or lit one is placed as, if it has one.
+pub(crate) fn unlit_name(name: &str) -> Option<&'static str> {
+    Some(match name {
         "minecraft:powered_comparator" => "minecraft:unpowered_comparator",
         "minecraft:powered_repeater" => "minecraft:unpowered_repeater",
         "minecraft:lit_furnace" => "minecraft:furnace",
@@ -1559,13 +1577,8 @@ fn unlit_variant(mut block: schematica_core::BlockState) -> schematica_core::Blo
         "minecraft:lit_deepslate_redstone_ore" => "minecraft:deepslate_redstone_ore",
         // The redstone torch item places a lit torch; the world turns it off when powered.
         "minecraft:unlit_redstone_torch" => "minecraft:redstone_torch",
-        _ => return block,
-    };
-    block.name = name.to_owned();
-    block.states.remove("output_lit_bit");
-    block.states.remove("output_subtract_bit");
-    block.states.retain(|key, _| key != "powered_bit");
-    block
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
@@ -1574,3 +1587,4 @@ mod tests;
 // Generated from the native predictor, so target selection cannot silently drift
 // into offering wrong solid blocks or omitting a supported plant.
 include!(concat!(env!("OUT_DIR"), "/soil_plants.rs"));
+include!(concat!(env!("OUT_DIR"), "/world_states.rs"));

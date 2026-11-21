@@ -42,7 +42,9 @@ pub(super) fn wire_facing(rotation: Quat) -> [f32; 2] {
 
 /// The horizontal look quadrant, numbered as placement numbers yaw quadrants.
 pub(super) fn look_quadrant(rotation: Quat) -> usize {
-    (wire_facing(rotation)[1] / 90.0 + 0.5).floor().rem_euclid(4.0) as usize
+    (wire_facing(rotation)[1] / 90.0 + 0.5)
+        .floor()
+        .rem_euclid(4.0) as usize
 }
 
 /// The planned `facing_direction`, 0 down, 1 up, then north, south, west and east.
@@ -54,7 +56,9 @@ fn planned_face(planned: &serde_json::Map<String, serde_json::Value>) -> Option<
         Some(name) => ["down", "up", "north", "south", "west", "east"]
             .iter()
             .position(|candidate| *candidate == name),
-        None => usize::try_from(value["value"].as_u64()?).ok().filter(|face| *face <= 5),
+        None => usize::try_from(value["value"].as_u64()?)
+            .ok()
+            .filter(|face| *face <= 5),
     }
 }
 
@@ -62,7 +66,14 @@ fn planned_face(planned: &serde_json::Map<String, serde_json::Value>) -> Option<
 /// lightning rods, amethyst buds and clusters, ladders), whose planned facing is that face.
 pub(super) fn wanted_face(offer: &CreativePlacementOffer) -> Option<u8> {
     let name = offer.name.as_str();
-    let face_derived = name == "minecraft:end_rod"
+    if ceiling_lever(offer) {
+        return Some(0);
+    }
+    // Wall signs, wall banners and heads face out of the face they are placed against.
+    let face_derived = name.contains("wall_")
+        || name.ends_with("_skull")
+        || name.ends_with("_head")
+        || name == "minecraft:end_rod"
         || name == "minecraft:ladder"
         || name.ends_with("lightning_rod")
         || name.ends_with("amethyst_bud")
@@ -73,6 +84,16 @@ pub(super) fn wanted_face(offer: &CreativePlacementOffer) -> Option<u8> {
     let planned =
         serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&offer.states).ok()?;
     planned_face(&planned).and_then(|face| u8::try_from(face).ok())
+}
+
+/// A lever planned on a ceiling, which only a click on the underside of the block above places.
+fn ceiling_lever(offer: &CreativePlacementOffer) -> bool {
+    offer.name == "minecraft:lever"
+        && serde_json::from_str::<serde_json::Value>(&offer.states).is_ok_and(|states| {
+            states["lever_direction"]["value"]
+                .as_str()
+                .is_some_and(|direction| direction.starts_with("down"))
+        })
 }
 
 /// The look quadrant whose placement gives a block the client cannot predict (observers,
@@ -96,7 +117,9 @@ pub(super) fn wanted_quadrant(offer: &CreativePlacementOffer) -> Option<usize> {
         "minecraft:observer" | "minecraft:piston" | "minecraft:sticky_piston" => face ^ 1,
         _ => return None,
     };
-    [2, 5, 3, 4].iter().position(|candidate| *candidate == toward)
+    [2, 5, 3, 4]
+        .iter()
+        .position(|candidate| *candidate == toward)
 }
 
 /// Prefers a single look for picking and facing, then tries a separate reported yaw.
@@ -171,7 +194,9 @@ pub(super) fn correction(
         if let Some(face) = wanted_face(expected) {
             // The block points out of the face it is placed against, so the click must land on
             // that neighbour's face. Report that click without turning the camera.
-            if observed.target.face == face && observed.target.position == placement_cell(expected.position, face ^ 1) {
+            if observed.target.face == face
+                && observed.target.position == placement_cell(expected.position, face ^ 1)
+            {
                 return bridge.then(|| {
                     PlacementAim::observed(
                         view.rotation(),
@@ -184,7 +209,10 @@ pub(super) fn correction(
                     )
                 });
             }
-            if world.is_air(placement_cell(expected.position, face ^ 1)).unwrap_or(true) {
+            if world
+                .is_air(placement_cell(expected.position, face ^ 1))
+                .unwrap_or(true)
+            {
                 return None;
             }
             let hit = hidden_support_hit_at(&world, expected.position, face, 0.5)?;
@@ -202,11 +230,7 @@ pub(super) fn correction(
                 support_ray: None,
                 interaction_ray: Vec3::from_array(candidate.target.hit_world) - eye,
                 hidden_height: Some(0.5),
-                support: (
-                    candidate.target.position,
-                    face,
-                    candidate.target.runtime_id,
-                ),
+                support: (candidate.target.position, face, candidate.target.runtime_id),
             });
         }
         let want = wanted_quadrant(expected)?;
@@ -218,7 +242,8 @@ pub(super) fn correction(
         if look_quadrant(view.rotation()) == want {
             return bridge.then(|| PlacementAim::observed(view.rotation(), support, forward));
         }
-        let rotation = separate_facing(view.rotation(), |rotation| look_quadrant(rotation) == want)?;
+        let rotation =
+            separate_facing(view.rotation(), |rotation| look_quadrant(rotation) == want)?;
         return Some(PlacementAim::observed(rotation, support, forward));
     }
     let stair = planned.contains_key("weirdo_direction");
@@ -501,15 +526,11 @@ pub(super) fn door_matches_facing(offer: &CreativePlacementOffer, rotation: Quat
         .is_none_or(|state| state["value"].as_str() == Some(direction))
 }
 
-/// Stock Bedrock resolves a click into air as a top-face placement.
+/// Stock Bedrock resolves a click into air as a top-face placement. A ceiling lever has no
+/// air placement.
 pub(super) fn air_place_face(offer: &CreativePlacementOffer) -> Option<u8> {
     let planned =
         serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&offer.states).ok()?;
-    let hopper_needs_side = offer.name == "minecraft:hopper"
-        && planned
-            .get("facing_direction")
-            .and_then(|state| state["value"].as_u64())
-            .is_some_and(|face| face != 0);
     let horizontal_pillar = matches!(
         planned
             .get("pillar_axis")
@@ -517,7 +538,7 @@ pub(super) fn air_place_face(offer: &CreativePlacementOffer) -> Option<u8> {
         Some("x" | "z")
     );
     // DoorItem needs a solid floor. An air click cannot make a freestanding door.
-    (!hopper_needs_side
+    (!ceiling_lever(offer)
         && !horizontal_pillar
         && !offer.name.ends_with("_door")
         && planned_upper(&planned) != Some(true))
@@ -603,7 +624,10 @@ fn placement_properties(
     let redstone = offer.name.as_str() == "minecraft:redstone_wire";
     let observer = offer.name.as_str() == "minecraft:observer";
     let hopper = offer.name == "minecraft:hopper";
-    let dispenser = matches!(offer.name.as_str(), "minecraft:dropper" | "minecraft:dispenser");
+    let dispenser = matches!(
+        offer.name.as_str(),
+        "minecraft:dropper" | "minecraft:dispenser"
+    );
     let repeater = offer.name.ends_with("_repeater");
     let comparator = offer.name.ends_with("_comparator");
     let fence = offer.name.ends_with("_fence");
@@ -612,7 +636,8 @@ fn placement_properties(
     let door = offer.name.ends_with("_door");
     let soil_plant = gameplay::placement_plants::supported(&offer.name);
     planned.retain(|key, _| {
-        !((wall && (key == "wall_post_bit" || key.starts_with("wall_connection_type_")))
+        !(gameplay::placement_world_states::world_controlled_name(key)
+            || (wall && (key == "wall_post_bit" || key.starts_with("wall_connection_type_")))
             || ((pane || wire || fence) && key.starts_with("minecraft:connection_"))
             || ((trapdoor || gate || door) && key == "open_bit")
             || (door && key == "door_hinge_bit")
@@ -621,7 +646,8 @@ fn placement_properties(
             || (leaves && matches!(key.as_str(), "persistent_bit" | "update_bit"))
             || (redstone && key.starts_with("redstone_"))
             || (observer && key == "powered_bit")
-            || (hopper && key == "toggle_bit")
+            // A hopper takes whatever facing the click gives it.
+            || (hopper && matches!(key.as_str(), "toggle_bit" | "facing_direction"))
             || (dispenser && key == "triggered_bit")
             || (repeater && key == "repeater_delay")
             || (comparator && matches!(key.as_str(), "output_lit_bit" | "output_subtract_bit"))
@@ -795,6 +821,21 @@ pub(super) fn support_produces_axis(offer: &CreativePlacementOffer, face: u8) ->
     let Ok(states) = serde_json::from_str::<serde_json::Value>(&offer.states) else {
         return false;
     };
+    // A hanging sign hangs under a block or from a side; a floor sign, banner or coral fan
+    // stands on top, and a wall coral fan needs a side.
+    if offer.name.ends_with("hanging_sign") {
+        return if states["hanging"]["value"].as_u64() == Some(1) {
+            face == 0
+        } else {
+            (2..=5).contains(&face)
+        };
+    }
+    if !states["ground_sign_direction"].is_null() || !states["coral_fan_direction"].is_null() {
+        return face == 1;
+    }
+    if !states["coral_direction"].is_null() {
+        return (2..=5).contains(&face);
+    }
     match states["pillar_axis"]["value"].as_str() {
         Some("x") => matches!(face, 4 | 5),
         Some("z") => matches!(face, 2 | 3),
@@ -904,23 +945,35 @@ mod tests {
 
     #[test]
     fn unpredicted_blocks_get_the_click_face_or_look_quadrant_their_planned_state_needs() {
-        let rod = offer("minecraft:end_rod", serde_json::json!({
-            "minecraft:facing_direction": {"type":"int","value":4}
-        }));
+        let rod = offer(
+            "minecraft:end_rod",
+            serde_json::json!({
+                "minecraft:facing_direction": {"type":"int","value":4}
+            }),
+        );
         assert_eq!(wanted_face(&rod), Some(4));
         assert!(support_produces_axis(&rod, 4));
         assert!(!support_produces_axis(&rod, 1));
-        let dropper = offer("minecraft:dropper", serde_json::json!({
-            "facing_direction": {"type":"int","value":3}
-        }));
+        let dropper = offer(
+            "minecraft:dropper",
+            serde_json::json!({
+                "facing_direction": {"type":"int","value":3}
+            }),
+        );
         assert_eq!(wanted_quadrant(&dropper), Some(2));
-        let observer = offer("minecraft:observer", serde_json::json!({
-            "minecraft:facing_direction": {"type":"string","value":"north"}
-        }));
+        let observer = offer(
+            "minecraft:observer",
+            serde_json::json!({
+                "minecraft:facing_direction": {"type":"string","value":"north"}
+            }),
+        );
         assert_eq!(wanted_quadrant(&observer), Some(2));
-        let up = offer("minecraft:dropper", serde_json::json!({
-            "facing_direction": {"type":"int","value":1}
-        }));
+        let up = offer(
+            "minecraft:dropper",
+            serde_json::json!({
+                "facing_direction": {"type":"int","value":1}
+            }),
+        );
         assert_eq!(wanted_quadrant(&up), None);
     }
 

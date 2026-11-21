@@ -410,3 +410,30 @@ fn retained_partial_edits_keep_the_context_of_reused_sections_before_the_next_pr
     ));
     assert!(edited.bind_context(&assets, NetworkIdMode::Sequential, settings));
 }
+
+#[test]
+fn block_entity_drawn_blocks_mesh_as_a_stand_in_cube() {
+    let mut grid = grid([1; 3]);
+    grid.palette = vec![BlockState::Named {
+        name: "minecraft:chest".into(),
+        states: r#"{"minecraft:cardinal_direction":{"type":"string","value":"north"}}"#.into(),
+    }];
+    // As in game, the chest's own terrain visual is empty and the stand-in is a cube.
+    let named = |name: &str, _: &str| match name {
+        "minecraft:chest" => Some(1),
+        name if name == ENTITY_DRAWN_STAND_IN => Some(2),
+        _ => None,
+    };
+    let mesh = grid
+        .mesh(
+            &assets(),
+            NetworkIdMode::Sequential,
+            named,
+            Default::default(),
+        )
+        .unwrap();
+    assert_eq!(mesh.sections.len(), 1, "the chest cell has geometry");
+    assert!(mesh.triangles > 0);
+    assert!(entity_drawn("minecraft:trapped_chest") && entity_drawn("minecraft:white_shulker_box"));
+    assert!(!entity_drawn("minecraft:furnace") && !entity_drawn("minecraft:oak_planks"));
+}

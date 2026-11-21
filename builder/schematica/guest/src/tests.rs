@@ -275,6 +275,24 @@ fn numpad_nudges_follow_the_nearest_camera_heading() {
 }
 
 #[test]
+fn a_bed_head_offers_nothing_while_its_foot_does() {
+    use schematica_core::{BlockState, StateValue};
+    let mut viewer = reference_viewer();
+    viewer.schematic = Schematic::new("Bed", [2, 1, 1]);
+    viewer.placement = Some(Placement::new([0; 3]));
+    let bed = BlockState::new("minecraft:bed");
+    viewer.schematic.set(
+        [0, 0, 0],
+        bed.clone().with("head_piece_bit", StateValue::Byte(0)),
+    );
+    viewer
+        .schematic
+        .set([1, 0, 0], bed.with("head_piece_bit", StateValue::Byte(1)));
+    assert!(viewer.placement_block([0, 0, 0]).is_some());
+    assert!(viewer.placement_block([1, 0, 0]).is_none());
+}
+
+#[test]
 fn aiming_at_a_door_upper_half_uses_its_matching_lower_half() {
     use schematica_core::{BlockState, StateValue};
     let mut viewer = reference_viewer();

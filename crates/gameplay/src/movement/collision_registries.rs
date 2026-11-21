@@ -603,6 +603,11 @@ impl PhysicsCollisionRegistries {
         })
     }
 
+    /// The names of every registered vanilla block identity, in name order.
+    pub fn block_names(&self) -> impl Iterator<Item = &str> {
+        self.named_block_identities.keys().map(AsRef::as_ref)
+    }
+
     /// Whether `runtime_id` is a cube-model block with one full collision box.
     pub fn block_is_full_cube(&self, mode: assets::NetworkIdMode, runtime_id: u32) -> bool {
         let map = match mode {
