@@ -252,8 +252,26 @@ pub struct WholeGhost {
     frame: u32,
     pair: Option<DrawPair>,
     retiring: Option<DrawPair>,
+    /// Fuel one cell edit cost the last time `flush` measured it; zero until measured.
+    edit_cost: u64,
     pub failed: bool,
     pub error: Option<String>,
+}
+
+/// Fuel `flush` leaves unspent for the rest of the frame.
+const FLUSH_RESERVE: u64 = 350_000;
+
+/// How many cell edits one flush may send, given the frame's remaining fuel and the measured
+/// cost of an edit (zero when not yet measured, which assumes a pessimistic 700). Costs are
+/// padded by half again so one dear batch cannot take the frame past its budget.
+pub(crate) fn flush_batch(remaining: u64, edit_cost: u64) -> usize {
+    let cost = if edit_cost == 0 {
+        700
+    } else {
+        edit_cost.clamp(100, 5_000)
+    };
+    let room = remaining.saturating_sub(FLUSH_RESERVE);
+    ((room.saturating_mul(2) / (cost * 3)) as usize).clamp(64, 1024)
 }
 
 impl WholeGhost {
@@ -466,12 +484,13 @@ impl WholeGhost {
         match draw::geometry_status(pair.geometry) {
             Ok(draw::GeometryState::Ready) if !self.changes.is_empty() => {
                 // A generation remeshes whole columns whatever its size, so a large paste goes
-                // in big batches while fuel allows. The floor is the old fixed size.
-                let batch = (budget::remaining_fuel().saturating_sub(250_000) / 300) as usize;
+                // in big batches while fuel allows. The batch follows the measured cost of an
+                // edit, so a frame that is already busy sends fewer.
+                let batch = flush_batch(u64::from(budget::remaining_fuel()), self.edit_cost);
                 let edits: Vec<_> = self
                     .changes
                     .iter()
-                    .take(batch.clamp(192, 1536))
+                    .take(batch)
                     .map(|(&[x, y, z], &palette)| draw::BlockEdit {
                         position: (x, y, z),
                         cell: draw::BlockCell {
@@ -481,11 +500,18 @@ impl WholeGhost {
                         },
                     })
                     .collect();
+                let before = u64::from(budget::remaining_fuel());
                 if draw::update_blocks(pair.geometry, &edits).is_ok() {
-                    for edit in edits {
+                    for edit in edits.iter() {
                         let (x, y, z) = edit.position;
                         self.changes.remove(&[x, y, z]);
                     }
+                }
+                let spent = before.saturating_sub(u64::from(budget::remaining_fuel()));
+                if !edits.is_empty() {
+                    // Rises at once and falls slowly, so one dear call is remembered.
+                    let each = spent / edits.len() as u64;
+                    self.edit_cost = each.max((self.edit_cost * 7 + each) / 8);
                 }
             }
             Err(error) if error.code != draw::ErrorCode::BudgetExceeded => {
@@ -1509,4 +1535,25 @@ fn a_missing_liquid_does_not_hold_back_the_next_layer() {
         ..Tile::default()
     };
     assert!(layer_complete(&[tile], 4, 4));
+}
+
+#[test]
+fn flush_batches_shrink_as_the_frame_runs_out_of_fuel_and_as_edits_cost_more() {
+    // Unmeasured edits are assumed to cost 700, so a fresh frame still sends a large batch.
+    assert_eq!(flush_batch(2_000_000, 0), 1024);
+    assert!(flush_batch(900_000, 0) < flush_batch(1_500_000, 0));
+    // The same fuel buys fewer edits once they are measured as dear.
+    assert!(flush_batch(1_000_000, 2_000) < flush_batch(1_000_000, 300));
+    // The reserve is never spent on edits: even a barely eligible frame sends a small floor.
+    assert_eq!(flush_batch(400_000, 700), 64);
+    assert_eq!(flush_batch(0, 700), 64);
+    // The batch, priced at its padded cost, never reaches into the reserve.
+    for remaining in [450_000u64, 700_000, 1_000_000, 1_800_000] {
+        for cost in [100u64, 300, 700, 1_500, 5_000] {
+            let batch = flush_batch(remaining, cost) as u64;
+            if batch > 64 {
+                assert!(batch * cost * 3 / 2 <= remaining - FLUSH_RESERVE);
+            }
+        }
+    }
 }

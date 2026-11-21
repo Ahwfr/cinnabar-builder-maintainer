@@ -920,14 +920,14 @@ impl Viewer {
             // A tile that rendered while the frame was short of fuel still owes its ghost
             // changes; do not leave them until its next lap.
             if whole
-                && budget::remaining_fuel() >= 225_000
+                && budget::remaining_fuel() >= 450_000
                 && let Some(owing) = self.tiles.iter().position(|tile| tile.ghost_dirty)
             {
                 self.whole
                     .compare_tile(&self.preview, &self.schematic, &self.tiles[owing]);
                 self.tiles[owing].ghost_dirty = false;
             }
-            if whole && budget::remaining_fuel() >= 200_000 {
+            if whole && budget::remaining_fuel() >= 400_000 {
                 self.whole.flush();
                 if self.whole.failed {
                     for tile in &mut self.tiles {

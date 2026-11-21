@@ -1,3 +1,10 @@
+# Cinnamatica 0.3.43
+
+- The hologram no longer drops out and comes back every second or so. The log of the last run showed the mod running out of its per-frame compute budget about every 1.3 seconds; each time the game restarted the mod and the hologram was rebuilt from nothing, which looked like constant flicker. The ghost updates now measure what a cell edit costs and send fewer when the frame is busy, they keep a larger reserve, and the background checks around the camera and across the build start only when more of the frame is left. The cost is that a very large paste may take a little longer to show its ghosts. This is a mod change only.
+- Still not fixed: Structure Paste skips blocks when the server is busy or the chunks are not loaded, and chests are still a stand-in cube. The 0.3.42 depth step ran in the game: you reported that ghosts no longer glitch through blocks; its speed gain is not measured.
+
+Verified: the mod's unit tests (69, including a new one for the batch sizing). Not tried in the game: whether the budget traps are gone. Check the next log for `fuel exhausted`; there should be none.
+
 # Cinnamatica 0.3.42
 
 - Hologram flicker on existing builds: the hologram (and any other tinted block grid) is now drawn a small step behind the world in the depth buffer. Where a ghost face lay in the same plane as a real block face, the two used to tie and flicker; now the real block always wins. This is a client change, and the strength of the step is a first guess that depends on the graphics driver (DirectX 12 and Vulkan scale it differently).

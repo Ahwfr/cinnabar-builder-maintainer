@@ -174,7 +174,7 @@ impl HotWatch {
             && whole.active()
         {
             for (cell, world) in changed_cells(seen, &ids, origin) {
-                if budget::remaining_fuel() < 300_000 {
+                if budget::remaining_fuel() < 450_000 {
                     cut = true;
                     break;
                 }
@@ -277,7 +277,7 @@ impl HotWatch {
             self.cache.clear();
         }
         let mut done = 0;
-        while self.cursor < CELLS && done < SWEEP_CELLS && budget::remaining_fuel() >= 450_000 {
+        while self.cursor < CELLS && done < SWEEP_CELLS && budget::remaining_fuel() >= 600_000 {
             let cell = self.cursor;
             self.cursor += 1;
             done += 1;
@@ -305,7 +305,7 @@ impl HotWatch {
             }
             return;
         }
-        if budget::remaining_fuel() < 300_000 {
+        if budget::remaining_fuel() < 450_000 {
             return;
         }
         let mut mesh = draw::Mesh {
