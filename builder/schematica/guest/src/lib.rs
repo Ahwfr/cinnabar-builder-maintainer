@@ -439,6 +439,7 @@ struct Viewer {
     paste_notice: Option<(String, f32)>,
     cancel_structure: Option<(u64, i32)>,
     paste: Option<paste::Paste>,
+    repair: Option<paste::Repair>,
     last_label: String,
     tool: tool::ToolState,
     /// A copied selection waiting to replace the schematic.
@@ -517,6 +518,7 @@ impl Viewer {
             paste_notice: None,
             cancel_structure: None,
             paste: None,
+            repair: None,
             last_label: String::new(),
             tool: Default::default(),
             adopt: None,
@@ -535,6 +537,7 @@ impl Viewer {
             let scope = (world.session, world.dimension);
             if self.world != Some(scope) {
                 self.paste = None;
+                self.repair = None;
                 self.paste_confirm = false;
                 let entering_from_world = self.world.is_some();
                 // Cinnabar invalidates drawing handles on dimension changes.
@@ -669,7 +672,7 @@ impl Viewer {
         if self.tool_frame(&keys) {
             return;
         }
-        let pasting = self.paste_step();
+        let pasting = self.paste_step() || self.repair_step();
         if let Some((_, seconds)) = &mut self.paste_notice {
             *seconds -= keys.seconds;
             if *seconds <= 0.0 {

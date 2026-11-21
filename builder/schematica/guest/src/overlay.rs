@@ -36,6 +36,11 @@ pub struct Preview {
 }
 
 impl Preview {
+    /// The block planned for schematic palette entry `index`.
+    pub(crate) fn expected(&self, index: u32) -> Option<&draw::NamedBlock> {
+        self.palette.get(index as usize)
+    }
+
     pub fn reposition(&mut self, placement: Placement, layers: LayerMode) {
         if self.placement.is_none_or(|previous| {
             previous.quarter_turns != placement.quarter_turns || previous.mirror != placement.mirror
@@ -996,7 +1001,7 @@ pub(crate) fn ignored_material(name: &str) -> bool {
 
 /// `compare`, and whether the cell is one the guide reports nothing about: a planned liquid
 /// or powder snow cell that is not right, or air planned where the world has one.
-fn compare_cell(
+pub(crate) fn compare_cell(
     region: &terrain::Region,
     cell: usize,
     expected: &draw::NamedBlock,

@@ -1,6 +1,6 @@
 # Installing and updating Builder
 
-0.3.43 changes only the mod (budget use of the ghost updates), so no new client features, but the build still runs in full. It is untested in the game.
+0.3.43 changes only the mod (budget use of the ghost updates, and the paste check), so no new client features, but the build still runs in full. It is untested in the game.
 
 0.3.42 changes only the client's drawing of the hologram, so it needs the full build. It is untested in the game. It also carries 0.3.41, which was never released.
 

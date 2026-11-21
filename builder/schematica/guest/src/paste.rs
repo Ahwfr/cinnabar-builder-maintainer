@@ -4,6 +4,9 @@ use crate::{Viewer, gameplay, structure_paste::StructurePaste};
 use schematica_core::{BlockState, Placement, Schematic, StateValue};
 use std::collections::HashMap;
 
+mod repair;
+pub(crate) use repair::Repair;
+
 const COMMAND_BYTES: usize = 440;
 
 pub(super) struct Paste {
@@ -20,10 +23,18 @@ pub(super) struct Paste {
     skipped: usize,
     palette: HashMap<u32, Option<String>>,
     structure: Option<StructurePaste>,
+    /// Grid copies already sent, kept so the check afterwards covers all of them.
+    finished: Vec<Placement>,
 }
 
 impl Viewer {
     pub(super) fn paste_button(&mut self) {
+        if self.repair.take().is_some() {
+            self.paste_confirm = false;
+            let _ = crate::panel::close();
+            self.paste_result("Paste check canceled | Missing blocks were not placed".into());
+            return;
+        }
         if let Some(run) = self.paste.take() {
             if run.structure.is_some() {
                 self.cancel_structure = Some(run.scope);
@@ -53,6 +64,7 @@ impl Viewer {
             structure: self.options.structure_paste.then(|| {
                 StructurePaste::new(&self.schematic, placement, self.options.paste_destroy)
             }),
+            finished: Vec::new(),
         });
         let _ = crate::panel::close();
     }
@@ -88,7 +100,16 @@ impl Viewer {
             palette: HashMap::new(),
             // Grid copies always use the ordinary command stream.
             structure: None,
+            finished: Vec::new(),
         });
+    }
+
+    /// Reports a finished paste and starts the check for blocks the server did not keep.
+    fn finish_paste(&mut self, run: Paste, message: String) {
+        self.paste_result(message);
+        if run.sent > 0 || run.structure.is_some() {
+            self.repair = Some(Repair::new(&run, self.schematic.size()));
+        }
     }
 
     fn paste_result(&mut self, message: String) {
@@ -140,9 +161,11 @@ impl Viewer {
                     self.show_label("Grid paste | Next copy");
                     self.paste = Some(run);
                 }
-                Ok(None) => {
-                    self.paste_result("Structure sent | The host reports placement in chat".into())
-                }
+                Ok(None) => self.finish_paste(
+                    run,
+                    "Structure sent | The host reports placement in chat. Checking for missing blocks"
+                        .into(),
+                ),
                 Err(error) => self.paste_result(format!("Structure paste stopped | {error}")),
             }
             return true;
@@ -219,10 +242,11 @@ impl Viewer {
                     self.paste = Some(run);
                     return true;
                 }
-                self.paste_result(format!(
-                    "Paste sent {} cells | {} unsupported. See chat for server results.",
+                let message = format!(
+                    "Paste sent {} cells | {} unsupported. Checking for missing blocks",
                     run.sent, run.skipped
-                ));
+                );
+                self.finish_paste(run, message);
                 return true;
             }
         }
@@ -238,6 +262,7 @@ impl Paste {
         let Some(next) = self.queue.pop() else {
             return false;
         };
+        self.finished.push(self.placement);
         self.placement = next;
         self.cursor = 0;
         self.palette.clear();
