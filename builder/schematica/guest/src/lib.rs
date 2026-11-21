@@ -395,6 +395,10 @@ struct Viewer {
     distant_scan_phase: u8,
     preview: Preview,
     whole: WholeGhost,
+    /// Single-cell updates around the camera, ahead of the tile verifier.
+    hot: overlay::HotWatch,
+    /// Cells the hot watch saw change, whose tiles are verified next.
+    hot_dirty: Vec<([i32; 3], u8)>,
     open_retries: u8,
     tiles: Vec<Tile>,
     retired: Vec<Tile>,
@@ -471,6 +475,8 @@ impl Viewer {
             distant_scan_phase: 0,
             preview: Preview::default(),
             whole: WholeGhost::default(),
+            hot: overlay::HotWatch::default(),
+            hot_dirty: Vec::new(),
             open_retries: 0,
             tiles: Vec::new(),
             retired: Vec::new(),
@@ -835,9 +841,32 @@ impl Viewer {
             }
             let whole = self.whole.active();
             let tile_lightness = (textured && !whole).then_some(lightness);
+            if whole && let Some(eye) = self.aim_ray().map(|(eye, _)| eye) {
+                // Blocks placed or broken around the camera update their own ghost cell
+                // and status box now, without waiting for their tile's turn.
+                for cell in self.hot.step(
+                    &self.preview,
+                    &self.schematic,
+                    &mut self.whole,
+                    &self.tiles,
+                    dimension,
+                    eye,
+                ) {
+                    self.hot_dirty.retain(|(known, _)| *known != cell);
+                    self.hot_dirty.push((cell, 8));
+                }
+                let excess = self.hot_dirty.len().saturating_sub(16);
+                self.hot_dirty.drain(..excess);
+            }
+            // The tile of the oldest unverified change is stepped first.
+            let hot_cell = self.hot_dirty.first().map(|&(cell, _)| cell);
+            for (_, frames) in &mut self.hot_dirty {
+                *frames -= 1;
+            }
+            self.hot_dirty.retain(|&(_, frames)| frames > 0);
             // Alternate the hot tile and the background cursor. One tile can consume
             // most of a frame when many cells change or need discrepancy markers.
-            let priority = [recent, world_target, aimed]
+            let priority = [hot_cell, recent, world_target, aimed]
                 .into_iter()
                 .flatten()
                 .find_map(|cell| self.tiles.iter().position(|tile| tile.contains(cell)));
@@ -1282,6 +1311,8 @@ impl Viewer {
     }
 
     fn rebuild(&mut self) {
+        self.hot.clear();
+        self.hot_dirty.clear();
         self.whole.restart(
             self.placement.is_some() && self.shown && self.render_all && self.options.textured,
         );
@@ -1422,6 +1453,8 @@ impl Viewer {
     }
 
     fn release_for_switch(&mut self) -> bool {
+        self.hot.clear();
+        self.hot_dirty.clear();
         self.whole.clear();
         self.retired
             .extend(self.tiles.drain(..).filter(Tile::has_draws));

@@ -4,7 +4,9 @@ use serde_json::{Map, json};
 use std::collections::BTreeMap;
 
 mod coverage;
+mod hot;
 pub(crate) use coverage::on_distant_scan_frame;
+pub(crate) use hot::HotWatch;
 
 const SMALL_TILE_EDGE: i32 = 4;
 const LARGE_TILE_EDGE: i32 = 5;

@@ -1,3 +1,11 @@
+# Cinnamatica 0.3.40
+
+- The hologram now updates single blocks right away around you. A guide watches a 16-block box centred on the camera every frame. When a block in it changes, only that one ghost cell is edited: a correct block hides its ghost, a broken block (wrong or right) brings the ghost back, a right block in the wrong orientation or a different block shows its yellow or red box at once. The hologram itself is never hidden, rebuilt or toggled, and the tiles still do the full check right after.
+- Far sweep: the guide sweeps the part of a large hologram outside the tile window in 8-block regions instead of 4-block ones, and gives it two of every four frames instead of two of every six, so a stale ghost far away is corrected sooner.
+- Cells further than that box from you update the same way as before.
+
+Verified: the mod's unit tests (62 for the public guest, new ones for the change detection, the watched box and the sweep timing). Not tried in the game: how fast it feels, and whether the per-frame terrain read and the single-cell edits stay inside the frame fuel budget, are still to be checked with the `fuel exhausted` log line.
+
 # Cinnamatica 0.3.39
 
 - Fast Place now finds the item for a guide block from the game's own data instead of its name: wall and standing signs, banners, heads, coral fans and hanging signs are clicked on the right face, double slabs are built as their full block, and the head half of a bed is skipped (the foot places both).

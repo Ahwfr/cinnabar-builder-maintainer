@@ -1,8 +1,10 @@
 use super::*;
 use std::collections::HashMap;
 
-const SCAN_EDGE: i32 = 4;
-const FAR_SCAN_PERIOD: u8 = 6;
+/// A region is one terrain query, so a larger one sweeps the guide in fewer queries. The
+/// per-cell loop still yields to the frame's fuel budget and resumes where it stopped.
+const SCAN_EDGE: i32 = 8;
+const FAR_SCAN_PERIOD: u8 = 4;
 
 pub(crate) fn on_distant_scan_frame(phase: &mut u8) -> bool {
     let distant = *phase >= FAR_SCAN_PERIOD - 2;
@@ -155,7 +157,7 @@ fn distant_queries_get_two_adjacent_frames_to_deliver_a_sample() {
     assert_eq!(
         samples,
         [
-            false, false, false, false, true, true, false, false, false, false, true, true
+            false, false, true, true, false, false, true, true, false, false, true, true
         ]
     );
 }

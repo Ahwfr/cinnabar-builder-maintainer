@@ -1,5 +1,7 @@
 # Installing and updating Builder
 
+0.3.40 changes only the mod (the guide), so the client build is unchanged in behaviour. It is untested in the game.
+
 0.3.39 brings in ThSsilentKnight's Fast Place fixes (item lookup from game data, hoppers, ceiling levers, auto-sneak against interactive blocks, block-entity placeholders). It changes the game client and the mod, so it needs the full build. It is untested in the game.
 
 0.3.36 changes how Fast Place (V2 Strict) places blocks, so it needs the full client build: lamps, rails,
