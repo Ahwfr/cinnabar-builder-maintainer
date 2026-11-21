@@ -8,6 +8,8 @@ const SNAP: i32 = 2;
 const HALF: i32 = 8;
 /// Cells in one watched box.
 const CELLS: usize = (EXTENT * EXTENT * EXTENT) as usize;
+/// Cells the first check of a box verifies per frame.
+const SWEEP_CELLS: usize = 600;
 /// A runtime id that no block has: the cell was not loaded when it was last seen.
 const UNKNOWN: u32 = u32::MAX;
 
@@ -40,6 +42,16 @@ fn cell_index([x, y, z]: [i32; 3]) -> usize {
     ((x * EXTENT + z) * EXTENT + y) as usize
 }
 
+/// The world position of box cell `cell` (the terrain order: x, then z, then y).
+fn cell_world(origin: [i32; 3], cell: usize) -> [i32; 3] {
+    let edge = EXTENT as usize;
+    [
+        origin[0] + (cell / (edge * edge)) as i32,
+        origin[1] + (cell % edge) as i32,
+        origin[2] + (cell / edge % edge) as i32,
+    ]
+}
+
 /// The minimum corner of the box watched around `eye`.
 pub(crate) fn watch_origin(eye: [f32; 3]) -> [i32; 3] {
     std::array::from_fn(|axis| (eye[axis].floor() as i32 - HALF).div_euclid(SNAP) * SNAP)
@@ -52,16 +64,7 @@ fn changed_cells(seen: &Seen, ids: &[u32], origin: [i32; 3]) -> Vec<(usize, [i32
         .enumerate()
         .filter(|&(_, &now)| now != UNKNOWN)
         .filter_map(|(cell, &now)| {
-            let [x, z, y] = [
-                cell / (EXTENT * EXTENT) as usize,
-                cell / EXTENT as usize % EXTENT as usize,
-                cell % EXTENT as usize,
-            ];
-            let world = [
-                origin[0] + x as i32,
-                origin[1] + y as i32,
-                origin[2] + z as i32,
-            ];
+            let world = cell_world(origin, cell);
             seen.at(world)
                 .is_some_and(|before| before != now)
                 .then_some((cell, world))
@@ -82,6 +85,14 @@ pub(crate) struct HotWatch {
     /// Boxes for cells that are wrong now and that no tile draws yet.
     marks: BTreeMap<[i32; 3], CellStatus>,
     marker: Option<(DrawPair, BTreeMap<[i32; 3], CellStatus>)>,
+    /// The latest sample of the box, kept so that the cells of the first check can be
+    /// verified over several frames.
+    region: Option<terrain::Region>,
+    /// The next cell of the box the first check verifies; `CELLS` when it is done.
+    cursor: usize,
+    /// Comparison results by planned block and world block, which only change with the
+    /// registry or the guide.
+    cache: HashMap<(u32, u32), (CellStatus, bool)>,
 }
 
 impl HotWatch {
@@ -107,6 +118,8 @@ impl HotWatch {
         if self.origin != Some(origin) {
             self.origin = Some(origin);
             self.stamp = None;
+            self.region = None;
+            self.cursor = 0;
         }
         let mut changes = Vec::new();
         if budget::remaining_fuel() >= 650_000 {
@@ -120,7 +133,9 @@ impl HotWatch {
             {
                 self.stamp = Some(region.stamp);
                 changes = self.observe(preview, schematic, whole, origin, &region);
+                self.region = Some(region);
             }
+            self.verify_box(preview, schematic, whole, origin);
         }
         self.maintain_marks(tiles, origin);
         self.publish_marks(dimension, origin);
@@ -157,46 +172,15 @@ impl HotWatch {
         let mut cut = false;
         if let Some(seen) = &self.seen
             && whole.active()
-            && let Some(placement) = preview.placement
         {
-            let size = schematic.size();
-            let (lo, hi) = preview.bounds(size);
-            let gy = (hi[1] - lo[1]) as usize;
-            let gz = (hi[2] - lo[2]) as usize;
             for (cell, world) in changed_cells(seen, &ids, origin) {
-                if !(0..3).all(|axis| (lo[axis]..hi[axis]).contains(&world[axis])) {
-                    continue;
-                }
                 if budget::remaining_fuel() < 300_000 {
                     cut = true;
                     break;
                 }
-                let Some(local) = placement.world_to_local(size, world) else {
-                    continue;
-                };
-                let Some(id) = schematic.palette_index(local) else {
-                    continue;
-                };
-                if schematic.palette()[id as usize].is_placement_artifact() {
-                    continue;
+                if self.verify_cell(preview, schematic, whole, region, cell, world) {
+                    changes.push(world);
                 }
-                let air = schematic.is_air_index(id);
-                let (status, skip) =
-                    compare_cell(region, cell, &preview.palette[id as usize], air);
-                if status == CellStatus::Unloaded {
-                    continue;
-                }
-                if !air {
-                    let pos = std::array::from_fn(|axis| (world[axis] - lo[axis]) as u32);
-                    let [px, py, pz] = pos.map(|axis| axis as usize);
-                    whole.apply_observation((px * gz + pz) * gy + py, pos, id, status);
-                }
-                if marker_color(status).is_some() && !skip {
-                    self.marks.insert(world, status);
-                } else {
-                    self.marks.remove(&world);
-                }
-                changes.push(world);
             }
         }
         if cut {
@@ -207,6 +191,99 @@ impl HotWatch {
             self.seen = Some(Seen { min: origin, ids });
         }
         changes
+    }
+
+    /// Checks one cell of the box against the guide and updates its ghost and status box.
+    /// Returns whether the cell is one the guide covers and was loaded.
+    fn verify_cell(
+        &mut self,
+        preview: &Preview,
+        schematic: &Schematic,
+        whole: &mut WholeGhost,
+        region: &terrain::Region,
+        cell: usize,
+        world: [i32; 3],
+    ) -> bool {
+        let size = schematic.size();
+        let (lo, hi) = preview.bounds(size);
+        if !(0..3).all(|axis| (lo[axis]..hi[axis]).contains(&world[axis]))
+            || !region
+                .loaded
+                .get(cell / 64)
+                .is_some_and(|bits| bits & (1 << (cell % 64)) != 0)
+        {
+            return false;
+        }
+        let Some(local) = preview
+            .placement
+            .and_then(|placement| placement.world_to_local(size, world))
+        else {
+            return false;
+        };
+        let Some(id) = schematic.palette_index(local) else {
+            return false;
+        };
+        if schematic.palette()[id as usize].is_placement_artifact() {
+            return false;
+        }
+        let Some(runtime_id) = region
+            .states
+            .get(cell)
+            .and_then(|&state| region.palette.get(usize::from(state)))
+            .map(|block| block.runtime_id)
+        else {
+            return false;
+        };
+        let air = schematic.is_air_index(id);
+        let (status, skip) = *self
+            .cache
+            .entry((id, runtime_id))
+            .or_insert_with(|| compare_cell(region, cell, &preview.palette[id as usize], air));
+        if status == CellStatus::Unloaded {
+            return false;
+        }
+        if !air {
+            let pos = std::array::from_fn(|axis| (world[axis] - lo[axis]) as u32);
+            let [x, y, z] = pos.map(|axis| axis as usize);
+            let (gy, gz) = ((hi[1] - lo[1]) as usize, (hi[2] - lo[2]) as usize);
+            whole.apply_observation((x * gz + z) * gy + y, pos, id, status);
+        }
+        if marker_color(status).is_some() && !skip {
+            self.marks.insert(world, status);
+        } else {
+            self.marks.remove(&world);
+        }
+        true
+    }
+
+    /// The first check of a box: the diff above only sees blocks that change, so this goes
+    /// over the blocks that were already there, a few hundred cells a frame, instead of
+    /// leaving their ghosts to the tile verifier's slower lap. Air cells are skipped (the
+    /// tiles report extra blocks).
+    fn verify_box(
+        &mut self,
+        preview: &Preview,
+        schematic: &Schematic,
+        whole: &mut WholeGhost,
+        origin: [i32; 3],
+    ) {
+        if self.cursor >= CELLS || !whole.active() {
+            return;
+        }
+        let Some(region) = self.region.take() else {
+            return;
+        };
+        if self.cache.len() > 4096 {
+            self.cache.clear();
+        }
+        let mut done = 0;
+        while self.cursor < CELLS && done < SWEEP_CELLS && budget::remaining_fuel() >= 450_000 {
+            let cell = self.cursor;
+            self.cursor += 1;
+            done += 1;
+            self.verify_cell(preview, schematic, whole, &region, cell, cell_world(origin, cell));
+        }
+        self.region = Some(region);
     }
 
     /// Drops the boxes that a tile draws by now, and those that left the watched box.
@@ -328,4 +405,16 @@ fn a_moved_box_compares_only_the_overlap() {
     let changed = changed_cells(&seen, &now, [2, 0, 0]);
     assert_eq!(changed.len(), 1);
     assert_eq!(changed[0].1, [2, 0, 0]);
+}
+
+#[test]
+fn box_cells_map_to_world_positions_in_terrain_order() {
+    let origin = [10, 20, 30];
+    for local in [[0, 0, 0], [1, 2, 3], [15, 15, 15], [4, 0, 9]] {
+        let [x, y, z] = local;
+        assert_eq!(
+            cell_world(origin, cell_index(local)),
+            [10 + x, 20 + y, 30 + z]
+        );
+    }
 }
