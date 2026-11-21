@@ -1,10 +1,3 @@
-# Cinnamatica 0.3.38
-
-- Removes the "Upper-half air place (test)" setting that 0.3.37 added, together with its mod API call (`item-use.set-placement-upper-air`) and the client's mirrored air click. Tried in the game on the local world: the server places the lower half whatever face an empty cell is clicked on, so an upside-down stair or upper slab came out right side up. The earlier releases already said unsupported upper halves need a real support block; this confirms it for the local world.
-- Nothing else changes from 0.3.36.
-
-Verified: the mod unit tests. Not tried in the game.
-
 # Cinnamatica 0.3.36
 
 - Fast Place V2 Strict now places blocks that have no placement rule (copper bulbs, scaffolding, rails, containers and the like) by clicking into air. Before, it refused each one with "could not predict this placement". The server decides their state, as it already did for a click on a real neighbour.

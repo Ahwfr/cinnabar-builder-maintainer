@@ -1,8 +1,5 @@
 # Installing and updating Builder
 
-0.3.38 removes the 0.3.37 "Upper-half air place (test)" setting, which did not work on the local world. It removes
-a mod API call and changes the client, so it needs the full build. Otherwise it is 0.3.36.
-
 0.3.36 changes how Fast Place (V2 Strict) places blocks, so it needs the full client build: lamps, rails,
 scaffolding and other blocks with no placement rule can now be placed by clicking into air, and droppers,
 dispensers, observers and pistons follow the server's eye-height rule instead of a body box. The mod skips
