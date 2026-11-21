@@ -76,8 +76,12 @@ pub(crate) fn encode<'w>(
             .truncate()
             .as_dvec3()
             .to_array();
+        let clip_from_grid = placement.projection * placement.matrix;
         for allocation in arena.allocations.values() {
             let allocation = &allocation.gpu;
+            if !super::culling::section_visible(clip_from_grid, chunk_origin(allocation.key)) {
+                continue;
+            }
             if let (Some(pipeline), Some(commands)) = (
                 cache.get_render_pipeline(placement.pipelines[1]),
                 solid_indirect_commands(allocation, Some(camera)),

@@ -122,6 +122,8 @@ fn block_opacity_blends_without_writing_world_depth() {
         let depth = descriptor.depth_stencil.unwrap();
         assert_eq!(depth.depth_write_enabled, Some(false));
         assert_eq!(depth.depth_compare, Some(CompareFunction::GreaterEqual));
+        // Reverse-Z: a negative bias moves the ghost farther, so it loses coplanar ties.
+        assert!(depth.bias.constant < 0 && depth.bias.slope_scale < 0.);
         assert!(
             descriptor.fragment.unwrap().targets[0]
                 .as_ref()

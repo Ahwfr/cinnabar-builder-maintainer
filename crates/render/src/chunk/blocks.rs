@@ -12,6 +12,7 @@ use render_scene::{
     mod_scene::retained::{DrawingFrame, resolve},
 };
 
+mod culling;
 pub(crate) mod drawing;
 mod prepare;
 mod sorting;
@@ -33,6 +34,21 @@ struct Key {
     outlined: bool,
 }
 struct Specialization;
+
+/// Pushes tinted grids (the build hologram) slightly away from the camera.
+///
+/// Depth is reverse-Z with `GreaterEqual`, so a negative bias moves a face farther. A ghost face
+/// that is coplanar with a real block face, or with another ghost face of the same cell, would
+/// otherwise tie on depth and flicker. With the bias it loses every tie, so real blocks always
+/// cover their own ghost. The constant is in depth-buffer units (ULP-scaled on float depth) and
+/// the slope term covers faces seen at a grazing angle. Backends scale bias differently, so this
+/// stays small enough to move no visible geometry.
+const TINTED_DEPTH_BIAS: wgpu::DepthBiasState = wgpu::DepthBiasState {
+    constant: -4,
+    slope_scale: -2.0,
+    clamp: 0.0,
+};
+
 impl Specializer<RenderPipeline> for Specialization {
     type Key = Key;
     /// Preserves native terrain raster state while selecting a private content depth attachment.
@@ -64,6 +80,7 @@ impl Specializer<RenderPipeline> for Specialization {
             depth.depth_compare = Some(CompareFunction::Always);
         }
         if key.tinted {
+            depth.bias = TINTED_DEPTH_BIAS;
             let fragment = descriptor.fragment.as_mut().unwrap();
             fragment.shader_defs.push("MOD_BLOCK_TINT".into());
             if key.outlined {

@@ -1,3 +1,11 @@
+# Cinnamatica 0.3.42
+
+- Hologram flicker on existing builds: the hologram (and any other tinted block grid) is now drawn a small step behind the world in the depth buffer. Where a ghost face lay in the same plane as a real block face, the two used to tie and flicker; now the real block always wins. This is a client change, and the strength of the step is a first guess that depends on the graphics driver (DirectX 12 and Vulkan scale it differently).
+- Hologram speed: sections of the hologram that are outside the camera view are no longer drawn. Before, every section of a large build was drawn every frame, which is a heavy cost on an integrated GPU. This is a client change.
+- Not fixed yet: Structure Paste still skips blocks when the server is busy or the chunks are not loaded, the hologram still sometimes disappears for about a second, and chests are still a stand-in cube.
+
+Verified: the view check (seven cases) passed in a separate small test program. The render change itself was not compiled before this release (the build container has Rust 1.97 and the client needs 1.99), so the full build is its first compile. The mod itself is unchanged since 0.3.41. Not tried in the game: whether the depth step stops the flicker on your graphics card, and how much faster large builds draw.
+
 # Cinnamatica 0.3.41
 
 - Pasting: the ghost of a cell is hidden the moment the paste sends it to the server (both the command paste and Structure Paste), instead of waiting for the verifier to see the block. While the world still shows air there, a stale reading does not bring the ghost back; it holds for about four seconds, so a paste the server refuses gets its ghost back after that. Large batches of ghost changes also go to the hologram in bigger groups (up to 1536 cells at a time instead of 192) when the frame has fuel.
