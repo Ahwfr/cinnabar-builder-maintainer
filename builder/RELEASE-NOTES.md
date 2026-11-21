@@ -1,3 +1,10 @@
+# Cinnamatica 0.3.50
+
+- **The material list says what it means.** The column that said "Needed" now says "Left", and a material with nothing left to place shows "Done" instead of 0. "Left" is how many of that block still have to be placed, and "Total" is how many the schematic has, so "Done" next to a total of 6 means all six are in the world. Your screenshot (soul sand 0 of 6, with 9,013 of 9,309 blocks built) was correct; the wording was the problem.
+- **Material counts load faster and stay loaded.** A page's counts used to start again from nothing every time you changed page or typed in the search, and only four tiles were counted per frame, so many rows stayed on "…". Counts are now kept for every page you have seen, as long as the schematic and its placed totals have not changed, and as many tiles are counted per frame as the frame has fuel for. They start again when you place or break a block.
+
+Verified: the mod's unit tests (78, including a rewritten test of the material counts over several frames, their memory and their restart) and the OreUI window tests. The mod's WASM file was not built here. Not tried in the game.
+
 # Cinnamatica 0.3.49
 
 - **Anvils now turn to the right side when Fast Place places them.** The client planned an anvil's facing as if it faced the player, but Bedrock turns an anvil a quarter turn to the left of the player, which is how the client's own prediction already places it. So the planned facing and the turn did not agree, and an anvil came out a quarter turn off. This is the one fix I am sure was a bug.

@@ -586,7 +586,7 @@ mod layout {
             ),
             named(
                 "head_needed",
-                text("Needed", [80., 10.], [280., 82.], MUTED, "right"),
+                text("Left", [80., 10.], [280., 82.], MUTED, "right"),
             ),
             named(
                 "head_total",
@@ -639,7 +639,7 @@ mod layout {
                     "#bw_empty_visible",
                 ),
             ),
-            footer("Needed counts update as terrain is compared"),
+            footer("Left is what still has to be placed; Done means all of it is in the world"),
         ]);
         nodes
     }
@@ -1121,7 +1121,29 @@ pub(super) struct MaterialPageCounts {
     palette_indices: [Vec<usize>; ROWS],
     needed: [u64; ROWS],
     cursor: usize,
+    /// Finished counts by material, kept while the palette and the placed totals are unchanged,
+    /// so a page seen before (or one the search brings back) shows at once instead of
+    /// counting every tile again.
+    known: std::collections::BTreeMap<usize, u64>,
+    known_key: (usize, usize, u64),
 }
+
+/// Spare fuel in this callback. Native tests have no budget to read and are never limited.
+fn spare_fuel() -> u64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        crate::budget::remaining_fuel()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        u64::MAX
+    }
+}
+
+/// Fuel the Materials page leaves for the rest of the frame, and the most it counts per call.
+const COUNT_RESERVE: u64 = 1_100_000;
+const PALETTE_PER_CALL: usize = 512;
+const TILES_PER_CALL: usize = 32;
 
 impl Viewer {
     pub(super) fn material_counts_pending(&self) -> bool {
@@ -1280,17 +1302,42 @@ impl Viewer {
             return materials.map(|index| index.map(|index| self.materials[index].total));
         }
         let identity = self.preview.palette_identity();
+        let placed_key = self
+            .tiles
+            .iter()
+            .map(|tile| tile.tally.missing + tile.tally.wrong)
+            .sum::<u64>();
+        let key = (identity.0, identity.1, placed_key);
         let mut counts = self.browser_counts.borrow_mut();
+        if counts.known_key != key {
+            counts.known.clear();
+            counts.known_key = key;
+            counts.materials = [None; ROWS];
+            counts.palette_cursor = 0;
+            counts.palette_indices = Default::default();
+            counts.needed = [0; ROWS];
+            counts.cursor = 0;
+        }
+        // Every row on this page was counted before: show it without walking the tiles.
+        if materials
+            .iter()
+            .all(|line| line.is_none_or(|index| counts.known.contains_key(&index)))
+        {
+            return materials.map(|line| line.and_then(|index| counts.known.get(&index).copied()));
+        }
         if counts.materials != materials || counts.palette_identity != identity {
+            let known = std::mem::take(&mut counts.known);
             *counts = MaterialPageCounts {
                 materials,
                 palette_identity: identity,
+                known,
+                known_key: key,
                 ..Default::default()
             };
         }
-        let start = counts.palette_cursor;
-        let end = (start + 64).min(identity.1);
         let names = materials.map(|line| line.map(|index| self.materials[index].name.as_str()));
+        let start = counts.palette_cursor;
+        let end = (start + PALETTE_PER_CALL).min(identity.1);
         for (offset, name) in self.preview.palette_names(start, end).enumerate() {
             for (row, expected) in names.iter().enumerate() {
                 if *expected == Some(name) {
@@ -1302,19 +1349,33 @@ impl Viewer {
         if end < identity.1 {
             return [None; ROWS];
         }
-        // Keep the UI open while a large schematic's visible rows are counted.
-        let end = (counts.cursor + 4).min(self.tiles.len());
-        for tile in &self.tiles[counts.cursor..end] {
+        // Count as many tiles as this frame can spare, so the window stays responsive while a
+        // large schematic's visible rows are counted.
+        let mut counted = 0;
+        while counts.cursor < self.tiles.len()
+            && counted < TILES_PER_CALL
+            && (counted == 0 || spare_fuel() >= COUNT_RESERVE)
+        {
+            let tile = &self.tiles[counts.cursor];
             for (row, material) in materials.iter().enumerate() {
                 if material.is_some() {
-                    counts.needed[row] +=
-                        u64::from(tile.material_counts(&counts.palette_indices[row])[0]);
+                    let add = u64::from(tile.material_counts(&counts.palette_indices[row])[0]);
+                    counts.needed[row] += add;
                 }
             }
+            counts.cursor += 1;
+            counted += 1;
         }
-        counts.cursor = end;
-        if end == self.tiles.len() {
-            std::array::from_fn(|row| materials[row].map(|_| counts.needed[row]))
+        if counts.cursor == self.tiles.len() {
+            let result: [Option<u64>; ROWS] =
+                std::array::from_fn(|row| materials[row].map(|_| counts.needed[row]));
+            for (row, line) in materials.iter().enumerate() {
+                if let Some(index) = line {
+                    let value = counts.needed[row];
+                    counts.known.insert(*index, value);
+                }
+            }
+            result
         } else {
             [None; ROWS]
         }
@@ -1448,7 +1509,7 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
             format!("#bw_row{row}_needed"),
             json!(needed.map_or_else(
                 || if line.is_some() { "…" } else { "" }.into(),
-                |needed| needed.to_string()
+                |needed| if needed == 0 { "Done".into() } else { needed.to_string() }
             )),
         );
         out.insert(

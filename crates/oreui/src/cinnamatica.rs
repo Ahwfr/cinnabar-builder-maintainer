@@ -470,7 +470,7 @@ impl Window<'_> {
         )?;
         self.right_text(
             canvas,
-            "Needed",
+            "Left",
             [needed_right, head],
             CAPTION,
             TEXT_DIMMEST,

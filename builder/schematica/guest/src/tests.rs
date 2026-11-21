@@ -316,19 +316,32 @@ fn aiming_at_a_door_upper_half_uses_its_matching_lower_half() {
 #[test]
 fn material_page_counts_finish_over_multiple_frames() {
     let mut viewer = reference_viewer();
-    viewer.tiles.resize_with(10, Tile::default);
+    viewer.tiles.resize_with(70, Tile::default);
     viewer.tiles[0].stamp = Some(terrain::Stamp {
         session: 1,
         dimension: 0,
         registry: 1,
         revision: 0,
     });
+    // Thirty-two tiles are counted per call: three calls for seventy.
     for pending in [true, true, false] {
         let mut bindings = serde_json::Map::new();
         browser::bindings(&viewer, &mut bindings, &mut Vec::new());
         assert_eq!(viewer.material_counts_pending(), pending);
-        assert_eq!(bindings["#bw_row0_needed"], if pending { "…" } else { "0" });
+        assert_eq!(bindings["#bw_row0_needed"], if pending { "…" } else { "Done" });
     }
+    // A finished page is remembered: asking again counts nothing.
+    let mut bindings = serde_json::Map::new();
+    browser::bindings(&viewer, &mut bindings, &mut Vec::new());
+    assert_eq!(bindings["#bw_row0_needed"], "Done");
+    assert_eq!(bindings["#bw_row0_done"], true);
+    assert!(!viewer.material_counts_pending());
+    // Placing or breaking a block changes the totals, so the counts start again.
+    viewer.tiles[0].tally.missing = 5;
+    let mut bindings = serde_json::Map::new();
+    browser::bindings(&viewer, &mut bindings, &mut Vec::new());
+    assert!(viewer.material_counts_pending());
+    assert_eq!(bindings["#bw_row0_needed"], "…");
 }
 
 #[test]
