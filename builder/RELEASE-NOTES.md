@@ -1,3 +1,11 @@
+# Cinnamatica 0.3.46
+
+- Ghost chests and shulker boxes are tinted blue and a little darker, so you can tell them from real ones.
+- A ghost chest or shulker box now disappears at once when the world has any block in its cell, and comes back when the cell is empty or water or lava again. Before, it waited for the whole hologram to be rebuilt and uploaded, which is why it stayed after you placed a chest.
+- The client log now records how long each hologram update takes: a line `Hologram mesh built` (cells, sections, triangles, milliseconds) and a line `Hologram GPU arena built` (sections and milliseconds for the build, face and sort steps). **This does not make the hologram faster.** The slow load and the slow ghost removal are not fixed, and I do not yet know the cause. These lines are there to find it.
+
+Verified: the hologram unit tests (7) and the block-entity render tests (161), and the client and render crates compile. The mod is unchanged since 0.3.45. Not tried in the game: the tint, the instant hide, and the log lines.
+
 # Cinnamatica 0.3.45
 
 - Chests, ender chests, copper chests and shulker boxes in the hologram are drawn as their real models instead of a plank or colored cube. Two chests side by side with the same kind and direction are drawn as one double chest, because that is what the game makes of them when they are placed. Shulker lids always face up and chest lids stay closed. Beds, signs, banners and heads are still stand-in cubes.

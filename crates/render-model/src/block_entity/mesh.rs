@@ -74,6 +74,8 @@ pub struct MeshBuilder {
     pub additive: Vec<BlockEntityVertex>,
     /// Multiplier applied to model RGB; encoded portal planes bypass lighting.
     pub light: f32,
+    /// Per-channel multiplier on model RGB, applied with `light`; white leaves a model as is.
+    pub tint: [f32; 3],
     pub(super) actor_light: u32,
     /// Whether a required model texture was absent from the atlas.
     pub(super) missing_required_texture: bool,
@@ -93,6 +95,7 @@ impl MeshBuilder {
             portal: Vec::new(),
             additive: Vec::new(),
             light: 1.0,
+            tint: [1.0; 3],
             actor_light: 0,
             missing_required_texture: false,
             texture_name: String::new(),
@@ -262,10 +265,10 @@ impl MeshBuilder {
             return;
         }
         // Portal RGB encodes the plane normal; lighting would corrupt the projector.
-        let light = if layer == Layer::Portal {
-            1.0
+        let (light, tint) = if layer == Layer::Portal {
+            (1.0, [1.0; 3])
         } else {
-            self.light
+            (self.light, self.tint)
         };
         let atlas_size = self.atlas_size;
         let normal = if self.actor_light == 0 {
@@ -284,9 +287,9 @@ impl MeshBuilder {
                 uvs[corner][1] / atlas_size[1],
             ],
             color: [
-                colors[corner][0] * light,
-                colors[corner][1] * light,
-                colors[corner][2] * light,
+                colors[corner][0] * light * tint[0],
+                colors[corner][1] * light * tint[1],
+                colors[corner][2] * light * tint[2],
                 colors[corner][3],
             ],
             normal,

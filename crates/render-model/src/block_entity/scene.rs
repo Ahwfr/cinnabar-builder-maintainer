@@ -130,6 +130,8 @@ pub enum BlockEntityLight {
     Scalar(f32),
     /// Native entity material: retained levels into the shared environment lightmap.
     Actor { block: u8, sky: u8 },
+    /// Scalar light with a per-channel tint, for a model standing in for a ghost.
+    Tinted { value: f32, tint: [f32; 3] },
 }
 
 impl From<f32> for BlockEntityLight {
@@ -140,9 +142,14 @@ impl From<f32> for BlockEntityLight {
 
 impl BlockEntityLight {
     fn apply(self, builder: &mut MeshBuilder) {
+        builder.tint = [1.0; 3];
         (builder.light, builder.actor_light) = match self {
             Self::Scalar(value) => (value.clamp(0.0, 1.0), 0),
             Self::Actor { block, sky } => (1.0, crate::pack_actor_light(block, sky)),
+            Self::Tinted { value, tint } => {
+                builder.tint = tint.map(|channel| channel.clamp(0.0, 1.0));
+                (value.clamp(0.0, 1.0), 0)
+            }
         };
     }
 }

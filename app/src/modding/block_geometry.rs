@@ -99,6 +99,7 @@ pub(crate) fn prepare(
             let mode = authority.network_id_mode();
             let settings = stream.mesh_render_settings();
             jobs.0 = Some(AsyncComputeTaskPool::get().spawn(async move {
+                let started = std::time::Instant::now();
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     request.mesh(
                         &assets,
@@ -123,6 +124,16 @@ pub(crate) fn prepare(
                     code: ErrorCode::Unsupported,
                     detail: "block meshing worker",
                 }));
+                if let Ok(mesh) = &result {
+                    bevy::log::info!(
+                        revision = request.grid.revision,
+                        cells = request.grid.cells.len(),
+                        sections = mesh.sections.len(),
+                        triangles = mesh.triangles,
+                        mesh_ms = started.elapsed().as_secs_f64() * 1000.0,
+                        "Hologram mesh built"
+                    );
+                }
                 let result = result.and_then(|mesh| {
                     if used_bytes.saturating_add(mesh.bytes)
                         > mod_api::drawing::MAX_BLOCK_MESH_BYTES

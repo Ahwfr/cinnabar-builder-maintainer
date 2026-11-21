@@ -1,5 +1,7 @@
 # Installing and updating Builder
 
+0.3.46 changes the game, so it needs a full rebuild. It is untested in the game.
+
 0.3.45 changes the game as well as the mod, so it needs a full rebuild. It is untested in the game.
 
 0.3.44 changes only the mod (a crash fix in the paste check). It is untested in the game.

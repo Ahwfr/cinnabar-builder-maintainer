@@ -41,12 +41,14 @@ pub(super) struct HologramPieces {
 }
 
 impl HologramPieces {
-    /// Appends the pieces of every visible grid within range of `eye` to `out`.
+    /// Appends the pieces of every visible grid within range of `eye` to `out`, leaving out
+    /// the cells `occupied` reports as holding a block.
     pub(super) fn gather(
         &mut self,
         retained: &[Arc<Resources>],
         dimension: i32,
         eye: Vec3,
+        occupied: impl Fn([i32; 3]) -> bool,
         out: &mut Vec<([i32; 3], Piece)>,
     ) {
         let mut next = Vec::with_capacity(self.cache.len());
@@ -84,7 +86,12 @@ impl HologramPieces {
                         break;
                     }
                     let center = Vec3::new(at[0] as f32 + 0.5, at[1] as f32 + 0.5, at[2] as f32 + 0.5);
-                    if center.distance_squared(eye) <= RADIUS_BLOCKS * RADIUS_BLOCKS {
+                    // The hologram takes a while to regenerate after a block lands, so the
+                    // client's own world decides at once: a cell that holds a block has its
+                    // ghost model dropped without waiting for the hologram.
+                    if center.distance_squared(eye) <= RADIUS_BLOCKS * RADIUS_BLOCKS
+                        && !occupied(at)
+                    {
                         out.push((at, piece));
                     }
                 }
@@ -97,6 +104,15 @@ impl HologramPieces {
         }
         self.cache = next;
     }
+}
+
+/// Whether a world block name leaves its cell free for a ghost: air and the liquids, which
+/// the guide ignores too.
+pub(super) fn is_open_cell(name: &str) -> bool {
+    matches!(
+        name.strip_prefix("minecraft:").unwrap_or(name),
+        "air" | "cave_air" | "void_air" | "water" | "flowing_water" | "lava" | "flowing_lava"
+    )
 }
 
 /// Only an unrotated, unscaled grid maps its cells onto world blocks one to one.
@@ -326,6 +342,16 @@ mod tests {
         pair_chests(&mut found);
         assert_eq!(pair_of(&found, 0), ChestPair::Single);
         assert_eq!(pair_of(&found, 1), ChestPair::Single);
+    }
+
+    #[test]
+    fn only_air_and_liquids_leave_a_cell_open_for_a_ghost() {
+        for name in ["minecraft:air", "minecraft:water", "minecraft:flowing_lava", "cave_air"] {
+            assert!(is_open_cell(name), "{name}");
+        }
+        for name in ["minecraft:chest", "minecraft:stone", "minecraft:powder_snow"] {
+            assert!(!is_open_cell(name), "{name}");
+        }
     }
 
     #[test]
