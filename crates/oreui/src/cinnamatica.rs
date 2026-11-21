@@ -71,7 +71,6 @@ const GROUPS: [(&str, &[Row]); 3] = [
             Row::Switch("placement-lock"),
             Row::Switch("correct-aim"),
             Row::Switch("bridge-place"),
-            Row::Switch("upper-air"),
         ],
     ),
     (

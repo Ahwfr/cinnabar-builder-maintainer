@@ -12,7 +12,6 @@ mod native_bindings;
 mod overlay;
 mod paste;
 mod status;
-mod upper_air;
 mod structure_paste;
 
 // Embed the revision in the guest itself so the importer labels the code it actually packages.
@@ -61,7 +60,7 @@ thread_local! {
     /// Where the guide of a copied selection goes: the box's minimum corner.
     static ADOPT_ORIGIN: Cell<Option<[i32; 3]>> = const { Cell::new(None) };
     static RUNTIME: RefCell<(Runtime, Vec<&'static [u8]>, Options, Option<usize>)> =
-        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, structure_paste: false, textured: true, assist: false, fast_place: false, strict_place: false, upper_air: false, correct_aim: false, bridge_place: true, lightness: DEFAULT_LIGHTNESS, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new(), tool_item: true }, None)) };
+        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, structure_paste: false, textured: true, assist: false, fast_place: false, strict_place: false, correct_aim: false, bridge_place: true, lightness: DEFAULT_LIGHTNESS, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new(), tool_item: true }, None)) };
 }
 
 /// The "Ghost lightness" cycle: percent the ghost blocks blend toward light blue.
@@ -93,8 +92,6 @@ struct Options {
     assist: bool,
     fast_place: bool,
     strict_place: bool,
-    /// Experimental: air-place upper-half stairs, slabs and trapdoors. Off by default.
-    upper_air: bool,
     correct_aim: bool,
     bridge_place: bool,
     /// Percent the ghost blocks blend toward light blue; one of `LIGHTNESS_LEVELS`.
@@ -119,7 +116,6 @@ impl Options {
                 "textured":self.textured, "assist":self.assist, "fast_place": self.fast_place,
                 "correct_aim": self.correct_aim,
                 "strict_place": self.strict_place,
-                "upper_air": self.upper_air,
                 "placement_lock": self.placement_lock,
                 "bridge_place": self.bridge_place,
                 "remember_placement": self.remember_placement, "saved_placements": self.saved_placements,
@@ -171,7 +167,6 @@ impl Guest for Schematica {
                 options.assist = value["assist"].as_bool().unwrap_or(options.assist);
                 options.fast_place = value["fast_place"].as_bool().unwrap_or(options.fast_place);
                 options.strict_place = value["strict_place"].as_bool().unwrap_or(false);
-                options.upper_air = value["upper_air"].as_bool().unwrap_or(false);
                 options.placement_lock = value["placement_lock"].as_bool().unwrap_or(false);
                 options.correct_aim = value["correct_aim"]
                     .as_bool()
@@ -448,7 +443,6 @@ struct Viewer {
     menu_chorded: bool,
     /// The window tab an M chord asked for, applied once the window is open.
     open_tab: Option<browser::Tab>,
-    upper_air: upper_air::UpperAir,
 }
 
 /// What a key pressed while M is held did.
@@ -522,7 +516,6 @@ impl Viewer {
             adopt: None,
             menu_chorded: false,
             open_tab: None,
-            upper_air: Default::default(),
         }
     }
 
@@ -719,7 +712,6 @@ impl Viewer {
             return;
         }
         self.update_preview_window();
-        self.check_upper_air();
         let world_target = gameplay::read_block_target()
             .ok()
             .flatten()
@@ -808,13 +800,6 @@ impl Viewer {
             if let Err(error) = offer {
                 self.show_label(&format!("Fast Place | {error}"));
                 return;
-            }
-            if self.options.strict_place && self.upper_air.active(self.options.upper_air, &block) {
-                // Only offered when no support is aimed: the client prefers a real support
-                // face and falls back to the air click.
-                if item_use::set_placement_upper_air(true).is_ok() {
-                    self.upper_air.offered([x, y, z]);
-                }
             }
             let _ = item_use::set_placement_repeat(self.options.hold_place);
         }
@@ -1138,27 +1123,6 @@ impl Viewer {
         ];
         self.shown = true;
         true
-    }
-
-    /// Reads the cell an upper-half air click was offered for and turns the mode off for the
-    /// session when the server placed anything but the planned state there.
-    fn check_upper_air(&mut self) {
-        let Some(cell) = self.upper_air.watched() else {
-            return;
-        };
-        let status = self.tiles.iter().find_map(|tile| tile.status_at(cell));
-        match self.upper_air.observe(status) {
-            Some(upper_air::Verdict::Confirmed) => {
-                let count = self.upper_air.confirmed;
-                self.show_label(&format!(
-                    "Upper-half air place | the server placed the upper half ({count} so far)"
-                ));
-            }
-            Some(upper_air::Verdict::Wrong) => self.show_label(&format!(
-                "Upper-half air place | the server placed the wrong state at {cell:?}; off until switched on again. Fix that block by hand."
-            )),
-            None => {}
-        }
     }
 
     fn planned_block(&self, world: [i32; 3]) -> Option<&schematica_core::BlockState> {
