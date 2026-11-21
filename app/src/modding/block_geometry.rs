@@ -98,6 +98,11 @@ pub(crate) fn prepare(
             let registries = (**registries).clone();
             let mode = authority.network_id_mode();
             let settings = stream.mesh_render_settings();
+            bevy::log::info!(
+                revision = request.grid.revision,
+                queued_ms = request.age_ms(),
+                "Hologram generation started"
+            );
             jobs.0 = Some(AsyncComputeTaskPool::get().spawn(async move {
                 let started = std::time::Instant::now();
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -131,6 +136,7 @@ pub(crate) fn prepare(
                         sections = mesh.sections.len(),
                         triangles = mesh.triangles,
                         mesh_ms = started.elapsed().as_secs_f64() * 1000.0,
+                        since_received_ms = request.age_ms(),
                         "Hologram mesh built"
                     );
                 }

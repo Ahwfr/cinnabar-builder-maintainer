@@ -18,16 +18,22 @@ pub(super) struct Paste {
     queue: Vec<Placement>,
     destroy: bool,
     structure: StructurePaste,
-    /// An export in progress: the structure parts still to send after the current one, and
-    /// the names of all of them. `None` for a paste into the world.
-    export: Option<Export>,
     /// Grid copies already sent, kept so the check afterwards covers all of them.
     finished: Vec<Placement>,
 }
 
-pub(super) struct Export {
+/// An export under way. It runs beside everything else: it sends no blocks to the world, so
+/// the guide stays usable and Fast Place keeps working while it uploads.
+pub(super) struct ExportRun {
+    scope: (u64, i32),
+    /// The placement the export was confirmed for; a change to it cancels the export.
+    base: Placement,
+    structure: StructurePaste,
+    /// The parts still to send after the current one, and the names of all of them.
     queue: Vec<StructurePaste>,
     names: Vec<String>,
+    /// What the Controls tab shows while it runs.
+    pub(super) progress: String,
 }
 
 impl Viewer {
@@ -42,11 +48,11 @@ impl Viewer {
             self.cancel_structure = Some(run.scope);
             self.paste_confirm = false;
             let _ = crate::panel::close();
-            self.paste_result(if run.export.is_some() {
-                "Export canceled | Nothing was saved".into()
-            } else {
-                "Paste canceled | Completed blocks were kept".into()
-            });
+            self.paste_result("Paste canceled | Completed blocks were kept".into());
+            return;
+        }
+        if self.export_run.is_some() {
+            self.paste_notice = Some(("Paste | Wait for the export to finish".into(), 3.0));
             return;
         }
         let Some((scope, placement)) = self.world.zip(self.placement) else {
@@ -64,17 +70,23 @@ impl Viewer {
             queue: Vec::new(),
             destroy: self.options.paste_destroy,
             structure: StructurePaste::new(&self.schematic, placement, self.options.paste_destroy),
-            export: None,
             finished: Vec::new(),
         });
         let _ = crate::panel::close();
     }
 
     /// Saves the guide as structures in the world, for a structure block's Load mode. A first
-    /// click asks to confirm; the second starts the upload.
+    /// click asks to confirm; the second starts the upload, which runs in the background.
     pub(super) fn export_button(&mut self) {
+        if let Some(run) = self.export_run.take() {
+            self.cancel_structure = Some(run.scope);
+            self.paste_confirm = false;
+            let _ = crate::panel::close();
+            self.paste_result("Export canceled | Nothing was saved".into());
+            return;
+        }
         if self.paste.is_some() || self.repair.is_some() {
-            self.paste_button();
+            self.paste_notice = Some(("Export | Wait for the paste to finish".into(), 3.0));
             return;
         }
         let Some((scope, placement)) = self.world.zip(self.placement) else {
@@ -88,27 +100,63 @@ impl Viewer {
         self.export_confirming = false;
         let (min, max) = placement.world_bounds(self.schematic.size());
         let base = structure_name(&self.schematic.name);
-        let mut parts = export_parts(min, max, &base);
-        let names = parts.iter().map(|(name, ..)| name.clone()).collect();
+        let parts = export_parts(min, max, &base);
+        let names: Vec<String> = parts.iter().map(|(name, ..)| name.clone()).collect();
         let mut queue: Vec<StructurePaste> = parts
-            .drain(..)
+            .into_iter()
             .map(|(name, lo, hi)| StructurePaste::saved(lo, hi, name))
             .collect();
         queue.reverse();
         let Some(first) = queue.pop() else {
             return;
         };
-        self.paste = Some(Paste {
+        self.export_run = Some(ExportRun {
             scope,
             base: placement,
-            placement,
-            queue: Vec::new(),
-            destroy: false,
             structure: first,
-            export: Some(Export { queue, names }),
-            finished: Vec::new(),
+            queue,
+            names,
+            progress: "Starting".into(),
         });
         let _ = crate::panel::close();
+        self.paste_notice = Some(("Exporting | You can keep building while it uploads".into(), 5.0));
+    }
+
+    /// Sends the next piece of the export, if one is under way. Runs every frame beside the
+    /// rest of the guide and never blocks it.
+    pub(super) fn export_step(&mut self) {
+        let Some(mut run) = self.export_run.take() else {
+            return;
+        };
+        if self.world != Some(run.scope) || self.placement != Some(run.base) {
+            self.cancel_structure = Some(run.scope);
+            self.paste_result("Export canceled because the world or placement changed".into());
+            return;
+        }
+        if !gameplay::can_paste_blocks() {
+            self.paste_result(
+                "Export needs Creative, operator cheats, and setblock and fill mod permissions"
+                    .into(),
+            );
+            return;
+        }
+        match run.structure.step(&self.schematic, run.base) {
+            Ok(Some(progress)) => run.progress = progress,
+            Ok(None) => {
+                if let Some(next) = run.queue.pop() {
+                    run.structure = next;
+                    run.progress = "Next part".into();
+                } else {
+                    self.paste_result(export_message(&run.names));
+                    return;
+                }
+            }
+            Err(error) => {
+                self.paste_result(format!("Structure export stopped | {error}"));
+                return;
+            }
+        }
+        self.export_run = Some(run);
     }
 
     /// Starts a paste of `grid` copies side by side; the first copy is the placement itself.
@@ -116,7 +164,7 @@ impl Viewer {
         let Some((scope, placement)) = self.world.zip(self.placement) else {
             return;
         };
-        if self.paste.is_some() {
+        if self.paste.is_some() || self.export_run.is_some() {
             return;
         }
         let footprint = placement.footprint(self.schematic.size());
@@ -140,7 +188,6 @@ impl Viewer {
             queue,
             destroy: self.options.paste_destroy,
             structure,
-            export: None,
             finished: Vec::new(),
         });
     }
@@ -148,10 +195,7 @@ impl Viewer {
     /// Reports a finished paste and starts the check for blocks the server did not keep.
     fn finish_paste(&mut self, run: Paste, message: String) {
         self.paste_result(message);
-        // Nothing is sent to the world by an export, so there is nothing to check.
-        if run.export.is_none() {
-            self.repair = Some(Repair::new(&run, self.schematic.size()));
-        }
+        self.repair = Some(Repair::new(&run, self.schematic.size()));
     }
 
     fn paste_result(&mut self, message: String) {
@@ -184,33 +228,19 @@ impl Viewer {
         }
         if !gameplay::can_paste_blocks() {
             self.paste_result(
-                format!(
-                    "{} needs Creative, operator cheats, and setblock and fill mod permissions",
-                    if run.export.is_some() { "Export" } else { "Paste" }
-                ),
+                "Paste needs Creative, operator cheats, and setblock and fill mod permissions"
+                    .into(),
             );
             return true;
         }
-        let exporting = run.export.is_some();
         let result = run.structure.step(&self.schematic, run.placement);
-        if !exporting && let Some((lo, hi)) = run.structure.take_sent_box() {
+        if let Some((lo, hi)) = run.structure.take_sent_box() {
             self.expect_pasted(lo, hi);
         }
         match result {
             Ok(Some(progress)) => {
                 self.show_label(&progress);
                 self.paste = Some(run);
-            }
-            Ok(None) if exporting => {
-                let export = run.export.as_mut().expect("exporting");
-                if let Some(next) = export.queue.pop() {
-                    run.structure = next;
-                    self.show_label("Structure Export | Next part");
-                    self.paste = Some(run);
-                } else {
-                    let names = export.names.clone();
-                    self.paste_result(export_message(&names));
-                }
             }
             Ok(None) if run.advance() => {
                 // The copies share the host session: the last one closes it.
@@ -224,20 +254,13 @@ impl Viewer {
                 "Structure sent | The host reports placement in chat. Checking for missing blocks"
                     .into(),
             ),
-            Err(error) => self.paste_result(format!(
-                "{} stopped | {error}",
-                if exporting { "Structure export" } else { "Structure paste" }
-            )),
+            Err(error) => self.paste_result(format!("Structure paste stopped | {error}")),
         }
         true
     }
 }
 
 impl Paste {
-    pub(super) fn is_export(&self) -> bool {
-        self.export.is_some()
-    }
-
     /// Moves on to the next grid copy, keeping the totals. False when none is left.
     fn advance(&mut self) -> bool {
         let Some(next) = self.queue.pop() else {

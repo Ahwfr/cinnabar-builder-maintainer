@@ -187,6 +187,8 @@ pub struct BlockGeometry {
     palette: OnceLock<Arc<MeshPalette>>,
     previous: Option<Arc<BlockMesh>>,
     dirty: Option<BTreeSet<[i32; 3]>>,
+    /// When the mod's edit reached the host, for timing the path to the screen.
+    created: std::time::Instant,
 }
 
 impl PartialEq for BlockGeometry {
@@ -210,6 +212,12 @@ impl BlockGeometry {
             settings,
         });
         Arc::ptr_eq(&context.assets, assets) && context.mode == mode && context.settings == settings
+    }
+
+    /// Milliseconds since this generation reached the host.
+    #[must_use]
+    pub fn age_ms(&self) -> f64 {
+        self.created.elapsed().as_secs_f64() * 1000.0
     }
 
     /// Publishes complete native GPU arena admission for this generation.
@@ -370,6 +378,7 @@ impl BlockGrid {
                 palette: OnceLock::new(),
                 previous: None,
                 dirty: None,
+                created: std::time::Instant::now(),
             })),
             vertices: Arc::from([]),
             indices: Arc::from([]),

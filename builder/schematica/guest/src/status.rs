@@ -52,8 +52,14 @@ impl Viewer {
                     schematica_core::CellStatus::Extra => "extra",
                     schematica_core::CellStatus::Unloaded => "not loaded",
                 });
+            let waiting = self.whole.pending_edits();
+            let waiting = if waiting > 0 {
+                format!("  |  ghosts waiting: {waiting}")
+            } else {
+                String::new()
+            };
             self.show_label(&format!(
-                "{name}  |  {x}, {y}, {z}  |  world: {world}{action}"
+                "{name}  |  {x}, {y}, {z}  |  world: {world}{waiting}{action}"
             ));
             return;
         }
@@ -75,9 +81,15 @@ impl Viewer {
             } else {
                 format!("{pending} tiles pending")
             };
+            let waiting = self.whole.pending_edits();
+            let waiting = if waiting > 0 {
+                format!(" | ghosts waiting {waiting}")
+            } else {
+                String::new()
+            };
             format!(
-                "{} {:?} | {} | missing {} wrong {} extra {} unknown {} | {}",
-                self.schematic.name, p.origin, layer, needed, wrong, extra, unknown, note
+                "{} {:?} | {} | missing {} wrong {} extra {} unknown {} | {}{}",
+                self.schematic.name, p.origin, layer, needed, wrong, extra, unknown, note, waiting
             )
         } else {
             self.options.menu_hint(&self.schematic.name)

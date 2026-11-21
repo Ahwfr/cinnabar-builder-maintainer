@@ -1580,7 +1580,7 @@ fn keys(viewer: &Viewer, out: &mut Map<String, Value>) {
     );
     out.insert(
         "#bw_export".into(),
-        json!(if viewer.paste.as_ref().is_some_and(|run| run.is_export()) {
+        json!(if viewer.export_run.is_some() {
             "Cancel Export"
         } else if viewer.paste_confirm && viewer.export_confirming {
             "Confirm export"
@@ -1597,6 +1597,8 @@ fn keys(viewer: &Viewer, out: &mut Map<String, Value>) {
         "#bw_paste_hint".into(),
         json!(if viewer.paste.is_some() {
             "Stops the remaining paste".to_string()
+        } else if let Some(run) = &viewer.export_run {
+            format!("Exporting in the background  ·  {}", run.progress)
         } else if viewer.paste_confirm && viewer.export_confirming {
             "Click Export again to save a structure block structure".to_string()
         } else if viewer.paste_confirm {

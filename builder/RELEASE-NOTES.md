@@ -1,3 +1,10 @@
+# Cinnamatica 0.3.48
+
+- **Export no longer blocks building.** In 0.3.47 an export counted as a paste in progress, which turned off Fast Place, the guide label and the stick tool until it finished. It now uploads in the background and none of those are affected. The Paste button waits while an export runs, and Export waits while a paste or its check runs, because both send commands and the host ends the mod if a frame sends too many.
+- **Timing for ghost updates.** The client log now has, for each hologram update, `Hologram generation started` (how long it waited), `Hologram mesh built` (with the time since the update reached the host) and `Hologram generation shown` (the time since it reached the host, when it appeared). The guide label now ends with `ghosts waiting N` while ghost edits are queued in the mod. **These do not make anything faster.** You reported that ghosts go away quickly but come back slowly, all at once, and that wrong blocks are slow to show. The rebuild itself takes about 5 to 15 ms in your log, so the cause is probably in the mod's check cycle, which I have not confirmed. The label and the log are there to show it.
+
+Verified: the mod's unit tests (78), the OreUI window tests (unchanged since 0.3.47), the render-model and mod-render tests, and the client compiles. Not tried in the game: the background export, the label, the log lines. The mod's WASM file was not built here.
+
 # Cinnamatica 0.3.47
 
 - **Setblock paste is gone.** Paste always uses Structure Paste now, and the Setblock/Structure switch is removed. Grid paste uses it too. This means paste needs the Structure Host addon in the world, which needs Creative and operator rights. On a server that does not have the addon there is no paste. The check that runs after a paste, and the Move tool, still use setblock and fill commands, so those permissions are still asked for.

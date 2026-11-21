@@ -22,6 +22,9 @@ pub(super) struct StructurePaste {
     /// shares one session between its copies.
     open: bool,
     close: bool,
+    /// Commands one call may send. The host ends the mod for good when a frame asks for more
+    /// than four, so an export that runs beside other senders takes fewer.
+    commands: usize,
     min: [i32; 3],
     max: [i32; 3],
     next: [i32; 3],
@@ -53,7 +56,9 @@ impl StructurePaste {
 
     /// A stream for the world box `min..max` (exclusive maximum), saved as one structure.
     pub(super) fn saved(min: [i32; 3], max: [i32; 3], name: String) -> Self {
-        Self::boxed(min, max, false, Target::Saved { name })
+        let mut part = Self::boxed(min, max, false, Target::Saved { name });
+        part.commands = 2;
+        part
     }
 
     fn boxed(min: [i32; 3], max: [i32; 3], replace: bool, target: Target) -> Self {
@@ -61,6 +66,7 @@ impl StructurePaste {
             target,
             open: true,
             close: true,
+            commands: 4,
             min,
             max,
             next: min,
@@ -225,7 +231,7 @@ impl StructurePaste {
                 return Err("Section exceeds Bedrock's paste transfer limit".into());
             }
         }
-        for _ in 0..4 {
+        for _ in 0..self.commands {
             let end = (tile.offset + FRAGMENT).min(tile.payload.len());
             let final_part = u8::from(end == tile.payload.len());
             let command = format!(

@@ -304,6 +304,11 @@ impl WholeGhost {
         self.pair.is_some()
     }
 
+    /// Ghost edits that are waiting for the host to take them.
+    pub fn pending_edits(&self) -> usize {
+        self.changes.len()
+    }
+
     pub fn prepare(
         &mut self,
         preview: &Preview,

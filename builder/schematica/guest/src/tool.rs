@@ -598,7 +598,7 @@ impl Viewer {
             self.show_label("Execute | Hold the tool item (a stick)");
             return;
         }
-        if self.tool.busy() || self.paste.is_some() {
+        if self.tool.busy() || self.paste.is_some() || self.export_run.is_some() {
             self.show_label("Execute | Wait for the current operation");
             return;
         }
@@ -691,7 +691,7 @@ impl Viewer {
             self.show_label("Tool | Set both corners first");
             return;
         };
-        if self.tool.busy() || self.paste.is_some() {
+        if self.tool.busy() || self.paste.is_some() || self.export_run.is_some() {
             self.show_label("Tool | Wait for the current operation");
             return;
         }
@@ -707,7 +707,7 @@ impl Viewer {
             self.show_label("Move | Set both corners first");
             return;
         };
-        if self.tool.busy() || self.paste.is_some() {
+        if self.tool.busy() || self.paste.is_some() || self.export_run.is_some() {
             self.show_label("Move | Wait for the current operation");
             return;
         }

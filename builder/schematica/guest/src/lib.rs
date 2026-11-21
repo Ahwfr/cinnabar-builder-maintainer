@@ -433,6 +433,7 @@ struct Viewer {
     auto_place: bool,
     dirty: bool,
     paste_confirm: bool,
+    export_run: Option<paste::ExportRun>,
     /// The pending confirmation is for Export, not Paste.
     export_confirming: bool,
     paste_notice: Option<(String, f32)>,
@@ -514,6 +515,7 @@ impl Viewer {
             auto_place: loaded,
             dirty: false,
             paste_confirm: false,
+            export_run: None,
             export_confirming: false,
             paste_notice: None,
             cancel_structure: None,
@@ -537,6 +539,7 @@ impl Viewer {
             let scope = (world.session, world.dimension);
             if self.world != Some(scope) {
                 self.paste = None;
+                self.export_run = None;
                 self.repair = None;
                 self.paste_confirm = false;
                 let entering_from_world = self.world.is_some();
@@ -673,6 +676,7 @@ impl Viewer {
             return;
         }
         let pasting = self.paste_step() || self.repair_step();
+        self.export_step();
         if let Some((_, seconds)) = &mut self.paste_notice {
             *seconds -= keys.seconds;
             if *seconds <= 0.0 {

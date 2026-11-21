@@ -140,6 +140,11 @@ pub(super) fn prepare(
             {
                 if let Some(request) = native.geometry.blocks() {
                     request.complete_render();
+                    bevy::log::info!(
+                        revision = request.grid.revision,
+                        since_received_ms = request.age_ms(),
+                        "Hologram generation shown"
+                    );
                 }
                 if let Some(old) = blocks.native.insert(id, Arc::new(native)) {
                     retired.push(old);
