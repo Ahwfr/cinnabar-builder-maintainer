@@ -1,3 +1,14 @@
+# Cinnamatica 0.3.39
+
+- Fast Place now finds the item for a guide block from the game's own data instead of its name: wall and standing signs, banners, heads, coral fans and hanging signs are clicked on the right face, double slabs are built as their full block, and the head half of a bed is skipped (the foot places both).
+- Hoppers ignore the planned facing (the server decides it). A lever on a ceiling is placed by clicking the underside of the block above it, and is skipped when there is no such block.
+- Holding sneak while placing against an interactive block (a chest, a crafting table, a door) so the click places instead of opening it; sneak is released after the click is sent.
+- The guide ignores states the world controls (for example powered or water level) and liquids when it checks a block against the schematic, so those no longer show as wrong.
+- Holograms draw blocks that have block entities (chests, signs, banners and the like) as a placeholder box instead of nothing.
+- Credit: these Fast Place changes are ThSsilentKnight's (commit e004ab262, merged as 2adc4873f on GitHub main).
+
+Verified: the mod's unit tests (73 for the Personal guest). The client changes were not compiled or tried in the game when this was prepared; the Update Main build is their first real compile.
+
 # Cinnamatica 0.3.36
 
 - Fast Place V2 Strict now places blocks that have no placement rule (copper bulbs, scaffolding, rails, containers and the like) by clicking into air. Before, it refused each one with "could not predict this placement". The server decides their state, as it already did for a click on a real neighbour.

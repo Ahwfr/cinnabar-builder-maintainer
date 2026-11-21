@@ -1,5 +1,7 @@
 # Installing and updating Builder
 
+0.3.39 brings in ThSsilentKnight's Fast Place fixes (item lookup from game data, hoppers, ceiling levers, auto-sneak against interactive blocks, block-entity placeholders). It changes the game client and the mod, so it needs the full build. It is untested in the game.
+
 0.3.36 changes how Fast Place (V2 Strict) places blocks, so it needs the full client build: lamps, rails,
 scaffolding and other blocks with no placement rule can now be placed by clicking into air, and droppers,
 dispensers, observers and pistons follow the server's eye-height rule instead of a body box. The mod skips
