@@ -1192,10 +1192,15 @@ impl Viewer {
 
     fn may_need_block(&self, pos: [i32; 3]) -> bool {
         use schematica_core::CellStatus;
-        matches!(
-            self.tiles.iter().find_map(|tile| tile.status_at(pos)),
-            None | Some(CellStatus::Missing | CellStatus::Unloaded)
-        )
+        // Liquids have no item to place, so a held click on one only makes the client refuse
+        // it again and again.
+        !self
+            .planned_block(pos)
+            .is_some_and(|block| unplaceable(&block.name))
+            && matches!(
+                self.tiles.iter().find_map(|tile| tile.status_at(pos)),
+                None | Some(CellStatus::Missing | CellStatus::Unloaded)
+            )
     }
 
     /// Lock only ordinary placement into planned blocks, leaving the rest of the world usable.
@@ -1515,6 +1520,30 @@ fn nearby_ghost(
     best
 }
 
+/// Blocks that have no item to place: liquids and technical blocks. They are never offered,
+/// because the client cannot find an item for them.
+pub(crate) fn unplaceable(name: &str) -> bool {
+    let name = name.strip_prefix("minecraft:").unwrap_or(name);
+    matches!(
+        name,
+        "water"
+            | "flowing_water"
+            | "lava"
+            | "flowing_lava"
+            | "air"
+            | "bubble_column"
+            | "fire"
+            | "soul_fire"
+            | "moving_block"
+            | "piston_arm_collision"
+            | "sticky_piston_arm_collision"
+            | "portal"
+            | "end_portal"
+            | "end_gateway"
+            | "structure_void"
+    )
+}
+
 /// Powered and lit blocks cannot be held: the item places the unpowered, unlit block and the
 /// world powers it. Offer that block, so a comparator that is receiving a signal, or a lit
 /// furnace, can be placed at all.
@@ -1528,6 +1557,8 @@ fn unlit_variant(mut block: schematica_core::BlockState) -> schematica_core::Blo
         "minecraft:lit_redstone_lamp" => "minecraft:redstone_lamp",
         "minecraft:lit_redstone_ore" => "minecraft:redstone_ore",
         "minecraft:lit_deepslate_redstone_ore" => "minecraft:deepslate_redstone_ore",
+        // The redstone torch item places a lit torch; the world turns it off when powered.
+        "minecraft:unlit_redstone_torch" => "minecraft:redstone_torch",
         _ => return block,
     };
     block.name = name.to_owned();

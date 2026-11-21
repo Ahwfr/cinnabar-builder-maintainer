@@ -31,7 +31,10 @@ pub(crate) fn facing_states(
     Some(states)
 }
 
-/// Nearby vertical placements use strict body bounds; other placements use the yaw table.
+/// How far the eye sits below the top of the player box.
+const EYE_BELOW_TOP: f32 = 0.18;
+
+/// Nearby vertical placements follow the eye height; other placements use the yaw table.
 fn body_facing(position: [i32; 3], player: BoxBounds, yaw: f32, rotation: f32) -> Option<u8> {
     let player = (
         player.0.map(|value| value as f32),
@@ -46,10 +49,13 @@ fn body_facing(position: [i32; 3], player: BoxBounds, yaw: f32, rotation: f32) -
     });
     let height = position[1] as f32;
     if nearby {
-        if height < player.0[1] {
+        // The server compares the eye with the cell: more than two blocks above it points the
+        // block up, below it points it down. The eye sits 0.18 under the top of the box.
+        let eye = player.1[1] - EYE_BELOW_TOP;
+        if eye - height > 2.0 {
             return Some(1);
         }
-        if player.1[1] < height {
+        if height > eye {
             return Some(0);
         }
     }

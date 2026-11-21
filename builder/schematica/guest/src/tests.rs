@@ -351,3 +351,18 @@ fn ghost_lightness_loads_bounded_and_ignores_older_settings() {
     assert_eq!(saved_lightness(&json!({ "ghost_tint": 99 })), 35);
     assert_eq!(saved_lightness(&json!({ "ghost_tint": 0 })), 5);
 }
+
+#[test]
+fn liquids_have_no_item_and_a_powered_torch_is_offered_as_the_item_it_places() {
+    use schematica_core::BlockState;
+    for name in ["minecraft:water", "minecraft:flowing_water", "minecraft:lava", "minecraft:flowing_lava"] {
+        assert!(unplaceable(name), "{name}");
+    }
+    for name in ["minecraft:stone", "minecraft:waxed_copper_bulb", "minecraft:redstone_torch"] {
+        assert!(!unplaceable(name), "{name}");
+    }
+    // The unlit torch has no item; the redstone torch item places it and the world turns it off.
+    let torch = unlit_variant(BlockState::new("minecraft:unlit_redstone_torch"));
+    assert_eq!(torch.name, "minecraft:redstone_torch");
+    assert_eq!(unlit_variant(BlockState::new("minecraft:stone")).name, "minecraft:stone");
+}

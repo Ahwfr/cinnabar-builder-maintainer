@@ -1,3 +1,12 @@
+# Cinnamatica 0.3.36
+
+- Fast Place V2 Strict now places blocks that have no placement rule (copper bulbs, scaffolding, rails, containers and the like) by clicking into air. Before, it refused each one with "could not predict this placement". The server decides their state, as it already did for a click on a real neighbour.
+- Droppers, dispensers, observers and pistons: the client predicts their facing with the server's eye-height rule (within one block of you in x and z, a cell more than two blocks below your eye points up and a cell above your eye points down). The old rule used your body box, which differs while you hover or fly; standing on the ground gives the same result under both. Verified only against the local server's source, not against other servers.
+- Fast Place no longer offers water, lava and other liquid cells, which have no item, so holding use on a guide with water does not make the client refuse it dozens of times a second.
+- A powered-off redstone torch in the guide is placed with the redstone torch item.
+
+Verified: the mod unit tests and the new facing rule in isolation. The client change is compiled only by the full build, and none of this has been tried in the game.
+
 # Cinnamatica 0.3.35
 
 - Importing: a Bedrock `.mcstructure` whose structure section is stored as compressed bytes (format version 2, `compression` 1, with the block layers as int arrays) is now read. Before, such a file failed with "expected an NBT compound". The section may be zlib, gzip, raw deflate or uncompressed, and is limited to 64 MiB once decompressed.

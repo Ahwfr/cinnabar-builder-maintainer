@@ -1,5 +1,10 @@
 # Installing and updating Builder
 
+0.3.36 changes how Fast Place (V2 Strict) places blocks, so it needs the full client build: lamps, rails,
+scaffolding and other blocks with no placement rule can now be placed by clicking into air, and droppers,
+dispensers, observers and pistons follow the server's eye-height rule instead of a body box. The mod skips
+water and lava. It is untested in the game. The setup EXE updates an existing install in place.
+
 0.3.35 fixes importing Bedrock structures saved with a compressed structure section. It changes the
 importer only, but every commit changes the client's build stamp, so it needs the same full build as
 0.3.34. The setup EXE updates an existing install in place.

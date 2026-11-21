@@ -224,12 +224,13 @@ fn prepare(
         });
         if let Some(expected) = &attempt.expected {
             let mode = stream.network_id_mode();
-            // Blocks with no placement rule (containers, rails, pots, shelves and the like)
-            // cannot be predicted. Send the click at the ghost cell and let the server decide
-            // the state, as beds do, rather than refusing to place them at all.
+            // Blocks with no placement rule (containers, rails, pots, shelves, lamps and the
+            // like) cannot be predicted. Send the click at the ghost cell and let the server
+            // decide the state, as beds do, rather than refusing to place them at all. A click
+            // into air (V2 Strict) is the same: the server places the block in the clicked
+            // cell itself, so that cell is the destination.
             let unpredicted = placement.is_none()
                 && paired.is_none()
-                && !attempt.air_place
                 && ready
                 && caps.can_build
                 && local_use != LocalUse::Interact
@@ -241,8 +242,12 @@ fn prepare(
                             == Some(expected.name.as_str())
                 })
                 && world.is_air(expected.position).unwrap_or(false)
-                && surroundings.destination(observed.target.position, observed.target.face).0
-                    == expected.position
+                && (if attempt.air_place {
+                    observed.target.position == expected.position
+                } else {
+                    surroundings.destination(observed.target.position, observed.target.face).0
+                        == expected.position
+                })
                 // A block pointing out of its support needs that face clicked, and a block with
                 // a planned horizontal facing waits for the view to give it.
                 && (!(expected.correct_aim || expected.strict_state)

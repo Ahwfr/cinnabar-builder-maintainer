@@ -100,7 +100,10 @@ pub(crate) fn named_states(
     Some(states)
 }
 
-/// Nearby vertical placements use strict body bounds; other placements use the yaw table.
+/// How far the eye sits below the top of the player box.
+const EYE_BELOW_TOP: f32 = 0.18;
+
+/// Nearby vertical placements follow the eye height; other placements use the yaw table.
 pub(crate) fn body_facing(
     position: [i32; 3],
     player: BoxBounds,
@@ -120,10 +123,13 @@ pub(crate) fn body_facing(
     });
     let height = position[1] as f32;
     if nearby {
-        if height < player.0[1] {
+        // The server compares the eye with the cell: more than two blocks above it points the
+        // block up, below it points it down. The eye sits 0.18 under the top of the box.
+        let eye = player.1[1] - EYE_BELOW_TOP;
+        if eye - height > 2.0 {
             return Some(1);
         }
-        if player.1[1] < height {
+        if height > eye {
             return Some(0);
         }
     }
@@ -188,10 +194,25 @@ mod tests {
     }
 
     #[test]
-    fn upper_body_boundary_is_horizontal_and_nonfinite_bounds_defer() {
-        let player = ([0.2, 4.0, 0.2], [0.8, 6.0, 0.8]);
-        assert_eq!(body_facing([0, 6, 0], player, 0.0, 0.0), Some(2));
-        assert_eq!(body_facing([0, 7, 0], player, 0.0, 0.0), Some(0));
+    fn the_server_compares_the_eye_with_the_cell_not_the_body_box() {
+        // Standing on the ground the two readings agree: eye 5.62.
+        let ground = ([0.2, 4.0, 0.2], [0.8, 5.8, 0.8]);
+        assert_eq!(body_facing([0, 6, 0], ground, 0.0, 0.0), Some(0));
+        assert_eq!(body_facing([0, 5, 0], ground, 0.0, 0.0), Some(2));
+        assert_eq!(body_facing([0, 3, 0], ground, 0.0, 0.0), Some(1));
+        // Hovering 0.37 above the ground (eye 5.99): a cell at the feet is still level, since
+        // the eye is not more than two blocks above it, and a cell at the old head height
+        // is already above the eye.
+        let hover = ([0.2, 4.37, 0.2], [0.8, 6.17, 0.8]);
+        assert_eq!(body_facing([0, 4, 0], hover, 0.0, 0.0), Some(2));
+        assert_eq!(body_facing([0, 3, 0], hover, 0.0, 0.0), Some(1));
+        assert_eq!(body_facing([0, 6, 0], hover, 0.0, 0.0), Some(0));
+        assert_eq!(body_facing([0, 5, 0], hover, 0.0, 0.0), Some(2));
+    }
+
+    #[test]
+    fn nonfinite_bounds_defer() {
+        let player = ([0.2, 4.0, 0.2], [0.8, 5.8, 0.8]);
         let invalid = ([f64::NAN, 4.0, 0.2], player.1);
         assert_eq!(body_facing([0, 7, 0], invalid, 0.0, 0.0), None);
     }
