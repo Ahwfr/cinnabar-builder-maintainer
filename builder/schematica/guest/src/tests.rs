@@ -79,6 +79,33 @@ fn hold_aim_stops_at_a_real_block_and_ignores_off_ray_ghosts() {
     assert_eq!(viewer.aimed_next_ghost(None), None);
 }
 
+#[test]
+fn aim_passes_through_the_empty_part_of_a_thin_ghost_to_the_one_behind() {
+    use schematica_core::{BlockState, StateValue};
+    let mut viewer = reference_viewer();
+    viewer.schematic = Schematic::new("Thin", [1, 1, 4]);
+    viewer.placement = Some(Placement::new([0, 0, 0]));
+    let look_from = |y: f32| gameplay::Snapshot {
+        session: 1,
+        dimension: 0,
+        eye: gameplay::Vector3 { x: 0.5, y, z: 3.5 },
+        yaw: 0.,
+        pitch: 0.,
+        frame_seconds: 0.016,
+    };
+    viewer.schematic.set(
+        [0, 0, 2],
+        BlockState::new("minecraft:stone_block_slab")
+            .with("minecraft:vertical_half", StateValue::Str("bottom".into())),
+    );
+    viewer.schematic.set([0, 0, 0], BlockState::new("minecraft:stone"));
+    // Looking over the low slab reaches the block behind it; looking at the slab picks it.
+    viewer.pose = Some(look_from(0.8));
+    assert_eq!(viewer.aimed_next_ghost(None), Some([0, 0, 0]));
+    viewer.pose = Some(look_from(0.3));
+    assert_eq!(viewer.aimed_next_ghost(None), Some([0, 0, 2]));
+}
+
 pub(super) fn reference_viewer() -> Viewer {
     let entries = [
         ("minecraft:oak_planks", 104),

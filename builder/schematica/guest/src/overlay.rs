@@ -1,4 +1,4 @@
-use crate::{budget, drawing as draw, terrain};
+use crate::{budget, drawing as draw, shapes, terrain};
 use schematica_core::{BlockState, CellStatus, LayerMode, Placement, Schematic, StateValue, Tally};
 use serde_json::{Map, json};
 use std::collections::{BTreeMap, HashMap};
@@ -25,6 +25,8 @@ const WASH_COLOR_PARAM: usize = 12;
 /// The light blue that ghost blocks blend toward: #33B3E6, the hue Litematica uses for
 /// missing blocks.
 const GHOST_WASH: [f32; 3] = [0.2, 0.702, 0.902];
+/// The colour of the frame drawn around a missing rail or chest.
+const GHOST_FRAME: (f32, f32, f32, f32) = (0.2, 0.702, 0.902, 0.95);
 /// How far status marker boxes extend past the block on each side.
 const MARKER_INSET: f32 = 0.0075;
 
@@ -898,6 +900,16 @@ impl Tile {
                             exposed_marker_faces([x, y, z], [sx, sy, sz], &statuses, status);
                         add_box(&mut highlights, [x, y, z], color, exposed);
                     }
+                    // Rails and chests are thin or have no clear edge against the ground, so a
+                    // missing one gets a frame around its real shape.
+                    if status == CellStatus::Missing
+                        && !air
+                        && !ignored
+                        && !skip
+                        && let Some(bounds) = shapes::outline(&schematic.palette()[id])
+                    {
+                        add_frame(&mut highlights, [x, y, z], bounds, GHOST_FRAME);
+                    }
                 }
             }
         }
@@ -1429,6 +1441,56 @@ fn exposed_marker_faces(
         })
 }
 
+/// The twelve edges of `bounds` (block-local min then max) as thin boxes.
+fn add_frame(mesh: &mut draw::Mesh, [x, y, z]: [i32; 3], bounds: [f32; 6], color: (f32, f32, f32, f32)) {
+    const EDGE: f32 = 0.02;
+    let origin = [x as f32, y as f32, z as f32];
+    let low: [f32; 3] = std::array::from_fn(|axis| origin[axis] + bounds[axis] - MARKER_INSET);
+    let high: [f32; 3] = std::array::from_fn(|axis| origin[axis] + bounds[axis + 3] + MARKER_INSET);
+    for along in 0..3 {
+        let [a, b] = match along {
+            0 => [1, 2],
+            1 => [0, 2],
+            _ => [0, 1],
+        };
+        for at_a in [false, true] {
+            for at_b in [false, true] {
+                let mut min = low;
+                let mut max = high;
+                for (axis, at_high) in [(a, at_a), (b, at_b)] {
+                    if at_high {
+                        min[axis] = high[axis] - EDGE;
+                    } else {
+                        max[axis] = low[axis] + EDGE;
+                    }
+                }
+                add_bounds(mesh, min, max, color);
+            }
+        }
+    }
+}
+
+fn add_bounds(mesh: &mut draw::Mesh, min: [f32; 3], max: [f32; 3], color: (f32, f32, f32, f32)) {
+    let base = mesh.vertices.len() as u32;
+    for dz in [min[2], max[2]] {
+        for dy in [min[1], max[1]] {
+            for dx in [min[0], max[0]] {
+                mesh.vertices.push(draw::Vertex {
+                    position: (dx, dy, dz),
+                    color,
+                    uv: (0., 0.),
+                    data: (0., 0., 0., 0.),
+                });
+            }
+        }
+    }
+    let triangles = [
+        0, 2, 1, 1, 2, 3, 4, 5, 6, 5, 7, 6, 0, 4, 2, 2, 4, 6, 1, 3, 5, 3, 7, 5, 0, 1, 4, 1, 5, 4,
+        2, 6, 3, 3, 6, 7,
+    ];
+    mesh.indices.extend(triangles.iter().map(|i| base + i));
+}
+
 fn add_box(mesh: &mut draw::Mesh, [x, y, z]: [i32; 3], color: (f32, f32, f32, f32), faces: u8) {
     if faces == 0 {
         return;
@@ -1622,4 +1684,26 @@ fn flush_batches_shrink_as_the_frame_runs_out_of_fuel_and_as_edits_cost_more() {
             }
         }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn a_frame_is_twelve_thin_boxes_inside_the_given_bounds() {
+    let mut mesh = draw::Mesh {
+        vertices: Vec::new(),
+        indices: Vec::new(),
+    };
+    add_frame(&mut mesh, [10, 64, -3], [0., 0., 0., 1., 0.125, 1.], GHOST_FRAME);
+    assert_eq!(mesh.vertices.len(), 12 * 8);
+    assert_eq!(mesh.indices.len(), 12 * 36);
+    let (mut low, mut high) = ([f32::MAX; 3], [f32::MIN; 3]);
+    for vertex in &mesh.vertices {
+        let position = [vertex.position.0, vertex.position.1, vertex.position.2];
+        for axis in 0..3 {
+            low[axis] = low[axis].min(position[axis]);
+            high[axis] = high[axis].max(position[axis]);
+        }
+    }
+    assert!((low[1] - (64. - MARKER_INSET)).abs() < 1e-4 && (high[1] - (64.125 + MARKER_INSET)).abs() < 1e-4);
+    assert!((low[0] - (10. - MARKER_INSET)).abs() < 1e-4 && (high[2] - (-2. + MARKER_INSET)).abs() < 1e-4);
 }

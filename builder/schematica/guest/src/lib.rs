@@ -11,6 +11,7 @@ mod menu;
 mod native_bindings;
 mod overlay;
 mod paste;
+mod shapes;
 mod status;
 mod structure_paste;
 
@@ -1279,7 +1280,12 @@ impl Viewer {
         let (eye, forward) = self.aim_ray()?;
         next_guide_cell(eye, forward, 6., |cell| {
             Some(cell) == obstruction
-                || (self.planned_block(cell).is_some() && self.may_need_block(cell))
+                || (self.planned_block(cell).is_some_and(|block| {
+                    // A thin block only counts where the ray really crosses it, so aiming
+                    // through the gap under a trapdoor or past a pane reaches what is behind.
+                    shapes::selection(block)
+                        .is_none_or(|shape| shapes::ray_hits(eye, forward, cell, &shape, 6.))
+                }) && self.may_need_block(cell))
         })
         .filter(|cell| Some(*cell) != obstruction)
     }
