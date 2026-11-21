@@ -447,3 +447,26 @@ fn liquids_have_no_item_and_a_powered_torch_is_offered_as_the_item_it_places() {
     assert_eq!(torch.name, "minecraft:redstone_torch");
     assert_eq!(unlit_variant(BlockState::new("minecraft:stone")).name, "minecraft:stone");
 }
+
+#[test]
+fn the_have_column_counts_what_the_player_carries_under_the_item_name() {
+    assert_eq!(browser::item_for_block("minecraft:soul_sand"), "minecraft:soul_sand");
+    assert_eq!(browser::item_for_block("minecraft:reeds"), "minecraft:sugar_cane");
+    assert_eq!(browser::item_for_block("minecraft:unpowered_repeater"), "minecraft:repeater");
+    assert_eq!(browser::item_for_block("minecraft:spruce_wall_sign"), "minecraft:spruce_sign");
+    assert_eq!(browser::item_for_block("minecraft:standing_sign"), "minecraft:oak_sign");
+    let viewer = reference_viewer();
+    {
+        let mut cache = viewer.inventory.borrow_mut();
+        cache.set_for_test(&[("minecraft:cobblestone", 37)]);
+    }
+    let mut bindings = serde_json::Map::new();
+    browser::bindings(&viewer, &mut bindings, &mut Vec::new());
+    let names: Vec<_> = (0..4)
+        .map(|row| (bindings[&format!("#bw_row{row}_name")].clone(), bindings[&format!("#bw_row{row}_have")].clone()))
+        .collect();
+    let cobble = names.iter().find(|(name, _)| name.as_str().is_some_and(|n| n.to_lowercase().contains("cobblestone"))).unwrap();
+    assert_eq!(cobble.1, "37");
+    let other = names.iter().find(|(name, _)| !name.as_str().unwrap().to_lowercase().contains("cobblestone")).unwrap();
+    assert_eq!(other.1, "0");
+}

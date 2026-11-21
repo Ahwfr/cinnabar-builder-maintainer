@@ -468,6 +468,14 @@ impl Window<'_> {
             CAPTION,
             TEXT_DIMMEST,
         )?;
+        let have_right = needed_right - canvas.r(11.2);
+        self.right_text(
+            canvas,
+            "Have",
+            [have_right, head],
+            CAPTION,
+            TEXT_DIMMEST,
+        )?;
         self.right_text(
             canvas,
             "Left",
@@ -508,9 +516,16 @@ impl Window<'_> {
             canvas.text_line(
                 self.text(&field("name")),
                 [left + canvas.r(3.2), line],
-                needed_right - left - canvas.r(12.0),
+                have_right - left - canvas.r(12.0),
                 BODY,
                 TEXT,
+            )?;
+            self.right_text(
+                canvas,
+                self.text(&field("have")),
+                [have_right, line],
+                BODY,
+                TEXT_DIMMER,
             )?;
             let needed = if self.flag(&field("done")) {
                 SUCCESS_TINT

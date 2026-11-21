@@ -1,3 +1,14 @@
+# Cinnamatica 0.3.53
+
+Everything from 0.3.52, plus:
+
+- **A "Have" column in the material list.** Each row now shows how many of that block you are carrying (hotbar, inventory and off-hand), read every twenty frames while the list is open, next to Left and Total, in both the OreUI window and the JSON-UI fallback. Blocks whose item has a different name (sugar cane, redstone dust, repeaters and comparators, lit furnaces and lamps, signs) are matched to the right item; a block with no matching item shows 0. Creative-mode catalog items are not counted, since you do not carry them.
+- **Changed blocks are checked first and kept until checked.** The guide used to give a tile that held a block you just placed or broke a few frames of priority, but a tile needs several frames to take a new sample and draw it, so the priority ran out before the check did and the change waited for the slow lap round the whole guide. That is the likely reason wrong blocks were slow to show as wrong and slow to clear once broken, and why Left could stay at 6 after placing one block. A tile holding a fresh change is now stepped on every frame (the background lap and the far scan pause meanwhile) until it has been checked again. This is my reading of the code; I have not measured it in the game.
+
+- **Not done:** the Fast Place failure in your friend's world (no `blocker=` line in your logs), and the structure export is still untested. Rotation rules were left out as you asked.
+
+Verified: the mod's unit tests (87, including a new one for the Have column's item names and values) and the OreUI window tests. The mod's WASM file and the full client were not built here. Not tried in the game: everything above.
+
 # Cinnamatica 0.3.52
 
 - **Aiming passes through the thin part of a ghost.** Fast Place used to treat every ghost as a whole cube, so a ghost trapdoor, slab, pane, sign or fence stopped the aim even where you were looking past it. The aim now follows the block's real box for slabs, trapdoors, doors, fence gates, panes, iron bars, fences, walls, ladders, signs, buttons, torches, flat rails, carpets, pressure plates, repeaters, comparators, redstone dust, beds, lanterns and chests, so you can click under a trapdoor or past a pane to the ghost behind it. Other blocks still count as the whole cell. The boxes come from the game's own block table where it has them. Signs, buttons, torches, rails and chests are written from vanilla sizes, and a wall torch, a pane or fence saved with no connections, and every rail that climbs use a rough or generous box. It is one table inside the mod, so there is nothing to load per schematic.

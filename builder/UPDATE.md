@@ -1,5 +1,7 @@
 # Installing and updating Builder
 
+0.3.53 changes the mod and the game, so it needs a full rebuild. It is untested in the game.
+
 0.3.52 changes the mod and the game, so it needs a full rebuild. It is untested in the game.
 
 0.3.51 changes the mod, so it needs a full rebuild. It is untested in the game.

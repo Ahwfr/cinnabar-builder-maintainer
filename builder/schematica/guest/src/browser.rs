@@ -585,6 +585,10 @@ mod layout {
                 text("Material", [200., 10.], [42., 82.], MUTED, "left"),
             ),
             named(
+                "head_have",
+                text("Have", [80., 10.], [200., 82.], MUTED, "right"),
+            ),
+            named(
                 "head_needed",
                 text("Left", [80., 10.], [280., 82.], MUTED, "right"),
             ),
@@ -615,7 +619,11 @@ mod layout {
                 named("icon", icon),
                 named(
                     "name",
-                    text(&field("name"), [220., 10.], [30., 7.], TEXT, "left"),
+                    text(&field("name"), [158., 10.], [30., 7.], TEXT, "left"),
+                ),
+                named(
+                    "have",
+                    text(&field("have"), [80., 10.], [188., 7.], TEXT, "right"),
                 ),
                 named("needed", needed(NEEDED, "need")),
                 named("done", needed(GREEN, "done")),
@@ -639,7 +647,7 @@ mod layout {
                     "#bw_empty_visible",
                 ),
             ),
-            footer("Left is what still has to be placed; Done means all of it is in the world"),
+            footer("Have is what you carry; Left is what still has to be placed, Done means all of it is in the world"),
         ]);
         nodes
     }
@@ -1382,6 +1390,87 @@ impl Viewer {
     }
 }
 
+/// How many frames pass between reads of the player's inventory for the Have column.
+const INVENTORY_EVERY: u32 = 20;
+
+/// What the player carries, by item identifier, read every few frames while the list is open.
+#[derive(Default)]
+pub struct InventoryCache {
+    calls: u32,
+    counts: std::collections::HashMap<String, u32>,
+}
+
+impl InventoryCache {
+    /// Fills the cache without the host, and keeps it from being read again.
+    #[cfg(test)]
+    pub(crate) fn set_for_test(&mut self, counts: &[(&str, u32)]) {
+        self.counts = counts.iter().map(|(name, count)| ((*name).to_owned(), *count)).collect();
+        self.calls = 1;
+    }
+}
+
+/// The item that holds a block: the same name, except for the few blocks whose item is called
+/// something else (lit and powered variants, crops, signs).
+pub(crate) fn item_for_block(block: &str) -> String {
+    let name = block.strip_prefix("minecraft:").unwrap_or(block);
+    let item = match name {
+        "reeds" => "sugar_cane",
+        "redstone_wire" => "redstone",
+        "unpowered_repeater" | "powered_repeater" => "repeater",
+        "unpowered_comparator" | "powered_comparator" => "comparator",
+        "lit_furnace" => "furnace",
+        "lit_blast_furnace" => "blast_furnace",
+        "lit_smoker" => "smoker",
+        "lit_redstone_lamp" => "redstone_lamp",
+        "lit_redstone_ore" => "redstone_ore",
+        "unlit_redstone_torch" => "redstone_torch",
+        "standing_sign" | "wall_sign" => "oak_sign",
+        other => {
+            let sign = other
+                .strip_suffix("_standing_sign")
+                .or_else(|| other.strip_suffix("_wall_sign"));
+            return match sign {
+                Some(wood) => format!("minecraft:{wood}_sign"),
+                None => format!("minecraft:{other}"),
+            };
+        }
+    };
+    format!("minecraft:{item}")
+}
+
+#[cfg(target_arch = "wasm32")]
+fn read_inventory() -> Option<std::collections::HashMap<String, u32>> {
+    let equipment = crate::player_state::read_equipment().ok().flatten()?;
+    let mut counts = std::collections::HashMap::new();
+    for slot in equipment.inventory.iter().chain(std::iter::once(&equipment.offhand)) {
+        if let Some(item) = &slot.item
+            && let Some(identifier) = &item.identifier
+        {
+            *counts.entry(identifier.clone()).or_default() += u32::from(item.count);
+        }
+    }
+    Some(counts)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_inventory() -> Option<std::collections::HashMap<String, u32>> {
+    None
+}
+
+impl Viewer {
+    /// How many of `block`'s item the player carries, refreshed every few frames.
+    fn carried(&self, block: &str) -> u32 {
+        let mut cache = self.inventory.borrow_mut();
+        if cache.calls % INVENTORY_EVERY == 0
+            && let Some(counts) = read_inventory()
+        {
+            cache.counts = counts;
+        }
+        cache.calls = cache.calls.wrapping_add(1);
+        cache.counts.get(&item_for_block(block)).copied().unwrap_or(0)
+    }
+}
+
 /// Fills the window's bindings and switch values: tabs, then the open tab's content.
 pub fn bindings(viewer: &Viewer, out: &mut Map<String, Value>, controls: &mut Vec<Value>) {
     for (index, tab) in Tab::ALL.into_iter().enumerate() {
@@ -1514,6 +1603,10 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
             json!(needed.is_some_and(|n| n > 0)),
         );
         out.insert(format!("#bw_row{row}_done"), json!(needed == Some(0)));
+        out.insert(
+            format!("#bw_row{row}_have"),
+            json!(line.map_or(String::new(), |line| viewer.carried(&line.name).to_string())),
+        );
         out.insert(
             format!("#bw_row{row}_total"),
             json!(line.map_or(String::new(), |line| line.total.to_string())),

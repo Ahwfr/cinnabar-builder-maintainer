@@ -425,6 +425,7 @@ struct Viewer {
     /// A window refresh held over from a frame without enough fuel left for it.
     browser_refresh_pending: bool,
     browser_counts: std::cell::RefCell<browser::MaterialPageCounts>,
+    inventory: std::cell::RefCell<browser::InventoryCache>,
     library: Vec<String>,
     /// Library entry sizes, matching `library`.
     library_sizes: Vec<[i32; 3]>,
@@ -501,6 +502,7 @@ impl Viewer {
             browser_names: Default::default(),
             browser_refresh_pending: false,
             browser_counts: Default::default(),
+            inventory: Default::default(),
             library_sizes: Vec::new(),
             library,
             last_item_highlights: Vec::new(),
@@ -861,7 +863,10 @@ impl Viewer {
                     eye,
                 ) {
                     self.hot_dirty.retain(|(known, _)| *known != cell);
-                    self.hot_dirty.push((cell, 8));
+                    // Kept until the tile that holds it has been checked again, not for a few
+                    // frames: the tile needs several to receive a new sample and draw it, and
+                    // a change dropped before then waited for the slow lap round the guide.
+                    self.hot_dirty.push((cell, 120));
                 }
                 let excess = self.hot_dirty.len().saturating_sub(16);
                 self.hot_dirty.drain(..excess);
@@ -878,8 +883,14 @@ impl Viewer {
                 .into_iter()
                 .flatten()
                 .find_map(|cell| self.tiles.iter().position(|tile| tile.contains(cell)));
+            let hot_tile = hot_cell
+                .and_then(|cell| self.tiles.iter().position(|tile| tile.contains(cell)));
             self.scan_priority = !self.scan_priority;
-            let index = if self.scan_priority {
+            // A tile with a block that changed under the player goes first on every frame,
+            // until it has been checked again; otherwise it alternates with the lap.
+            let index = if let Some(hot) = hot_tile {
+                hot
+            } else if self.scan_priority {
                 priority.unwrap_or(self.cursor)
             } else {
                 self.cursor
@@ -887,9 +898,11 @@ impl Viewer {
             let mut changed = false;
             // Subscriptions deliver on the next callback. Give the distant
             // scan two consecutive frames without lowering a near region too.
-            let distant = self
-                .tile_focus
-                .filter(|_| whole && overlay::on_distant_scan_frame(&mut self.distant_scan_phase));
+            let distant = self.tile_focus.filter(|_| {
+                whole
+                    && hot_tile.is_none()
+                    && overlay::on_distant_scan_frame(&mut self.distant_scan_phase)
+            });
             if let Some(focus) = distant {
                 if budget::remaining_fuel() >= 740_000 {
                     self.whole
@@ -904,6 +917,16 @@ impl Viewer {
                     whole,
                 );
                 changed = updated;
+                if updated && let Some(hot) = hot_tile {
+                    // Checked again. A few more frames cover a sample taken just before the
+                    // block changed, then the changes it held stop waiting.
+                    let tile = &self.tiles[hot];
+                    for (cell, frames) in &mut self.hot_dirty {
+                        if tile.contains(*cell) {
+                            *frames = (*frames).min(6);
+                        }
+                    }
+                }
                 if self.tiles[index].ghost_dirty && whole && budget::remaining_fuel() >= 225_000 {
                     self.whole
                         .compare_tile(&self.preview, &self.schematic, &self.tiles[index]);
