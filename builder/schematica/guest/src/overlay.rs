@@ -565,6 +565,12 @@ impl WholeGhost {
 
     pub fn flush(&mut self) {
         self.frame = self.frame.wrapping_add(1);
+        self.send();
+    }
+
+    /// Sends the waiting edits to the game when it is ready for them. `flush` calls it once a
+    /// frame; the block watch calls it as well, right after it queues an edit, without counting a frame.
+    pub fn send(&mut self) {
         let Some(pair) = &self.pair else {
             return;
         };

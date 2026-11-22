@@ -532,6 +532,55 @@ impl Viewer {
         }
     }
 
+    /// Reads the blocks around the camera and applies whatever changed in them: the ghost cell,
+    /// the status box, the material counts and the rail and chest outlines follow the block at
+    /// once. It runs first in the frame, before Fast Place and the section checks
+    /// spend the frame's fuel, so it is never starved and what they decide on is current.
+    fn hot_update(&mut self, dimension: i32) {
+        let Some(eye) = self.aim_ray().map(|(eye, _)| eye) else {
+            return;
+        };
+        let seen = self.hot.step(
+            &self.preview,
+            &self.schematic,
+            &mut self.whole,
+            &self.tiles,
+            dimension,
+            eye,
+        );
+        let mut tile_changed = false;
+        for change in seen {
+            let cell = change.world;
+            // The section that holds the cell takes the new status at once, so the
+            // material counts, the wrong-block boxes and the rail outlines follow
+            // the block now and do not wait for the section's next sample.
+            if let Some(tile) = self.tiles.iter_mut().find(|tile| tile.contains(cell)) {
+                tile_changed |= tile.apply_hot(
+                    &self.preview,
+                    &self.schematic,
+                    cell,
+                    change.status,
+                    change.skip,
+                );
+            }
+            self.hot_dirty.retain(|(known, _)| *known != cell);
+            // Kept until the tile that holds it has been checked again, not for a few
+            // frames: the tile needs several to receive a new sample and draw it, and
+            // a change dropped before then waited for the slow lap round the guide.
+            self.hot_dirty.push((cell, 120));
+        }
+        let excess = self.hot_dirty.len().saturating_sub(16);
+        self.hot_dirty.drain(..excess);
+        if tile_changed {
+            self.highlight_dirty = true;
+            self.highlight_again |= self.highlight_scan.is_some();
+        }
+        // The ghost's edits go to the game now, not at the end of a frame that may be out of fuel.
+        if self.whole.pending_edits() > 0 && budget::remaining_fuel() >= 300_000 {
+            self.whole.send();
+        }
+    }
+
     fn frame(&mut self) {
         let Ok(world) = gameplay::read_frame() else {
             label("Cinnamatica | Grant terrain access in Settings > Mods.");
@@ -728,6 +777,16 @@ impl Viewer {
             return;
         }
         self.update_preview_window();
+        if self.shown
+            && !self.tiles.is_empty()
+            && self.retired.is_empty()
+            && self.placement.is_some()
+            && self.whole.active()
+            && self.preview.palette_ready(&self.schematic)
+            && let Some((_, dimension)) = self.world
+        {
+            self.hot_update(dimension);
+        }
         let world_target = gameplay::read_block_target()
             .ok()
             .flatten()
@@ -851,46 +910,9 @@ impl Viewer {
             }
             let whole = self.whole.active();
             let tile_lightness = (textured && !whole).then_some(lightness);
-            if whole && let Some(eye) = self.aim_ray().map(|(eye, _)| eye) {
-                // Blocks placed or broken around the camera update their own ghost cell
-                // and status box now, without waiting for their tile's turn.
-                let seen = self.hot.step(
-                    &self.preview,
-                    &self.schematic,
-                    &mut self.whole,
-                    &self.tiles,
-                    dimension,
-                    eye,
-                );
-                let mut tile_changed = false;
-                for change in seen {
-                    let cell = change.world;
-                    // The section that holds the cell takes the new status at once, so the
-                    // material counts, the wrong-block boxes and the rail outlines follow
-                    // the block now and do not wait for the section's next sample.
-                    if let Some(tile) = self.tiles.iter_mut().find(|tile| tile.contains(cell)) {
-                        tile_changed |= tile.apply_hot(
-                            &self.preview,
-                            &self.schematic,
-                            cell,
-                            change.status,
-                            change.skip,
-                        );
-                    }
-                    self.hot_dirty.retain(|(known, _)| *known != cell);
-                    // Kept until the tile that holds it has been checked again, not for a few
-                    // frames: the tile needs several to receive a new sample and draw it, and
-                    // a change dropped before then waited for the slow lap round the guide.
-                    self.hot_dirty.push((cell, 120));
-                }
-                let excess = self.hot_dirty.len().saturating_sub(16);
-                self.hot_dirty.drain(..excess);
-                if tile_changed {
-                    self.highlight_dirty = true;
-                    self.highlight_again |= self.highlight_scan.is_some();
-                }
+            if whole {
                 // One section's boxes and outlines are redrawn per frame, when there is room.
-                if budget::remaining_fuel() >= 700_000
+                if budget::remaining_fuel() >= 500_000
                     && let Some(stale) = self.tiles.iter().position(|tile| tile.markers_stale)
                 {
                     let (preview, schematic) = (&self.preview, &self.schematic);
@@ -981,7 +1003,7 @@ impl Viewer {
                     .compare_tile(&self.preview, &self.schematic, &self.tiles[owing]);
                 self.tiles[owing].ghost_dirty = false;
             }
-            if whole && budget::remaining_fuel() >= 400_000 {
+            if whole && budget::remaining_fuel() >= 300_000 {
                 self.whole.flush();
                 if self.whole.failed {
                     for tile in &mut self.tiles {
