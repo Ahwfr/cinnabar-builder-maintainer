@@ -1,3 +1,11 @@
+# Cinnamatica 0.3.55
+
+Everything from 0.3.54, plus:
+
+- **Fixed a mistake of mine in 0.3.53 that could leave parts of the guide unchecked.** In 0.3.53 the part of the guide holding a fresh change took every frame until it had been checked again, and the lap round the rest of the guide paused meanwhile. A busy world keeps producing fresh changes, so the lap could stall and parts of the guide stayed unchecked. The fresh change now takes every other frame again, as before 0.3.53, and the lap keeps the other frames. The longer hold on a fresh change stays. This is my reading of the code; I have not seen it in the game.
+
+Verified: the mod's unit tests (87). The mod's WASM file and the full client were not built here. Not tried in the game.
+
 # Cinnamatica 0.3.54
 
 Everything from 0.3.53, plus:

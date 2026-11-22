@@ -886,11 +886,10 @@ impl Viewer {
             let hot_tile = hot_cell
                 .and_then(|cell| self.tiles.iter().position(|tile| tile.contains(cell)));
             self.scan_priority = !self.scan_priority;
-            // A tile with a block that changed under the player goes first on every frame,
-            // until it has been checked again; otherwise it alternates with the lap.
-            let index = if let Some(hot) = hot_tile {
-                hot
-            } else if self.scan_priority {
+            // The tile of a fresh change takes every other frame until it has been checked
+            // again, and the lap round the guide takes the rest. Giving it every frame starved
+            // the lap, so tiles stayed unverified.
+            let index = if self.scan_priority {
                 priority.unwrap_or(self.cursor)
             } else {
                 self.cursor
@@ -898,11 +897,9 @@ impl Viewer {
             let mut changed = false;
             // Subscriptions deliver on the next callback. Give the distant
             // scan two consecutive frames without lowering a near region too.
-            let distant = self.tile_focus.filter(|_| {
-                whole
-                    && hot_tile.is_none()
-                    && overlay::on_distant_scan_frame(&mut self.distant_scan_phase)
-            });
+            let distant = self
+                .tile_focus
+                .filter(|_| whole && overlay::on_distant_scan_frame(&mut self.distant_scan_phase));
             if let Some(focus) = distant {
                 if budget::remaining_fuel() >= 740_000 {
                     self.whole
@@ -917,7 +914,7 @@ impl Viewer {
                     whole,
                 );
                 changed = updated;
-                if updated && let Some(hot) = hot_tile {
+                if updated && let Some(hot) = hot_tile.filter(|&hot| hot == index) {
                     // Checked again. A few more frames cover a sample taken just before the
                     // block changed, then the changes it held stop waiting.
                     let tile = &self.tiles[hot];
