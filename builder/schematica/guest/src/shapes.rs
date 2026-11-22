@@ -208,6 +208,38 @@ pub(crate) fn outline(block: &BlockState) -> Option<[f32; 6]> {
     }
 }
 
+/// The axis a chest's double-chest partner lies along: across its front, so x for a chest
+/// facing north or south and z for one facing east or west. None for a block that is not a
+/// chest that pairs, or whose facing is unknown.
+pub(crate) fn chest_pair_axis(block: &BlockState) -> Option<usize> {
+    let name = block.name.strip_prefix("minecraft:").unwrap_or(&block.name);
+    if !(name == "chest" || name == "trapped_chest" || name.ends_with("copper_chest")) {
+        return None;
+    }
+    let face = ["minecraft:facing_direction", "facing_direction"]
+        .into_iter()
+        .find_map(|key| {
+            int(block, key).or_else(|| match text(block, key)? {
+                "north" => Some(2),
+                "south" => Some(3),
+                "west" => Some(4),
+                "east" => Some(5),
+                _ => None,
+            })
+        })?;
+    match face {
+        2 | 3 => Some(0),
+        4 | 5 => Some(2),
+        _ => None,
+    }
+}
+
+/// Whether two neighbouring chests are the halves of one double chest: the same kind, facing
+/// the same way.
+pub(crate) fn chests_pair(a: &BlockState, b: &BlockState) -> bool {
+    chest_pair_axis(a).is_some() && a.name == b.name && a.states == b.states
+}
+
 /// A post with an arm toward each side that connects. A block saved without any connection
 /// counts as connected on every side, because a planned fence or pane often carries none.
 fn arms(block: &BlockState, low: f32, high: f32) -> Shape {

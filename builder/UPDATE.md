@@ -1,5 +1,7 @@
 # Installing and updating Builder
 
+0.3.59 changes only the mod. It is untested in the game.
+
 0.3.57 changes only the mod. It is untested in the game.
 
 0.3.55 changes only the mod. It is untested in the game.

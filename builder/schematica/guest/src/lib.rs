@@ -931,7 +931,7 @@ impl Viewer {
                     self.whole
                         .scan_distant(&self.preview, &self.schematic, focus);
                 }
-            } else if u64::from(budget::remaining_fuel()) >= overlay::render_gate().max(650_000) {
+            } else if overlay::render_allowed(u64::from(budget::remaining_fuel()), 650_000) {
                 let (advance, updated) = self.tiles[index].step(
                     &self.preview,
                     &self.schematic,

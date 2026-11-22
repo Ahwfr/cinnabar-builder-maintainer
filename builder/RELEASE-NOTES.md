@@ -1,14 +1,9 @@
-# Cinnamatica 0.3.57
+# Cinnamatica 0.3.59
 
-Everything from 0.3.55, plus:
+Everything from 0.3.57, plus:
 
-- **Left now follows a placed block at once.** Until now the material list's Left, Have and the counts were only recounted when the whole section had been sampled again, which takes several frames and is skipped when the frame is short of fuel. The part of the guide around you, which is watched every frame, now updates its section's counts the moment a block is placed or broken, so Left goes down as soon as you place one.
-- **A wrong block's box clears when you break it, and appears sooner.** The red and yellow boxes were drawn from the section's last full sample, so they stayed after the block was gone and showed late for a new wrong block. The boxes and the rail and chest outlines for a section are now redrawn straight from the watched changes (one section per frame, when there is fuel to spare). The box is also kept until the section has actually been redrawn, so it cannot flicker back.
-- **Rails: every missing rail gets an outline, and a placed rail loses it.** A rail's outline was twelve thin edges, which cost so many vertices that a section with about 450 missing rails went over the host's limit for one drawing and lost all its boxes and outlines at once; that fits "not all rails have the outline". A flat rail now gets a ring of four wide strips on its top (a ninth of the cost), chests keep the twelve edges, and a section stops adding outlines before the limit instead of failing. If the host has no room at that moment the section is tried again instead of being left blank. Outline edges are also twice as thick, so they stay visible at a distance. Because the outline now comes from the live status, it goes as soon as the rail is placed.
-- **The section check keeps a reserve based on what it cost.** The check used to start whenever 575,000 fuel was left. It now measures what a check really cost and waits for 1.5 times that, up to nearly a whole frame, so a dear check is less likely to run the mod out of fuel (which restarts the mod and rebuilds the hologram from nothing).
-- **The material list says "Checking the guide…" while the guide is placed but not yet checked**, instead of "Place it to track progress", which was wrong because it is placed.
+- **A double chest gets one outline round both halves**, not one frame per half. Two halves of the same kind facing the same way, side by side, share one box while both are still missing. If one half is already placed, the other keeps its own frame.
+- **The section check cannot be starved.** 0.3.57 made it wait for 1.5 times what a check cost. A mod that is always busy might never reach that, so sections would never be re-checked. After 24 frames in a row where it was held back, it uses the old fixed limit for one check.
 
-**Not fixed, because I could not find the cause: the holograms round the walls that stay after being placed.** The likely suspects are the mod restarting (it rebuilds the hologram from nothing), or sections the lap has not rechecked. The first four fixes make fewer of those happen, but I have not shown that they remove the stuck holograms. If they still stay, please tell me whether they are glass or other see-through blocks, and send the log.
-
-Verified: the mod's unit tests (87 before, with new ones for the live update of the counts, the rail outline cost and limit, and the fuel reserve). The mod's WASM file and the full client were not built here, so the fuel cost of the new redraw is not measured. Not tried in the game: everything above.
+Verified: the mod's unit tests (93, with new ones for the double chest frame and the fallback gate). The mod's WASM file and the full client were not built here. Not tried in the game: everything above.
 

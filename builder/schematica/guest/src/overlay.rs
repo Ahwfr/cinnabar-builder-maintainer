@@ -54,11 +54,29 @@ pub(crate) fn note_render_cost(cost: u64) {
     RENDER_COST.with(|seen| seen.set(cost.max(seen.get() / 16 * 15)));
 }
 
+/// Frames in a row on which no section was checked because the gate was not met.
+const STARVED_AFTER: u32 = 24;
+
+thread_local! {
+    static REFUSED: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
 /// Fuel a frame needs before a section is checked: what the check has cost lately, with
 /// room to spare, between the old fixed floor and nearly a whole frame. A check that started
 /// with too little left ran the mod out of fuel, which restarts it.
 pub(crate) fn render_gate() -> u64 {
     (RENDER_COST.with(std::cell::Cell::get) / 2 * 3 + 150_000).clamp(575_000, 1_800_000)
+}
+
+/// Whether this frame has the fuel to check a section, at least `floor`. A busy mod may never
+/// reach the cautious gate; after `STARVED_AFTER` refused frames in a row the old fixed gate
+/// applies, so sections are checked slowly and not never.
+pub(crate) fn render_allowed(fuel: u64, floor: u64) -> bool {
+    let starved = REFUSED.with(std::cell::Cell::get) >= STARVED_AFTER;
+    let gate = if starved { 575_000 } else { render_gate() };
+    let allowed = fuel >= gate.max(floor);
+    REFUSED.with(|refused| refused.set(if allowed { 0 } else { refused.get() + 1 }));
+    allowed
 }
 
 /// The colour of the box that marks a wrong, wrongly turned or extra block.
@@ -806,7 +824,7 @@ impl Tile {
             Ok(terrain::ReadResult::Unchanged(_)) => {}
             Ok(terrain::ReadResult::Changed(region)) => {
                 self.pending_frames = 0;
-                if u64::from(budget::remaining_fuel()) < render_gate() {
+                if budget::remaining_fuel() < 575_000 {
                     return (false, false);
                 }
                 let previous_revision = self.stamp.map(|stamp| stamp.revision);
@@ -904,6 +922,20 @@ impl Tile {
         let mut used_texture = false;
         let mut materials = vec![[0; 3]; preview.palette.len()];
         let mut tally = Tally::default();
+        let cell_at = |[x, y, z]: [i32; 3]| {
+            ((0..sx).contains(&x) && (0..sy).contains(&y) && (0..sz).contains(&z))
+                .then(|| ((x * sz + z) * sy + y) as usize)
+        };
+        let id_at = |cell: [i32; 3]| cell_at(cell).map(|index| ids[index] as usize);
+        let needs_outline = |cell: [i32; 3]| {
+            cell_at(cell).is_some_and(|index| {
+                let id = ids[index];
+                statuses[index] == CellStatus::Missing
+                    && !ignored[index]
+                    && !schematic.is_air_index(id)
+                    && !schematic.palette()[id as usize].is_placement_artifact()
+            })
+        };
         for x in 0..sx {
             for z in 0..sz {
                 for y in 0..sy {
@@ -965,7 +997,13 @@ impl Tile {
                         && !air
                         && !ignored
                         && !skip
-                        && let Some(bounds) = shapes::outline(&schematic.palette()[id])
+                        && let Some(bounds) = outline_bounds(
+                            schematic.palette(),
+                            id,
+                            [x, y, z],
+                            &id_at,
+                            &needs_outline,
+                        )
                     {
                         add_outline(&mut highlights, [x, y, z], bounds, GHOST_FRAME);
                     }
@@ -1050,7 +1088,8 @@ impl Tile {
             self.grid_cells.clear();
             self.blocks_ready = false;
         }
-        if !self.publish_markers(highlights, anchor) {
+        let published = self.publish_markers(highlights, anchor);
+        if !published {
             // The host had no room for the boxes this frame. Leave the section unstamped so
             // it is checked again, instead of losing its boxes until a block changes.
             return;
@@ -1168,6 +1207,28 @@ impl Tile {
             vertices: Vec::new(),
             indices: Vec::new(),
         };
+        let planned = |cell: [i32; 3]| {
+            let world = [0, 1, 2].map(|axis| self.lo[axis] + cell[axis]);
+            preview
+                .placement
+                .and_then(|placement| placement.world_to_local(schematic.size(), world))
+                .and_then(|local| schematic.palette_index(local))
+                .map(|id| id as usize)
+        };
+        let status_index = |[x, y, z]: [i32; 3]| {
+            ((0..size[0]).contains(&x) && (0..size[1]).contains(&y) && (0..size[2]).contains(&z))
+                .then(|| ((x * size[2] + z) * size[1] + y) as usize)
+        };
+        let needs_outline = |cell: [i32; 3]| {
+            status_index(cell).is_some_and(|index| {
+                self.statuses.get(index) == Some(&CellStatus::Missing)
+                    && self.ignored.get(index) == Some(&false)
+                    && planned(cell).is_some_and(|id| {
+                        !schematic.is_air_index(id as u32)
+                            && !schematic.palette()[id].is_placement_artifact()
+                    })
+            })
+        };
         for &(world, status) in &self.mismatches {
             let local = [0, 1, 2].map(|axis| world[axis] - self.lo[axis]);
             if let Some(color) = status_color(status)
@@ -1177,11 +1238,9 @@ impl Tile {
                 add_box(&mut mesh, local, color, exposed);
             }
             if status == CellStatus::Missing
-                && let Some(id) = preview
-                    .placement
-                    .and_then(|placement| placement.world_to_local(schematic.size(), world))
-                    .and_then(|local| schematic.palette_index(local))
-                && let Some(bounds) = shapes::outline(&schematic.palette()[id as usize])
+                && let Some(id) = planned(local)
+                && let Some(bounds) =
+                    outline_bounds(schematic.palette(), id, local, &planned, &needs_outline)
             {
                 add_outline(&mut mesh, local, bounds, GHOST_FRAME);
             }
@@ -1656,6 +1715,39 @@ fn add_frame(mesh: &mut draw::Mesh, [x, y, z]: [i32; 3], bounds: [f32; 6], color
     }
 }
 
+/// The box to outline for the planned block at `cell`, in coordinates relative to that cell.
+/// The two halves of a double chest share one box, drawn from the half with the lower
+/// coordinate, so the outline is one frame round the pair and not two side by side. None when
+/// the block has no outline or its partner draws it.
+fn outline_bounds(
+    palette: &[schematica_core::BlockState],
+    id: usize,
+    cell: [i32; 3],
+    id_at: &dyn Fn([i32; 3]) -> Option<usize>,
+    needs: &dyn Fn([i32; 3]) -> bool,
+) -> Option<[f32; 6]> {
+    let block = palette.get(id)?;
+    let mut bounds = shapes::outline(block)?;
+    if let Some(axis) = shapes::chest_pair_axis(block) {
+        for step in [-1, 1] {
+            let mut next = cell;
+            next[axis] += step;
+            let partner = id_at(next)
+                .and_then(|other| palette.get(other))
+                .is_some_and(|other| shapes::chests_pair(block, other))
+                && needs(next);
+            if partner {
+                if step < 0 {
+                    return None;
+                }
+                bounds[axis + 3] += 1.;
+                break;
+            }
+        }
+    }
+    Some(bounds)
+}
+
 /// Outlines a rail or chest, unless the mesh is already as big as one geometry may be. A flat
 /// rail gets only a ring on its top, a ninth of the cost of twelve edges.
 fn add_outline(
@@ -2119,4 +2211,44 @@ fn the_render_gate_follows_what_a_section_check_cost() {
     note_render_cost(100_000);
     assert!(render_gate() > 1_700_000);
     RENDER_COST.with(|seen| seen.set(0));
+}
+
+#[test]
+fn a_double_chest_gets_one_frame_round_both_halves() {
+    use schematica_core::{BlockState, StateValue};
+    let chest = |face: i32| BlockState::new("minecraft:chest").with("facing_direction", StateValue::Int(face));
+    let palette = vec![chest(2), chest(4), BlockState::new("minecraft:rail")];
+    // Cells 0 and 1 on the x axis are both facing north (palette 0): a double chest.
+    let id_at = |cell: [i32; 3]| (cell[1] == 0 && cell[2] == 0 && (0..2).contains(&cell[0])).then_some(0);
+    let both = |cell: [i32; 3]| id_at(cell).is_some();
+    let low = outline_bounds(&palette, 0, [0, 0, 0], &id_at, &both).expect("the low half draws");
+    assert!((low[0] - 0.06).abs() < 0.01 && (low[3] - 1.94).abs() < 0.01, "{low:?}");
+    assert_eq!(outline_bounds(&palette, 0, [1, 0, 0], &id_at, &both), None);
+    // Only one half still missing: that half is outlined on its own.
+    let only_high = |cell: [i32; 3]| cell == [1, 0, 0];
+    let alone = outline_bounds(&palette, 0, [1, 0, 0], &id_at, &only_high).unwrap();
+    assert!(alone[3] < 1.0, "{alone:?}");
+    // Facing west pairs along z, not x, so side-by-side x neighbours stay separate.
+    let west = outline_bounds(&palette, 1, [0, 0, 0], &id_at, &both).unwrap();
+    assert!(west[3] < 1.0 && west[5] < 1.0, "{west:?}");
+    // A rail never merges.
+    let rail = outline_bounds(&palette, 2, [0, 0, 0], &id_at, &both).unwrap();
+    assert_eq!(rail[3], 1.0);
+}
+
+#[test]
+fn a_starved_mod_falls_back_to_the_fixed_gate_after_a_while() {
+    REFUSED.with(|refused| refused.set(0));
+    RENDER_COST.with(|seen| seen.set(1_000_000));
+    // 1.65M needed, 700k available: refused, and counted.
+    for _ in 0..STARVED_AFTER {
+        assert!(!render_allowed(700_000, 650_000));
+    }
+    // Starved long enough: the fixed gate lets the check run.
+    assert!(render_allowed(700_000, 650_000));
+    // And the count starts again.
+    assert!(!render_allowed(700_000, 650_000));
+    assert!(render_allowed(1_700_000, 650_000));
+    RENDER_COST.with(|seen| seen.set(0));
+    REFUSED.with(|refused| refused.set(0));
 }
