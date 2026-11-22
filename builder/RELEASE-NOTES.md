@@ -1,3 +1,11 @@
+# Cinnamatica 0.3.54
+
+Everything from 0.3.53, plus:
+
+- **The export message gives the full chat command.** After an export the mod's label now says to type `/structure load name ~ ~ ~`, or to use a structure block's Load and type the name. `/structure load` needs a position after the name. The message the Structure Host addon prints in chat is unchanged, since changing it means reinstalling the addon.
+
+Verified: the mod's unit tests (87, with the export message test updated). The mod's WASM file and the full client were not built here. Not tried in the game.
+
 # Cinnamatica 0.3.53
 
 Everything from 0.3.52, plus:

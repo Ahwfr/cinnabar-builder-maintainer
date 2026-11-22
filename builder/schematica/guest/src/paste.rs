@@ -341,7 +341,7 @@ pub(crate) fn export_parts(
 fn export_message(names: &[String]) -> String {
     match names {
         [only] => format!(
-            "Exported | In a structure block choose Load and type {only}"
+            "Exported | In chat type /structure load {only} ~ ~ ~ or in a structure block choose Load and type {only}"
         ),
         [first, .., last] => format!(
             "Exported {} parts | Load {first} to {last}, each {PART_EDGE} wide, the number counts east then south"
@@ -488,7 +488,8 @@ mod tests {
 
     #[test]
     fn the_export_message_names_what_to_load() {
-        assert!(export_message(&["hut".into()]).contains("type hut"));
+        let one = export_message(&["hut".into()]);
+        assert!(one.contains("type hut") && one.contains("/structure load hut ~ ~ ~"), "{one}");
         let many = export_message(&["w_0_0".into(), "w_1_0".into()]);
         assert!(many.contains("2 parts") && many.contains("w_0_0") && many.contains("w_1_0"), "{many}");
     }
