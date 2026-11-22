@@ -90,6 +90,17 @@ impl Tally {
             CellStatus::Unloaded => self.unloaded += 1,
         }
     }
+
+    /// Undoes one `add` of the same status, for a cell whose status changed.
+    pub fn remove(&mut self, s: CellStatus) {
+        match s {
+            CellStatus::Correct => self.correct = self.correct.saturating_sub(1),
+            CellStatus::Missing => self.missing = self.missing.saturating_sub(1),
+            CellStatus::Wrong | CellStatus::WrongState => self.wrong = self.wrong.saturating_sub(1),
+            CellStatus::Extra => self.extra = self.extra.saturating_sub(1),
+            CellStatus::Unloaded => self.unloaded = self.unloaded.saturating_sub(1),
+        }
+    }
 }
 
 /// Diffs the world AABB `[min, max)` (clipped to the schematic) against the

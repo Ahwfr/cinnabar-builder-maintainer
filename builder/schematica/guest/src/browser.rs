@@ -1540,6 +1540,8 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
             "{}% built  ·  {placed} / {total}",
             (progress * 100.).floor()
         )
+    } else if viewer.placement.is_some() && viewer.shown {
+        "Checking the guide…".into()
     } else {
         "Place it to track progress".into()
     };

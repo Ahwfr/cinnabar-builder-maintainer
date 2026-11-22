@@ -23,6 +23,13 @@ fn marker_color(status: CellStatus) -> Option<(f32, f32, f32, f32)> {
     }
 }
 
+/// A cell of the watched box whose block changed, with what the guide makes of it now.
+pub(crate) struct HotChange {
+    pub world: [i32; 3],
+    pub status: CellStatus,
+    pub skip: bool,
+}
+
 /// The block that stood in every cell of the watched box the last time it changed.
 struct Seen {
     min: [i32; 3],
@@ -113,7 +120,7 @@ impl HotWatch {
         tiles: &[Tile],
         dimension: i32,
         eye: [f32; 3],
-    ) -> Vec<[i32; 3]> {
+    ) -> Vec<HotChange> {
         let origin = watch_origin(eye);
         if self.origin != Some(origin) {
             self.origin = Some(origin);
@@ -149,7 +156,7 @@ impl HotWatch {
         whole: &mut WholeGhost,
         origin: [i32; 3],
         region: &terrain::Region,
-    ) -> Vec<[i32; 3]> {
+    ) -> Vec<HotChange> {
         let runtime: Vec<u32> = region
             .palette
             .iter()
@@ -178,8 +185,14 @@ impl HotWatch {
                     cut = true;
                     break;
                 }
-                if self.verify_cell(preview, schematic, whole, region, cell, world) {
-                    changes.push(world);
+                if let Some((status, skip)) =
+                    self.verify_cell(preview, schematic, whole, region, cell, world)
+                {
+                    changes.push(HotChange {
+                        world,
+                        status,
+                        skip,
+                    });
                 }
             }
         }
@@ -194,7 +207,7 @@ impl HotWatch {
     }
 
     /// Checks one cell of the box against the guide and updates its ghost and status box.
-    /// Returns whether the cell is one the guide covers and was loaded.
+    /// Returns what the guide makes of the cell when it covers it and it was loaded.
     fn verify_cell(
         &mut self,
         preview: &Preview,
@@ -203,7 +216,7 @@ impl HotWatch {
         region: &terrain::Region,
         cell: usize,
         world: [i32; 3],
-    ) -> bool {
+    ) -> Option<(CellStatus, bool)> {
         let size = schematic.size();
         let (lo, hi) = preview.bounds(size);
         if !(0..3).all(|axis| (lo[axis]..hi[axis]).contains(&world[axis]))
@@ -212,19 +225,19 @@ impl HotWatch {
                 .get(cell / 64)
                 .is_some_and(|bits| bits & (1 << (cell % 64)) != 0)
         {
-            return false;
+            return None;
         }
         let Some(local) = preview
             .placement
             .and_then(|placement| placement.world_to_local(size, world))
         else {
-            return false;
+            return None;
         };
         let Some(id) = schematic.palette_index(local) else {
-            return false;
+            return None;
         };
         if schematic.palette()[id as usize].is_placement_artifact() {
-            return false;
+            return None;
         }
         let Some(runtime_id) = region
             .states
@@ -232,7 +245,7 @@ impl HotWatch {
             .and_then(|&state| region.palette.get(usize::from(state)))
             .map(|block| block.runtime_id)
         else {
-            return false;
+            return None;
         };
         let air = schematic.is_air_index(id);
         let (status, skip) = *self
@@ -240,7 +253,7 @@ impl HotWatch {
             .entry((id, runtime_id))
             .or_insert_with(|| compare_cell(region, cell, &preview.palette[id as usize], air));
         if status == CellStatus::Unloaded {
-            return false;
+            return None;
         }
         if !air {
             let pos = std::array::from_fn(|axis| (world[axis] - lo[axis]) as u32);
@@ -253,7 +266,7 @@ impl HotWatch {
         } else {
             self.marks.remove(&world);
         }
-        true
+        Some((status, skip))
     }
 
     /// The first check of a box: the diff above only sees blocks that change, so this goes
@@ -290,7 +303,11 @@ impl HotWatch {
     fn maintain_marks(&mut self, tiles: &[Tile], origin: [i32; 3]) {
         self.marks.retain(|&cell, &mut status| {
             (0..3).all(|axis| (origin[axis]..origin[axis] + EXTENT).contains(&cell[axis]))
-                && tiles.iter().find_map(|tile| tile.status_at(cell)) != Some(status)
+                && match tiles.iter().find(|tile| tile.contains(cell)) {
+                    // A tile whose boxes are out of date does not draw this one yet.
+                    Some(tile) => tile.markers_stale || tile.status_at(cell) != Some(status),
+                    None => true,
+                }
         });
     }
 

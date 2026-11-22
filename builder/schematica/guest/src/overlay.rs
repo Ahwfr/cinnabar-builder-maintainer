@@ -29,6 +29,58 @@ const GHOST_WASH: [f32; 3] = [0.2, 0.702, 0.902];
 const GHOST_FRAME: (f32, f32, f32, f32) = (0.2, 0.702, 0.902, 0.95);
 /// How far status marker boxes extend past the block on each side.
 const MARKER_INSET: f32 = 0.0075;
+/// Most indices one marker mesh may hold. The host refuses a geometry past 196,608, and a
+/// section that went over lost every box and outline it had.
+const MARKER_INDEX_BUDGET: usize = 150_000;
+/// Indices in the twelve-edge frame, and in the flat frame of a rail (four strips, each
+/// written for both sides so it shows whichever way the host culls).
+const FRAME_INDICES: usize = 12 * 36;
+const FLAT_FRAME_INDICES: usize = 4 * 12;
+/// Boxes at or below this height get the flat frame.
+const FLAT_HEIGHT: f32 = 0.2;
+/// Width of a flat frame's strips and of a frame's edges, in blocks. Thin lines vanish at a
+/// distance, so these are wider than they look up close.
+const FLAT_STRIP: f32 = 0.07;
+const FRAME_EDGE: f32 = 0.04;
+
+thread_local! {
+    /// The dearest section check seen lately, in fuel.
+    static RENDER_COST: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Remembers what a section check cost. Rises at once and falls slowly, so one dear check is
+/// not forgotten by the next cheap one.
+pub(crate) fn note_render_cost(cost: u64) {
+    RENDER_COST.with(|seen| seen.set(cost.max(seen.get() / 16 * 15)));
+}
+
+/// Fuel a frame needs before a section is checked: what the check has cost lately, with
+/// room to spare, between the old fixed floor and nearly a whole frame. A check that started
+/// with too little left ran the mod out of fuel, which restarts it.
+pub(crate) fn render_gate() -> u64 {
+    (RENDER_COST.with(std::cell::Cell::get) / 2 * 3 + 150_000).clamp(575_000, 1_800_000)
+}
+
+/// The colour of the box that marks a wrong, wrongly turned or extra block.
+fn status_color(status: CellStatus) -> Option<(f32, f32, f32, f32)> {
+    match status {
+        CellStatus::Wrong => Some((1., 0.22, 0.42, 0.44)),
+        CellStatus::WrongState => Some((1., 0.69, 0.08, 0.42)),
+        CellStatus::Extra => Some((0.98, 0.14, 0.17, 0.40)),
+        _ => None,
+    }
+}
+
+/// Which of a material's three counts (missing, correct, unloaded) a cell adds to.
+fn material_slot(status: CellStatus, air: bool, ignored: bool) -> Option<usize> {
+    match status {
+        CellStatus::Missing if !air && !ignored => Some(0),
+        CellStatus::Unloaded if !air && !ignored => Some(2),
+        CellStatus::Wrong | CellStatus::WrongState => Some(0),
+        CellStatus::Correct if !air && !ignored => Some(1),
+        _ => None,
+    }
+}
 
 #[derive(Default)]
 pub struct Preview {
@@ -244,6 +296,8 @@ pub struct Tile {
     blocks_ready: bool,
     pending_frames: u8,
     pub(super) ghost_dirty: bool,
+    /// A change seen around the camera has not reached the boxes and outlines yet.
+    pub(super) markers_stale: bool,
     grid_palette: Vec<u32>,
     grid_cells: Vec<u32>,
 }
@@ -684,6 +738,7 @@ impl Tile {
         self.mismatches.clear();
         self.tally = Tally::default();
         self.built = 0;
+        self.markers_stale = false;
     }
 
     pub(super) fn subtract_placed_materials(&self, remaining: &mut [u64]) {
@@ -751,10 +806,11 @@ impl Tile {
             Ok(terrain::ReadResult::Unchanged(_)) => {}
             Ok(terrain::ReadResult::Changed(region)) => {
                 self.pending_frames = 0;
-                if budget::remaining_fuel() < 575_000 {
+                if u64::from(budget::remaining_fuel()) < render_gate() {
                     return (false, false);
                 }
                 let previous_revision = self.stamp.map(|stamp| stamp.revision);
+                let before = u64::from(budget::remaining_fuel());
                 self.render(
                     preview,
                     schematic,
@@ -763,6 +819,7 @@ impl Tile {
                     whole,
                     region,
                 );
+                note_render_cost(before.saturating_sub(u64::from(budget::remaining_fuel())));
                 return (
                     true,
                     self.stamp.map(|stamp| stamp.revision) != previous_revision,
@@ -895,7 +952,9 @@ impl Tile {
                         _ => None,
                     };
                     cells.push(word);
-                    if let Some(color) = color {
+                    if let Some(color) = color
+                        && highlights.indices.len() + 36 <= MARKER_INDEX_BUDGET
+                    {
                         let exposed =
                             exposed_marker_faces([x, y, z], [sx, sy, sz], &statuses, status);
                         add_box(&mut highlights, [x, y, z], color, exposed);
@@ -908,7 +967,7 @@ impl Tile {
                         && !skip
                         && let Some(bounds) = shapes::outline(&schematic.palette()[id])
                     {
-                        add_frame(&mut highlights, [x, y, z], bounds, GHOST_FRAME);
+                        add_outline(&mut highlights, [x, y, z], bounds, GHOST_FRAME);
                     }
                 }
             }
@@ -991,24 +1050,151 @@ impl Tile {
             self.grid_cells.clear();
             self.blocks_ready = false;
         }
-        if !highlights.vertices.is_empty() {
-            match create(draw::GeometrySpec::Triangles(highlights), anchor, 0., true) {
-                Ok(pair) => {
-                    if let Some(previous) = self.markers.replace(pair) {
-                        previous.remove();
-                    }
-                }
-                Err(e) => self.error = Some(format!("Overlay: {}", e.detail)),
-            }
-        } else if let Some(previous) = self.markers.take() {
-            previous.remove();
+        if !self.publish_markers(highlights, anchor) {
+            // The host had no room for the boxes this frame. Leave the section unstamped so
+            // it is checked again, instead of losing its boxes until a block changes.
+            return;
         }
+        self.markers_stale = false;
         self.stamp = Some(region.stamp);
         self.statuses = statuses;
         self.ignored = ignored;
         self.built = materials.iter().map(|counts| u64::from(counts[1])).sum();
         self.materials = materials;
         self.tally = tally;
+    }
+
+    /// Replaces the section's boxes and outlines. False when the host had no room this frame
+    /// and the same mesh should be sent again later.
+    fn publish_markers(&mut self, mesh: draw::Mesh, anchor: draw::BlockAnchor) -> bool {
+        if mesh.vertices.is_empty() {
+            if let Some(previous) = self.markers.take() {
+                previous.remove();
+            }
+            return true;
+        }
+        match create(draw::GeometrySpec::Triangles(mesh), anchor, 0., true) {
+            Ok(pair) => {
+                if let Some(previous) = self.markers.replace(pair) {
+                    previous.remove();
+                }
+                true
+            }
+            Err(error) => {
+                let later = error.code == draw::ErrorCode::BudgetExceeded;
+                self.error = Some(format!("Overlay: {}", error.detail));
+                !later
+            }
+        }
+    }
+
+    /// Takes in what the watch around the camera saw of one cell: the status, the counts for
+    /// the material list and the list of wrong cells change now, without waiting for the
+    /// next sample of the whole section. The boxes follow in `rebuild_markers`.
+    pub(crate) fn apply_hot(
+        &mut self,
+        preview: &Preview,
+        schematic: &Schematic,
+        world: [i32; 3],
+        status: CellStatus,
+        skip: bool,
+    ) -> bool {
+        if self.stamp.is_none() || !self.contains(world) {
+            return false;
+        }
+        let [sy, sz] = [1, 2].map(|axis| self.hi[axis] - self.lo[axis]);
+        let [x, y, z] = [0, 1, 2].map(|axis| world[axis] - self.lo[axis]);
+        let index = ((x * sz + z) * sy + y) as usize;
+        let (Some(&old), Some(&old_skip)) = (self.statuses.get(index), self.ignored.get(index))
+        else {
+            return false;
+        };
+        if old == status && old_skip == skip {
+            return false;
+        }
+        let Some(id) = preview
+            .placement
+            .and_then(|placement| placement.world_to_local(schematic.size(), world))
+            .and_then(|local| schematic.palette_index(local))
+        else {
+            return false;
+        };
+        let id = id as usize;
+        let air = schematic.is_air_index(id as u32);
+        let artifact = schematic.palette()[id].is_placement_artifact();
+        if artifact {
+            return false;
+        }
+        let counted = |status: CellStatus, skip: bool| (!air || status == CellStatus::Extra) && !skip && !artifact;
+        if counted(old, old_skip) {
+            self.tally.remove(old);
+        }
+        if counted(status, skip) {
+            self.tally.add(status);
+        }
+        if let Some(counts) = self.materials.get_mut(id) {
+            if let Some(slot) = material_slot(old, air, false) {
+                counts[slot] = counts[slot].saturating_sub(1);
+            }
+            if let Some(slot) = material_slot(status, air, false) {
+                counts[slot] = counts[slot].saturating_add(1);
+            }
+        }
+        self.built = self.materials.iter().map(|counts| u64::from(counts[1])).sum();
+        self.mismatches.retain(|(cell, _)| *cell != world);
+        if counted(status, skip) && status != CellStatus::Correct {
+            self.mismatches.push((world, status));
+        }
+        self.statuses[index] = status;
+        self.ignored[index] = skip;
+        self.markers_stale = true;
+        true
+    }
+
+    /// Draws the boxes and outlines again from the section's statuses, after `apply_hot`
+    /// changed some. Only the cells that are not right are visited, so it costs little.
+    /// False when the host had no room this frame; it is tried again.
+    pub(crate) fn rebuild_markers(
+        &mut self,
+        preview: &Preview,
+        schematic: &Schematic,
+        dimension: i32,
+    ) -> bool {
+        if !self.markers_stale {
+            return true;
+        }
+        let size = [0, 1, 2].map(|axis| self.hi[axis] - self.lo[axis]);
+        let mut mesh = draw::Mesh {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+        };
+        for &(world, status) in &self.mismatches {
+            let local = [0, 1, 2].map(|axis| world[axis] - self.lo[axis]);
+            if let Some(color) = status_color(status)
+                && mesh.indices.len() + 36 <= MARKER_INDEX_BUDGET
+            {
+                let exposed = exposed_marker_faces(local, size, &self.statuses, status);
+                add_box(&mut mesh, local, color, exposed);
+            }
+            if status == CellStatus::Missing
+                && let Some(id) = preview
+                    .placement
+                    .and_then(|placement| placement.world_to_local(schematic.size(), world))
+                    .and_then(|local| schematic.palette_index(local))
+                && let Some(bounds) = shapes::outline(&schematic.palette()[id as usize])
+            {
+                add_outline(&mut mesh, local, bounds, GHOST_FRAME);
+            }
+        }
+        let anchor = draw::BlockAnchor {
+            dimension,
+            position: self.lo.into(),
+        };
+        if !self.publish_markers(mesh, anchor) {
+            return false;
+        }
+        self.markers_stale = false;
+        true
     }
 
     /// Gives a tile per-material counts without a world scan.
@@ -1443,7 +1629,7 @@ fn exposed_marker_faces(
 
 /// The twelve edges of `bounds` (block-local min then max) as thin boxes.
 fn add_frame(mesh: &mut draw::Mesh, [x, y, z]: [i32; 3], bounds: [f32; 6], color: (f32, f32, f32, f32)) {
-    const EDGE: f32 = 0.02;
+    const EDGE: f32 = FRAME_EDGE;
     let origin = [x as f32, y as f32, z as f32];
     let low: [f32; 3] = std::array::from_fn(|axis| origin[axis] + bounds[axis] - MARKER_INSET);
     let high: [f32; 3] = std::array::from_fn(|axis| origin[axis] + bounds[axis + 3] + MARKER_INSET);
@@ -1467,6 +1653,60 @@ fn add_frame(mesh: &mut draw::Mesh, [x, y, z]: [i32; 3], bounds: [f32; 6], color
                 add_bounds(mesh, min, max, color);
             }
         }
+    }
+}
+
+/// Outlines a rail or chest, unless the mesh is already as big as one geometry may be. A flat
+/// rail gets only a ring on its top, a ninth of the cost of twelve edges.
+fn add_outline(
+    mesh: &mut draw::Mesh,
+    cell: [i32; 3],
+    bounds: [f32; 6],
+    color: (f32, f32, f32, f32),
+) -> bool {
+    let flat = bounds[4] - bounds[1] <= FLAT_HEIGHT;
+    let cost = if flat { FLAT_FRAME_INDICES } else { FRAME_INDICES };
+    if mesh.indices.len() + cost > MARKER_INDEX_BUDGET {
+        return false;
+    }
+    if flat {
+        add_flat_frame(mesh, cell, bounds, color);
+    } else {
+        add_frame(mesh, cell, bounds, color);
+    }
+    true
+}
+
+/// Four strips round the top of `bounds`, each visible from above and below.
+fn add_flat_frame(
+    mesh: &mut draw::Mesh,
+    [x, y, z]: [i32; 3],
+    bounds: [f32; 6],
+    color: (f32, f32, f32, f32),
+) {
+    let origin = [x as f32, y as f32, z as f32];
+    let lo = [origin[0] + bounds[0], origin[2] + bounds[2]];
+    let hi = [origin[0] + bounds[3], origin[2] + bounds[5]];
+    let top = origin[1] + bounds[4] + MARKER_INSET + 0.004;
+    let strip = FLAT_STRIP.min((hi[0] - lo[0]) / 2.).min((hi[1] - lo[1]) / 2.);
+    let strips = [
+        ([lo[0], lo[1]], [hi[0], lo[1] + strip]),
+        ([lo[0], hi[1] - strip], [hi[0], hi[1]]),
+        ([lo[0], lo[1] + strip], [lo[0] + strip, hi[1] - strip]),
+        ([hi[0] - strip, lo[1] + strip], [hi[0], hi[1] - strip]),
+    ];
+    for ([x0, z0], [x1, z1]) in strips {
+        let base = mesh.vertices.len() as u32;
+        for (px, pz) in [(x0, z0), (x1, z0), (x0, z1), (x1, z1)] {
+            mesh.vertices.push(draw::Vertex {
+                position: (px, top, pz),
+                color,
+                uv: (0., 0.),
+                data: (0., 0., 0., 0.),
+            });
+        }
+        mesh.indices
+            .extend([0, 1, 2, 1, 3, 2, 0, 2, 1, 1, 2, 3].map(|i| base + i));
     }
 }
 
@@ -1706,4 +1946,177 @@ fn a_frame_is_twelve_thin_boxes_inside_the_given_bounds() {
     }
     assert!((low[1] - (64. - MARKER_INSET)).abs() < 1e-4 && (high[1] - (64.125 + MARKER_INSET)).abs() < 1e-4);
     assert!((low[0] - (10. - MARKER_INSET)).abs() < 1e-4 && (high[2] - (-2. + MARKER_INSET)).abs() < 1e-4);
+}
+
+#[cfg(test)]
+fn tile_of_the_reference_guide() -> (crate::Viewer, Tile, [i32; 3], usize) {
+    let mut viewer = crate::tests::reference_viewer();
+    let placement = viewer.placement.unwrap();
+    viewer.preview.reposition(placement, LayerMode::All);
+    let size = viewer.schematic.size();
+    let (lo, hi) = viewer.preview.bounds(size);
+    let mut tile = Tile {
+        lo,
+        hi,
+        stamp: Some(terrain::Stamp {
+            session: 0,
+            dimension: 0,
+            registry: 0,
+            revision: 0,
+        }),
+        materials: vec![[0; 3]; viewer.schematic.palette().len()],
+        ..Tile::default()
+    };
+    let mut first = None;
+    for x in lo[0]..hi[0] {
+        for z in lo[2]..hi[2] {
+            for y in lo[1]..hi[1] {
+                let world = [x, y, z];
+                let local = placement.world_to_local(size, world).unwrap();
+                let id = viewer.schematic.palette_index(local).unwrap() as usize;
+                let air = viewer.schematic.is_air_index(id as u32);
+                let artifact = viewer.schematic.palette()[id].is_placement_artifact();
+                let status = if air || artifact {
+                    CellStatus::Correct
+                } else {
+                    CellStatus::Missing
+                };
+                if !air && !artifact {
+                    tile.tally.add(status);
+                    tile.mismatches.push((world, status));
+                    if let Some(slot) = material_slot(status, air, false) {
+                        tile.materials[id][slot] += 1;
+                    }
+                    first.get_or_insert((world, id));
+                }
+                tile.statuses.push(status);
+                tile.ignored.push(false);
+            }
+        }
+    }
+    let (world, id) = first.expect("a block");
+    (viewer, tile, world, id)
+}
+
+#[test]
+fn a_hot_change_moves_the_counts_and_the_wrong_cell_list_at_once() {
+    let (viewer, mut tile, world, id) = tile_of_the_reference_guide();
+    let missing = tile.tally.missing;
+    let (preview, schematic) = (&viewer.preview, &viewer.schematic);
+    // Placed correctly: one less missing, one more built, no longer in the list.
+    assert!(tile.apply_hot(preview, schematic, world, CellStatus::Correct, false));
+    assert_eq!(tile.tally.missing, missing - 1);
+    assert_eq!(tile.tally.correct, 1);
+    assert_eq!(tile.built, 1);
+    assert_eq!(tile.materials[id][1], 1);
+    assert!(tile.mismatches.iter().all(|(cell, _)| *cell != world));
+    assert_eq!(tile.status_at(world), Some(CellStatus::Correct));
+    assert!(tile.markers_stale);
+    // The same observation again changes nothing.
+    assert!(!tile.apply_hot(preview, schematic, world, CellStatus::Correct, false));
+    // Replaced by a wrong block: it is wrong, it is not built, it is listed.
+    assert!(tile.apply_hot(preview, schematic, world, CellStatus::Wrong, false));
+    assert_eq!((tile.tally.correct, tile.tally.wrong), (0, 1));
+    assert_eq!(tile.built, 0);
+    assert!(tile.mismatches.contains(&(world, CellStatus::Wrong)));
+    // Broken again: back to missing, and the wrong entry is gone.
+    assert!(tile.apply_hot(preview, schematic, world, CellStatus::Missing, false));
+    assert_eq!((tile.tally.missing, tile.tally.wrong), (missing, 0));
+    assert_eq!(tile.mismatches.iter().filter(|(cell, _)| *cell == world).count(), 1);
+    assert!(tile.mismatches.contains(&(world, CellStatus::Missing)));
+    assert_eq!(tile.materials[id][0], viewer_total(&viewer, id));
+}
+
+#[cfg(test)]
+fn viewer_total(viewer: &crate::Viewer, id: usize) -> u16 {
+    let name = &viewer.schematic.palette()[id].name;
+    viewer
+        .schematic
+        .palette()
+        .iter()
+        .enumerate()
+        .filter(|(_, block)| &block.name == name && false)
+        .count() as u16
+        + (0..viewer.schematic.palette().len())
+            .filter(|&other| other == id)
+            .count() as u16 * 0
+        + tile_missing_for(viewer, id)
+}
+
+#[cfg(test)]
+fn tile_missing_for(viewer: &crate::Viewer, id: usize) -> u16 {
+    let placement = viewer.placement.unwrap();
+    let size = viewer.schematic.size();
+    let (lo, hi) = viewer.preview.bounds(size);
+    let mut count = 0;
+    for x in lo[0]..hi[0] {
+        for z in lo[2]..hi[2] {
+            for y in lo[1]..hi[1] {
+                let local = placement.world_to_local(size, [x, y, z]).unwrap();
+                count += u16::from(viewer.schematic.palette_index(local) == Some(id as u32));
+            }
+        }
+    }
+    count
+}
+
+#[test]
+fn a_hot_change_outside_the_section_or_in_an_unchecked_one_is_ignored() {
+    let (viewer, mut tile, world, _) = tile_of_the_reference_guide();
+    let (preview, schematic) = (&viewer.preview, &viewer.schematic);
+    let far = [world[0] + 1000, world[1], world[2]];
+    assert!(!tile.apply_hot(preview, schematic, far, CellStatus::Correct, false));
+    tile.stamp = None;
+    assert!(!tile.apply_hot(preview, schematic, world, CellStatus::Correct, false));
+    assert!(!tile.markers_stale);
+}
+
+#[test]
+fn a_flat_rail_frame_is_four_cheap_strips_and_a_section_never_outgrows_the_host_limit() {
+    let mut mesh = draw::Mesh {
+        vertices: Vec::new(),
+        indices: Vec::new(),
+    };
+    assert!(add_outline(&mut mesh, [3, 64, 3], [0., 0., 0., 1., 0.0625, 1.], GHOST_FRAME));
+    assert_eq!(mesh.vertices.len(), 16);
+    assert_eq!(mesh.indices.len(), FLAT_FRAME_INDICES);
+    for vertex in &mesh.vertices {
+        let (x, y, z) = vertex.position;
+        assert!((3.0..=4.0).contains(&x) && (3.0..=4.0).contains(&z), "{x} {z}");
+        assert!((64.0..=64.2).contains(&y), "{y}");
+    }
+    // A chest keeps the twelve edges.
+    let mut chest = draw::Mesh {
+        vertices: Vec::new(),
+        indices: Vec::new(),
+    };
+    assert!(add_outline(&mut chest, [0, 0, 0], [0.06, 0., 0.06, 0.94, 0.875, 0.94], GHOST_FRAME));
+    assert_eq!(chest.indices.len(), FRAME_INDICES);
+    // Thousands of rails stop adding outlines before the geometry limit, instead of failing.
+    let mut many = draw::Mesh {
+        vertices: Vec::new(),
+        indices: Vec::new(),
+    };
+    let mut drawn = 0;
+    for index in 0..20_000 {
+        drawn += usize::from(add_outline(&mut many, [index, 0, 0], [0., 0., 0., 1., 0.0625, 1.], GHOST_FRAME));
+    }
+    assert!(many.indices.len() <= MARKER_INDEX_BUDGET && many.indices.len() < 196_608);
+    assert!(drawn > 2_000 && drawn < 20_000);
+    assert!(many.vertices.len() < 65_536);
+}
+
+#[test]
+fn the_render_gate_follows_what_a_section_check_cost() {
+    note_render_cost(0);
+    RENDER_COST.with(|seen| seen.set(0));
+    assert_eq!(render_gate(), 575_000);
+    note_render_cost(1_000_000);
+    assert_eq!(render_gate(), 1_650_000);
+    note_render_cost(5_000_000);
+    assert_eq!(render_gate(), 1_800_000);
+    // A cheap check afterwards does not make it forget at once.
+    note_render_cost(100_000);
+    assert!(render_gate() > 1_700_000);
+    RENDER_COST.with(|seen| seen.set(0));
 }

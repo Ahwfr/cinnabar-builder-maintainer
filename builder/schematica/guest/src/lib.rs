@@ -854,14 +854,29 @@ impl Viewer {
             if whole && let Some(eye) = self.aim_ray().map(|(eye, _)| eye) {
                 // Blocks placed or broken around the camera update their own ghost cell
                 // and status box now, without waiting for their tile's turn.
-                for cell in self.hot.step(
+                let seen = self.hot.step(
                     &self.preview,
                     &self.schematic,
                     &mut self.whole,
                     &self.tiles,
                     dimension,
                     eye,
-                ) {
+                );
+                let mut tile_changed = false;
+                for change in seen {
+                    let cell = change.world;
+                    // The section that holds the cell takes the new status at once, so the
+                    // material counts, the wrong-block boxes and the rail outlines follow
+                    // the block now and do not wait for the section's next sample.
+                    if let Some(tile) = self.tiles.iter_mut().find(|tile| tile.contains(cell)) {
+                        tile_changed |= tile.apply_hot(
+                            &self.preview,
+                            &self.schematic,
+                            cell,
+                            change.status,
+                            change.skip,
+                        );
+                    }
                     self.hot_dirty.retain(|(known, _)| *known != cell);
                     // Kept until the tile that holds it has been checked again, not for a few
                     // frames: the tile needs several to receive a new sample and draw it, and
@@ -870,6 +885,17 @@ impl Viewer {
                 }
                 let excess = self.hot_dirty.len().saturating_sub(16);
                 self.hot_dirty.drain(..excess);
+                if tile_changed {
+                    self.highlight_dirty = true;
+                    self.highlight_again |= self.highlight_scan.is_some();
+                }
+                // One section's boxes and outlines are redrawn per frame, when there is room.
+                if budget::remaining_fuel() >= 700_000
+                    && let Some(stale) = self.tiles.iter().position(|tile| tile.markers_stale)
+                {
+                    let (preview, schematic) = (&self.preview, &self.schematic);
+                    self.tiles[stale].rebuild_markers(preview, schematic, dimension);
+                }
             }
             // The tile of the oldest unverified change is stepped first.
             let hot_cell = self.hot_dirty.first().map(|&(cell, _)| cell);
@@ -905,7 +931,7 @@ impl Viewer {
                     self.whole
                         .scan_distant(&self.preview, &self.schematic, focus);
                 }
-            } else if budget::remaining_fuel() >= 650_000 {
+            } else if u64::from(budget::remaining_fuel()) >= overlay::render_gate().max(650_000) {
                 let (advance, updated) = self.tiles[index].step(
                     &self.preview,
                     &self.schematic,
